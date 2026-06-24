@@ -1,0 +1,40 @@
+<div id="pages-table" class="bg-white border rounded overflow-x-auto">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-100 text-left">
+      <tr>
+        <th class="px-3 py-2">URL</th>
+        <th class="px-3 py-2">Status</th>
+        <th class="px-3 py-2">Title</th>
+        <th class="px-3 py-2">Meta Description</th>
+        <th class="px-3 py-2">H1s</th>
+        <th class="px-3 py-2">Issues</th>
+        <th class="px-3 py-2"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for page in pages %}
+      <tr class="border-t {% if page.error %}bg-red-50{% endif %}">
+        <td class="px-3 py-2 max-w-xs truncate">{{ page.url }}</td>
+        <td class="px-3 py-2">{{ page.status_code or page.error }}</td>
+        <td class="px-3 py-2 max-w-xs truncate">{{ page.title or "-" }}</td>
+        <td class="px-3 py-2 max-w-xs truncate">{{ page.meta_description or "-" }}</td>
+        <td class="px-3 py-2">{{ page.h1|length if page.h1 else 0 }}</td>
+        <td class="px-3 py-2">
+          {% if page.error %}
+          <span class="text-gray-400">-</span>
+          {% elif page.issues|length %}
+          <span class="text-amber-700 bg-amber-100 px-2 py-0.5 rounded text-xs">{{ page.issues|length }} issue{{ "s" if page.issues|length != 1 else "" }}</span>
+          {% else %}
+          <span class="text-green-700 bg-green-100 px-2 py-0.5 rounded text-xs">No issues</span>
+          {% endif %}
+        </td>
+        <td class="px-3 py-2">
+          <a href="/projects/{{ page.project_id }}/pages/{{ page.id }}" class="text-blue-600">View</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="px-3 py-4 text-gray-500">No pages crawled yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

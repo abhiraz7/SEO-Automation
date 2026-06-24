@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block topbar %}
+<div class="flex items-center justify-between flex-wrap gap-2">
+  <div>
+    <div class="text-sm text-gray-500">
+      <a href="/" class="hover:underline">Projects</a> /
+      <a href="/projects/{{ page.project_id }}" class="hover:underline">{{ page.project.name }}</a>
+    </div>
+    <div class="font-semibold break-all">{{ page.url }}</div>
+    <div class="text-xs text-gray-500 mt-0.5">
+      {% if crawled_ago %}Crawled {{ crawled_ago }} &middot; {% endif %}{{ word_count }} words
+    </div>
+  </div>
+  <form method="post" action="/projects/{{ page.project_id }}/pages/{{ page.id }}/reaudit">
+    <button type="submit" class="bg-emerald-600 text-white px-4 py-2 rounded text-sm">Re-Audit</button>
+  </form>
+</div>
+{% endblock %}
+{% block content %}
+
+{% if page.error %}
+<div class="bg-red-50 border border-red-200 text-red-700 p-3 rounded mb-4">{{ page.error }}</div>
+{% else %}
+
+<div class="bg-white border rounded-lg p-4 flex items-center gap-4 mb-6 w-fit">
+  <div class="relative w-20 h-20 shrink-0">
+    <svg viewBox="0 0 36 36" class="w-20 h-20 -rotate-90">
+      <circle cx="18" cy="18" r="16" fill="none" stroke="#e5e7eb" stroke-width="3"></circle>
+      <circle cx="18" cy="18" r="16" fill="none"
+        stroke="{{ '#16a34a' if score >= 80 else ('#d97706' if score >= 50 else '#dc2626') }}"
+        stroke-width="3" stroke-linecap="round"
+        stroke-dasharray="{{ (score / 100 * 100.53)|round(2) }} 100.53"></circle>
+    </svg>
+    <div class="absolute inset-0 flex items-center justify-center text-lg font-semibold">{{ score }}</div>
+  </div>
+  <div>
+    <div class="text-sm font-medium text-gray-700">Current Score</div>
+    <div class="text-xs text-gray-400 mt-1">{{ page.issues|length }} audit check{{ "s" if page.issues|length != 1 else "" }} run</div>
+  </div>
+</div>
+
+<div class="bg-white border rounded-lg p-5 mb-6">
+  <h2 class="font-semibold mb-4">Title Tag</h2>
+  <div class="grid md:grid-cols-2 gap-6">
+    <div>
+      <div class="text-xs uppercase text-gray-400 mb-1">Current</div>
+      <div class="text-sm bg-gray-50 border rounded p-3 break-words">{{ page.title or "Missing" }}</div>
+    </div>
+    <div>
+      <div class="text-xs uppercase text-gray-400 mb-1">Rule Checks</div>
+      <ul class="text-sm space-y-1.5">
+        {% for label, passed in title_checklist %}
+        <li class="flex items-center gap-2">
+          <span class="{{ 'text-green-600' if passed else 'text-red-600' }} font-medium">{{ "✓" if passed else "✕" }}</span>
+          <span>{{ label }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h2 class="font-semibold mb-2">All Other Issues ({{ other_issues_total }})</h2>
+<div class="bg-white border rounded-lg overflow-x-auto mb-3">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-50 text-left text-gray-500">
+      <tr>
+        <th class="px-4 py-2">Category</th>
+        <th class="px-4 py-2">Rule</th>
+        <th class="px-4 py-2">Severity</th>
+        <th class="px-4 py-2">Message</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for issue in other_issues %}
+      <tr class="border-t">
+        <td class="px-4 py-2 capitalize">{{ issue.category.replace('_', ' ') }}</td>
+        <td class="px-4 py-2 text-gray-500">{{ issue.rule.replace('_', ' ') }}</td>
+        <td class="px-4 py-2">
+          <span class="px-2 py-0.5 rounded text-xs {{ 'bg-red-100 text-red-700' if issue.severity == 'error' else 'bg-amber-100 text-amber-700' }}">{{ issue.severity }}</span>
+        </td>
+        <td class="px-4 py-2">{{ issue.message }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="px-4 py-3 text-gray-500">No other issues detected. Run an audit from the project page if you haven't yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if total_pages > 1 %}
+<div class="flex items-center justify-between text-sm text-gray-500 mb-6">
+  <a href="?pg={{ current_page - 1 }}" class="px-3 py-1 border rounded {{ 'opacity-40 pointer-events-none' if current_page <= 1 else '' }}">Prev</a>
+  <span>Page {{ current_page }} of {{ total_pages }}</span>
+  <a href="?pg={{ current_page + 1 }}" class="px-3 py-1 border rounded {{ 'opacity-40 pointer-events-none' if current_page >= total_pages else '' }}">Next</a>
+</div>
+{% endif %}
+
+{% endif %}
+
+<h2 class="font-semibold mt-6 mb-2">Raw Page Data</h2>
+<dl class="bg-white border rounded divide-y">
+  {% for label, value in [
+    ("Status Code", page.status_code),
+    ("Title", page.title),
+    ("Meta Description", page.meta_description),
+    ("Meta Keywords", page.meta_keywords),
+    ("Canonical", page.canonical),
+    ("Lang", page.lang),
+    ("OG Title", page.og_title),
+    ("OG Description", page.og_description),
+    ("OG URL", page.og_url),
+    ("Twitter Title", page.twitter_title),
+    ("Twitter Description", page.twitter_description),
+    ("Twitter Site", page.twitter_site),
+    ("Twitter Card", page.twitter_card),
+  ] %}
+  <div class="px-4 py-2 grid grid-cols-3 gap-4">
+    <dt class="text-gray-500">{{ label }}</dt>
+    <dd class="col-span-2 break-words">{{ value or "-" }}</dd>
+  </div>
+  {% endfor %}
+</dl>
+
+<h2 class="text-lg font-semibold mt-6 mb-2">Headings</h2>
+<ul class="bg-white border rounded divide-y text-sm">
+  {% for h in page.heading_structure or [] %}
+  <li class="px-4 py-1"><span class="font-mono text-gray-500">{{ h.tag }}</span> {{ h.text }}</li>
+  {% else %}
+  <li class="px-4 py-2 text-gray-500">No headings found.</li>
+  {% endfor %}
+</ul>
+
+<h2 class="text-lg font-semibold mt-6 mb-2">Images ({{ (page.image_alts or [])|length }})</h2>
+<ul class="bg-white border rounded divide-y text-sm">
+  {% for img in page.image_alts or [] %}
+  <li class="px-4 py-1 break-all">{{ img.src }} &mdash; alt: {% if img.alt is none %}<span class="text-red-600">missing</span>{% else %}"{{ img.alt }}"{% endif %}</li>
+  {% else %}
+  <li class="px-4 py-2 text-gray-500">No images found.</li>
+  {% endfor %}
+</ul>
+
+<h2 class="text-lg font-semibold mt-6 mb-2">Schema</h2>
+<div class="bg-white border rounded p-4 text-sm">
+  <div class="mb-2"><span class="text-gray-500">Domain Schema:</span> {{ (page.domain_schema or [])|length }} item(s)</div>
+  <div><span class="text-gray-500">Page Schemas:</span> {{ (page.page_schemas or [])|length }} item(s)</div>
+</div>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block topbar %}<div class="text-lg font-semibold">Dashboard</div>{% endblock %}
+{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+  <div>
+    <h2 class="text-lg font-semibold mb-4">New Project</h2>
+    <form method="post" action="/projects" class="space-y-3 bg-white p-4 rounded border">
+      <div>
+        <label class="block text-sm font-medium">Project Name</label>
+        <input name="name" required class="mt-1 w-full border rounded px-3 py-2" placeholder="My Site">
+      </div>
+      <div>
+        <label class="block text-sm font-medium">Website URL</label>
+        <input name="base_url" required class="mt-1 w-full border rounded px-3 py-2" placeholder="https://example.com">
+      </div>
+      <div>
+        <label class="block text-sm font-medium">Type</label>
+        <select name="project_type" class="mt-1 w-full border rounded px-3 py-2">
+          <option value="manual">Manual Project</option>
+          <option value="connected">Connected Site</option>
+        </select>
+      </div>
+      <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Create Project</button>
+    </form>
+  </div>
+  <div>
+    <h2 class="text-lg font-semibold mb-4">Projects</h2>
+    <div class="bg-white border rounded divide-y">
+      {% for project in projects %}
+      <a href="/projects/{{ project.id }}" class="block px-4 py-3 hover:bg-gray-50">
+        <div class="font-medium">{{ project.name }}</div>
+        <div class="text-sm text-gray-500">{{ project.base_url }}</div>
+      </a>
+      {% else %}
+      <div class="px-4 py-3 text-gray-500">No projects yet.</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

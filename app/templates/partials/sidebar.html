@@ -1,0 +1,39 @@
+{% macro icon(name) %}
+{% if name == 'home' %}<path stroke-linecap="round" stroke-linejoin="round" d="M3 9.75 12 3l9 6.75V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.75Z"/>
+{% elif name == 'projects' %}<path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 0 1 2-2h3.5l1.5 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>
+{% elif name == 'content' %}<path stroke-linecap="round" stroke-linejoin="round" d="M7 3h7l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path stroke-linecap="round" d="M9 12h6M9 16h6M9 8h3"/>
+{% elif name == 'visibility' %}<path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7S2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.5"/>
+{% elif name == 'keyword' %}<circle cx="10.5" cy="10.5" r="6.5"/><path stroke-linecap="round" d="M15.8 15.8 21 21"/>
+{% elif name == 'schema' %}<path stroke-linecap="round" stroke-linejoin="round" d="M8.5 7 4 12l4.5 5M15.5 7 20 12l-4.5 5"/>
+{% elif name == 'competitor' %}<path stroke-linecap="round" stroke-linejoin="round" d="M4 19V10M10 19V5M16 19v-7M3 19h18"/>
+{% elif name == 'linking' %}<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6M8 16H6a4 4 0 1 1 0-8h2M16 8h2a4 4 0 1 1 0 8h-2"/>
+{% endif %}
+{% endmacro %}
+
+{% macro nav_item(href, label, icon_name, active=False, enabled=True) %}
+{% if enabled %}
+<a href="{{ href }}" title="{{ label }}"
+   class="w-10 h-10 flex items-center justify-center rounded-lg {{ 'bg-blue-50 text-blue-600' if active else 'text-gray-400 hover:text-gray-600 hover:bg-gray-50' }}">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-5 h-5">{{ icon(icon_name) }}</svg>
+</a>
+{% else %}
+<span title="{{ label }} (coming soon)"
+      class="w-10 h-10 flex items-center justify-center rounded-lg text-gray-300 cursor-not-allowed">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-5 h-5">{{ icon(icon_name) }}</svg>
+</span>
+{% endif %}
+{% endmacro %}
+
+{% set in_projects = request.url.path == "/" or request.url.path.startswith("/projects") %}
+<aside class="w-16 bg-white border-r flex flex-col items-center py-4 gap-1 shrink-0 min-h-screen">
+  <a href="/" class="text-blue-600 font-bold text-lg mb-3">V</a>
+  {{ nav_item("/", "Home", "home", active=(request.url.path == "/")) }}
+  {{ nav_item("/", "Projects", "projects", active=in_projects) }}
+  <div class="w-8 border-t my-2"></div>
+  {{ nav_item("#", "Content Strategy", "content", enabled=False) }}
+  {{ nav_item("#", "AI Visibility Strategy", "visibility", enabled=False) }}
+  {{ nav_item("#", "Keyword Research", "keyword", enabled=False) }}
+  {{ nav_item("#", "Schema Generator", "schema", enabled=False) }}
+  {{ nav_item("#", "Competitor Analysis", "competitor", enabled=False) }}
+  {{ nav_item("#", "Internal Linking", "linking", enabled=False) }}
+</aside>

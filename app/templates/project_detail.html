@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block topbar %}
+<div class="flex items-center justify-between flex-wrap gap-2">
+  <div>
+    <div class="text-sm text-gray-500"><a href="/" class="hover:underline">Projects</a> / {{ project.name }}</div>
+    <div class="font-semibold">{{ project.base_url }}</div>
+  </div>
+  <div class="flex gap-2">
+    <button
+      hx-post="/projects/{{ project.id }}/crawl"
+      hx-target="#pages-table"
+      hx-swap="outerHTML"
+      hx-indicator="#crawl-spinner"
+      class="bg-blue-600 text-white px-4 py-2 rounded text-sm htmx-request:opacity-50">
+      Crawl Site
+    </button>
+    <button
+      hx-post="/projects/{{ project.id }}/audit"
+      hx-target="#pages-table"
+      hx-swap="outerHTML"
+      hx-indicator="#audit-spinner"
+      class="bg-emerald-600 text-white px-4 py-2 rounded text-sm htmx-request:opacity-50">
+      Run Audit
+    </button>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<span id="crawl-spinner" class="htmx-indicator text-sm text-gray-500 block mb-2">Crawling, this can take a moment...</span>
+<span id="audit-spinner" class="htmx-indicator text-sm text-gray-500 block mb-2">Auditing pages...</span>
+{% include "partials/pages_table.html" %}
+{% endblock %}

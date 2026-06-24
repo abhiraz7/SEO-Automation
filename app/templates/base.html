@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}VTechSEO{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>.htmx-indicator{display:none}.htmx-request .htmx-indicator{display:inline}.htmx-request.htmx-indicator{display:inline}</style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <div class="flex">
+    {% include "partials/sidebar.html" %}
+    <div class="flex-1 min-w-0">
+      <header class="bg-white border-b px-6 py-3">
+        {% block topbar %}<a href="/" class="text-lg font-semibold">VTechSEO</a>{% endblock %}
+      </header>
+      <main class="max-w-6xl mx-auto p-6">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+</body>
+</html>
