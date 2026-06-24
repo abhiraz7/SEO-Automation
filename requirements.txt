@@ -1,0 +1,11 @@
+fastapi
+anthropic
+python-dotenv
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+httpx
+beautifulsoup4
+lxml
+jinja2
+python-multipart

@@ -9,12 +9,11 @@
 5. No Kubernetes
 6. No Redis
 7. No Celery
-8. No PostgreSQL
 9. No Multi-Model Arena
 10. Claude writes code, I review and test
-11. Push every working feature to GitHub
+11. Push every working feature to GitHub https://github.com/abhiraz7/SEO-Automation.git
 12. Finish one feature completely before starting next
-
+13. At the end of every update, Mandatory update what changes we did in Agentlog.md md file,So that we preserve session.
 ---
 
 # Architecture
@@ -23,7 +22,7 @@ Browser
 ↓
 FastAPI
 ↓
-SQLite
+Postgresql
 
 FastAPI
 ↓
@@ -31,7 +30,7 @@ Claude API
 
 FastAPI
 ↓
-Supabase
+Supabase()
 
 ---
 
@@ -53,9 +52,7 @@ Learning Dataset
 
 * Supabase
 
-Deployment
 
-* Docker
 
 UI
 
@@ -153,7 +150,7 @@ Redirect Site
 
 ## Done When
 
-Website crawls successfully.
+Website crawls successfully.(Manual)
 
 ---
 

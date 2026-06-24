@@ -1,4 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
+
+def _utcnow():
+    return datetime.now(timezone.utc)
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
@@ -13,7 +16,7 @@ class Project(Base):
     name = Column(String, nullable=False)
     base_url = Column(String, nullable=False)
     project_type = Column(String, default="manual")  # manual | connected
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     pages = relationship("Page", back_populates="project", cascade="all, delete-orphan")
 
@@ -54,8 +57,8 @@ class Page(Base):
     lang = Column(Text)
     custom_content = Column(Text)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     project = relationship("Project", back_populates="pages")
     snapshots = relationship("CrawlSnapshot", back_populates="page", cascade="all, delete-orphan")
@@ -70,7 +73,7 @@ class CrawlSnapshot(Base):
     page_id = Column(Integer, ForeignKey("pages.id"), nullable=False)
     url = Column(String, nullable=False)
     data = Column(JSON)
-    crawled_at = Column(DateTime, default=datetime.utcnow)
+    crawled_at = Column(DateTime, default=_utcnow)
 
     page = relationship("Page", back_populates="snapshots")
 
@@ -85,6 +88,21 @@ class Issue(Base):
     rule = Column(String, nullable=False)  # missing, too_short, too_long, multiple, duplicate, poor_structure, empty, invalid, thin
     severity = Column(String, default="warning")  # error | warning
     message = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     page = relationship("Page", back_populates="issues")
+    suggestions = relationship("Suggestion", back_populates="issue", cascade="all, delete-orphan")
+
+
+class Suggestion(Base):
+    __tablename__ = "suggestions"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    page_id = Column(Integer, ForeignKey("pages.id"), nullable=False)
+    issue_id = Column(Integer, ForeignKey("issues.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    rank = Column(Integer, default=0)
+    created_at = Column(DateTime, default=_utcnow)
+
+    issue = relationship("Issue", back_populates="suggestions")
