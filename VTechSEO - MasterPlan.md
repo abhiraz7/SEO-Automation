@@ -3,15 +3,14 @@
 ## Rules
 
 1. Logic First
-2. Product First
-3. No Fancy Infrastructure
+2. Product First cutting edge technology
+3. Always Fancy Infrastructure implentation overengineering mandatory for cutting edge
 4. No Microservices
 5. No Kubernetes
-6. No Redis
-7. No Celery
+6. Redis or Celery as nmuch as possible
 9. No Multi-Model Arena
-10. Claude writes code, I review and test
-11. Push every working feature to GitHub https://github.com/abhiraz7/SEO-Automation.git
+10. Claude teaches to build code, I learn ,review, write and then claude can inject code
+11. remind me to push to github https://github.com/abhiraz7/SEO-Automation.git mandatory
 12. Finish one feature completely before starting next
 13. At the end of every update, Mandatory update what changes we did in Agentlog.md md file,So that we preserve session.
 ---

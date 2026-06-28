@@ -1,3 +1,5 @@
+import os
+from collections import defaultdict
 from datetime import datetime
 from math import ceil
 
@@ -7,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from .. import audit, models
+from ..semrush import fetch_domain_metrics
 from ..database import get_db
 
 router = APIRouter()
@@ -57,6 +60,16 @@ def create_project(
     return RedirectResponse(url=f"/projects/{project.id}", status_code=303)
 
 
+@router.post("/projects/{project_id}/delete")
+def delete_project(project_id: int, db: Session = Depends(get_db)):
+    project = db.get(models.Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    db.delete(project)
+    db.commit()
+    return RedirectResponse(url="/", status_code=303)
+
+
 @router.get("/projects/{project_id}")
 def project_detail(project_id: int, request: Request, db: Session = Depends(get_db)):
     project = db.get(models.Project, project_id)
@@ -68,8 +81,70 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
         .order_by(models.Page.url)
         .all()
     )
+    semrush_connected = bool(os.environ.get("SEMRUSH_API_KEY", "").strip())
+    semrush_data = fetch_domain_metrics(project.base_url) if semrush_connected else {}
+
+    page_data = []
+    for page in pages:
+        issues = (
+            db.query(models.Issue)
+            .filter(models.Issue.page_id == page.id)
+            .all()
+        )
+        suggestions = (
+            db.query(models.Suggestion)
+            .filter(models.Suggestion.page_id == page.id)
+            .order_by(models.Suggestion.rank)
+            .all()
+        )
+        sugg_by_issue = {}
+        for s in suggestions:
+            sugg_by_issue.setdefault(s.issue_id, []).append(s)
+        title_issues = [i for i in issues if i.category == "title"]
+        checklist = audit.title_checklist(page, issues)
+        page_data.append({
+            "page": page,
+            "issues": issues,
+            "suggestions": suggestions,
+            "sugg_by_issue": sugg_by_issue,
+            "title_issues": title_issues,
+            "checklist": checklist,
+            "title_len": len(page.title or ""),
+            "meta_len": len(page.meta_description or ""),
+        })
+
+    # Group all issues across pages by category for accordion view
+    grouped_issues = defaultdict(list)
+    for item in page_data:
+        for issue in item["issues"]:
+            grouped_issues[issue.category].append({
+                "page": item["page"],
+                "message": issue.message,
+                "severity": issue.severity,
+                "issue_id": issue.id,
+            })
+    # Sort categories: most errors first
+    grouped_issues = dict(
+        sorted(
+            grouped_issues.items(),
+            key=lambda x: sum(1 for i in x[1] if i["severity"] == "error"),
+            reverse=True,
+        )
+    )
+
+    last_page = max(pages, key=lambda p: p.updated_at or datetime.min) if pages else None
+    last_crawled_ago = _time_ago(last_page.updated_at) if last_page and last_page.updated_at else "Never"
+
     return templates.TemplateResponse(
-        request, "project_detail.html", {"project": project, "pages": pages}
+        request, "project_detail.html", {
+            "project": project,
+            "pages": pages,
+            "page_data": page_data,
+            "grouped_issues": grouped_issues,
+            "semrush_connected": semrush_connected,
+            "semrush_data": semrush_data,
+            "last_crawled_ago": last_crawled_ago,
+        }
     )
 
 

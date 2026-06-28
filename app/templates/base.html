@@ -3,22 +3,100 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}VTechSEO{% endblock %}</title>
+  <title>{% block title %}VTechys SEO OS{% endblock %}</title>
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>.htmx-indicator{display:none}.htmx-request .htmx-indicator{display:inline}.htmx-request.htmx-indicator{display:inline}</style>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: #f8fafc;
+      color: #0f172a;
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-size: 14px;
+    }
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator,
+    .htmx-request.htmx-indicator { display: inline; }
+
+    /* Sidebar collapse */
+    #sidebar {
+      transition: width 0.22s ease, min-width 0.22s ease, opacity 0.18s ease;
+      overflow: hidden;
+    }
+    #sidebar.collapsed {
+      width: 0 !important;
+      min-width: 0 !important;
+      opacity: 0;
+    }
+    #sidebar-inner {
+      width: 210px;
+      min-width: 210px;
+    }
+
+    /* Queue badge pulse */
+    @keyframes badgePulse { 0%,100%{ box-shadow:0 0 0 0 rgba(79,70,229,.5) } 50%{ box-shadow:0 0 0 4px rgba(79,70,229,0) } }
+    .q-badge { animation:badgePulse 2s infinite; }
+
+    /* Hamburger button */
+    #hamburger {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      cursor: pointer;
+      flex-shrink: 0;
+      color: #64748b;
+      transition: background 0.12s;
+    }
+    #hamburger:hover { background: #f1f5f9; color: #0f172a; }
+  </style>
 </head>
-<body class="bg-gray-50 text-gray-900">
-  <div class="flex">
+<body>
+  <div style="display:flex;height:100vh;overflow:hidden;">
+
     {% include "partials/sidebar.html" %}
-    <div class="flex-1 min-w-0">
-      <header class="bg-white border-b px-6 py-3">
-        {% block topbar %}<a href="/" class="text-lg font-semibold">VTechSEO</a>{% endblock %}
+
+    <div style="display:flex;flex-direction:column;flex:1;min-width:0;overflow:hidden;">
+
+      <!-- Top Nav -->
+      <header style="height:52px;display:flex;align-items:center;padding:0 20px;gap:12px;background:#fff;border-bottom:1px solid #e2e8f0;flex-shrink:0;">
+
+        <!-- Hamburger -->
+        <button id="hamburger" onclick="toggleSidebar()" aria-label="Toggle menu">
+          <svg id="ham-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5"/>
+          </svg>
+        </button>
+
+        <div style="flex:1;min-width:0;">
+          {% block topbar %}{% endblock %}
+        </div>
       </header>
-      <main class="max-w-6xl mx-auto p-6">
+
+      <!-- Content -->
+      <main style="flex:1;overflow-y:auto;background:#f8fafc;">
         {% block content %}{% endblock %}
       </main>
+
     </div>
   </div>
+
+  <script>
+    (function () {
+      var sidebar = document.getElementById('sidebar');
+      var collapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+      if (collapsed) sidebar.classList.add('collapsed');
+
+      window.toggleSidebar = function () {
+        sidebar.classList.toggle('collapsed');
+        localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+      };
+    })();
+  </script>
 </body>
 </html>

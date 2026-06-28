@@ -1,40 +1,65 @@
-<div id="pages-table" class="bg-white border rounded overflow-x-auto">
-  <table class="min-w-full text-sm">
-    <thead class="bg-gray-100 text-left">
-      <tr>
-        <th class="px-3 py-2">URL</th>
-        <th class="px-3 py-2">Status</th>
-        <th class="px-3 py-2">Title</th>
-        <th class="px-3 py-2">Meta Description</th>
-        <th class="px-3 py-2">H1s</th>
-        <th class="px-3 py-2">Issues</th>
-        <th class="px-3 py-2"></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for page in pages %}
-      <tr class="border-t {% if page.error %}bg-red-50{% endif %}">
-        <td class="px-3 py-2 max-w-xs truncate">{{ page.url }}</td>
-        <td class="px-3 py-2">{{ page.status_code or page.error }}</td>
-        <td class="px-3 py-2 max-w-xs truncate">{{ page.title or "-" }}</td>
-        <td class="px-3 py-2 max-w-xs truncate">{{ page.meta_description or "-" }}</td>
-        <td class="px-3 py-2">{{ page.h1|length if page.h1 else 0 }}</td>
-        <td class="px-3 py-2">
-          {% if page.error %}
-          <span class="text-gray-400">-</span>
-          {% elif page.issues|length %}
-          <span class="text-amber-700 bg-amber-100 px-2 py-0.5 rounded text-xs">{{ page.issues|length }} issue{{ "s" if page.issues|length != 1 else "" }}</span>
-          {% else %}
-          <span class="text-green-700 bg-green-100 px-2 py-0.5 rounded text-xs">No issues</span>
-          {% endif %}
-        </td>
-        <td class="px-3 py-2">
-          <a href="/projects/{{ page.project_id }}/pages/{{ page.id }}" class="text-blue-600">View</a>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="7" class="px-3 py-4 text-gray-500">No pages crawled yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div id="pages-table" style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+  <div style="padding:12px 16px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:8px;">
+    <span style="font-size:13px;font-weight:600;color:#0f172a;">Crawled Pages</span>
+    {% if pages %}
+    <span style="font-size:11px;background:#f1f5f9;color:#64748b;padding:1px 7px;border-radius:10px;">{{ pages|length }}</span>
+    {% endif %}
+  </div>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <th style="padding:8px 16px;text-align:left;font-size:11px;font-weight:500;color:#94a3b8;">URL</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:500;color:#94a3b8;">Status</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:500;color:#94a3b8;">Title</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:500;color:#94a3b8;">Meta Description</th>
+          <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:500;color:#94a3b8;">H1s</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:500;color:#94a3b8;">Issues</th>
+          <th style="padding:8px 12px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for page in pages %}
+        <tr style="border-bottom:1px solid #f8fafc;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+          <td style="padding:9px 16px;max-width:260px;">
+            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#0f172a;" title="{{ page.url }}">{{ page.url }}</div>
+          </td>
+          <td style="padding:9px 12px;">
+            {% if page.status_code %}
+            <span style="font-size:11px;padding:1px 6px;border-radius:4px;font-weight:600;{% if page.status_code == 200 %}background:#dcfce7;color:#15803d;{% elif page.status_code >= 400 %}background:#fee2e2;color:#dc2626;{% else %}background:#fef9c3;color:#a16207;{% endif %}">{{ page.status_code }}</span>
+            {% elif page.error %}<span style="font-size:11px;color:#dc2626;">Error</span>
+            {% else %}<span style="color:#cbd5e1;">—</span>{% endif %}
+          </td>
+          <td style="padding:9px 12px;max-width:180px;">
+            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:{% if page.title %}#0f172a{% else %}#cbd5e1{% endif %};" title="{{ page.title or '' }}">{{ page.title or "—" }}</div>
+          </td>
+          <td style="padding:9px 12px;max-width:180px;">
+            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:{% if page.meta_description %}#64748b{% else %}#cbd5e1{% endif %};" title="{{ page.meta_description or '' }}">{{ page.meta_description or "—" }}</div>
+          </td>
+          <td style="padding:9px 12px;text-align:center;color:#64748b;">{{ page.h1|length if page.h1 else 0 }}</td>
+          <td style="padding:9px 12px;">
+            {% if page.error %}
+            <span style="font-size:11px;color:#dc2626;">Crawl failed</span>
+            {% elif page.issues|length %}
+            <span style="font-size:11px;padding:1px 7px;border-radius:4px;font-weight:600;background:#fef9c3;color:#a16207;">{{ page.issues|length }} issue{{ 's' if page.issues|length != 1 else '' }}</span>
+            {% else %}
+            <span style="font-size:11px;padding:1px 7px;border-radius:4px;font-weight:600;background:#dcfce7;color:#15803d;">Clean</span>
+            {% endif %}
+          </td>
+          <td style="padding:9px 12px;text-align:right;">
+            <a href="/projects/{{ page.project_id }}/pages/{{ page.id }}"
+               style="font-size:11px;font-weight:600;color:#4f46e5;text-decoration:none;padding:4px 10px;border-radius:5px;border:1px solid #e0e7ff;background:#eef2ff;"
+               onmouseover="this.style.background='#e0e7ff'" onmouseout="this.style.background='#eef2ff'">Audit →</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" style="padding:36px;text-align:center;color:#94a3b8;font-size:13px;">
+            No pages crawled yet. Click <strong style="color:#374151;">Crawl Site</strong> to start.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>

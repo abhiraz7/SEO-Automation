@@ -1,12 +1,11 @@
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from .. import crawler, models
 from ..database import get_db
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 
 PAGE_FIELDS = [
     "status_code", "error", "title", "meta_description", "meta_keywords",
@@ -45,34 +44,22 @@ def _get_project(db: Session, project_id: int) -> models.Project:
     return project
 
 
-def _pages_response(request: Request, db: Session, project: models.Project):
-    pages = (
-        db.query(models.Page)
-        .filter(models.Page.project_id == project.id)
-        .order_by(models.Page.url)
-        .all()
-    )
-    return templates.TemplateResponse(
-        request, "partials/pages_table.html", {"pages": pages, "project": project}
-    )
-
 
 @router.post("/projects/{project_id}/crawl")
-def crawl_project(project_id: int, request: Request, db: Session = Depends(get_db)):
+def crawl_project(project_id: int, db: Session = Depends(get_db)):
     project = _get_project(db, project_id)
     for data in crawler.crawl_site(project.base_url):
         upsert_page(db, project_id, data)
-    return _pages_response(request, db, project)
+    return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
 
 
 @router.post("/projects/{project_id}/crawl-single")
 def crawl_single(
     project_id: int,
-    request: Request,
     url: str = Form(None),
     db: Session = Depends(get_db),
 ):
     project = _get_project(db, project_id)
     data = crawler.crawl_single_page(url or project.base_url)
     upsert_page(db, project_id, data)
-    return _pages_response(request, db, project)
+    return RedirectResponse(url=f"/projects/{project_id}", status_code=303)

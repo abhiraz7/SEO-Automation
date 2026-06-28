@@ -1,6 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from .. import audit as audit_engine
@@ -9,7 +8,6 @@ from ..database import get_db
 from . import crawl
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 
 
 def _get_project(db: Session, project_id: int) -> models.Project:
@@ -28,21 +26,13 @@ def _persist_issues(db: Session, project_id: int, issues_by_page: dict):
 
 
 @router.post("/projects/{project_id}/audit")
-def run_audit(project_id: int, request: Request, db: Session = Depends(get_db)):
+def run_audit(project_id: int, db: Session = Depends(get_db)):
     project = _get_project(db, project_id)
     pages = db.query(models.Page).filter(models.Page.project_id == project_id).all()
 
     _persist_issues(db, project_id, audit_engine.run_audit(pages))
 
-    pages = (
-        db.query(models.Page)
-        .filter(models.Page.project_id == project_id)
-        .order_by(models.Page.url)
-        .all()
-    )
-    return templates.TemplateResponse(
-        request, "partials/pages_table.html", {"pages": pages, "project": project}
-    )
+    return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
 
 
 @router.post("/projects/{project_id}/pages/{page_id}/reaudit")

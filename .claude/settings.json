@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Test-NetConnection -ComputerName \"2406:da14:25a:5801:6d39:ecb1:8c0f:a22d\" -Port 5432 -WarningAction SilentlyContinue)",
+      "Bash(python -c ' *)",
+      "Bash(netstat -ano)"
+    ]
+  }
+}

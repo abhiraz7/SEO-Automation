@@ -1,32 +1,629 @@
 {% extends "base.html" %}
+
 {% block topbar %}
-<div class="flex items-center justify-between flex-wrap gap-2">
-  <div>
-    <div class="text-sm text-gray-500"><a href="/" class="hover:underline">Projects</a> / {{ project.name }}</div>
-    <div class="font-semibold">{{ project.base_url }}</div>
+<div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px;min-width:0;">
+  <div style="min-width:0;flex:1;">
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:3px;display:flex;align-items:center;gap:4px;">
+      <a href="/" style="color:#94a3b8;text-decoration:none;" onmouseover="this.style.color='#0f172a'" onmouseout="this.style.color='#94a3b8'">Projects</a>
+      <span style="opacity:0.4;">/</span>
+      <span style="color:#0f172a;font-weight:600;">{{ project.name }}</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+      <div style="font-size:14px;font-weight:700;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:380px;" title="{{ project.base_url }}">{{ project.base_url }}</div>
+      <a href="{{ project.base_url }}" target="_blank" rel="noopener" style="color:#94a3b8;flex-shrink:0;" title="Open site">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+      </a>
+      <span style="font-size:10px;padding:1px 7px;border-radius:10px;background:#dcfce7;color:#15803d;font-weight:700;">Active</span>
+    </div>
+    <!-- Status pills -->
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+      <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:#f1f5f9;color:#475569;">
+        🕷️ Last Crawl: {{ last_crawled_ago }}
+      </span>
+      <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:#fff7ed;color:#c2410c;">
+        ⚡ Automation: Manual
+      </span>
+      <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:#f0f9ff;color:#0369a1;">
+        ⚡ Next: Not scheduled
+      </span>
+      <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:#f8fafc;color:#94a3b8;">
+        🛡️ Firecrawl: Not configured
+      </span>
+    </div>
   </div>
-  <div class="flex gap-2">
-    <button
-      hx-post="/projects/{{ project.id }}/crawl"
-      hx-target="#pages-table"
-      hx-swap="outerHTML"
-      hx-indicator="#crawl-spinner"
-      class="bg-blue-600 text-white px-4 py-2 rounded text-sm htmx-request:opacity-50">
-      Crawl Site
-    </button>
-    <button
-      hx-post="/projects/{{ project.id }}/audit"
-      hx-target="#pages-table"
-      hx-swap="outerHTML"
-      hx-indicator="#audit-spinner"
-      class="bg-emerald-600 text-white px-4 py-2 rounded text-sm htmx-request:opacity-50">
-      Run Audit
-    </button>
+  <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+    <!-- Crawl + settings -->
+    <div style="display:flex;align-items:center;gap:1px;">
+      <form id="crawl-form" method="post" action="/projects/{{ project.id }}/crawl" style="display:inline;">
+        <button type="submit" id="crawl-btn"
+          style="display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px 0 0 6px;border:1px solid #e2e8f0;border-right:none;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer;transition:background 0.15s;"
+          onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#fff'">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+          Crawl
+        </button>
+      </form>
+      <button onclick="openDrawer('settings-drawer')" title="Crawler settings"
+        style="display:flex;align-items:center;justify-content:center;width:30px;height:31px;border-radius:0 6px 6px 0;border:1px solid #e2e8f0;background:#fff;color:#64748b;cursor:pointer;transition:background 0.15s;"
+        onmouseover="this.style.background='#f8fafc';this.style.color='#4f46e5'" onmouseout="this.style.background='#fff';this.style.color='#64748b'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="13" height="13"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
+      </button>
+    </div>
+    <form id="audit-form" method="post" action="/projects/{{ project.id }}/audit" style="display:inline;">
+      <button type="submit"
+        style="display:flex;align-items:center;gap:5px;padding:6px 14px;border-radius:6px;border:none;background:linear-gradient(135deg,#4f46e5,#6d28d9);color:#fff;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 1px 4px rgba(79,70,229,0.25);transition:opacity 0.15s,box-shadow 0.15s;"
+        onmouseover="this.style.boxShadow='0 4px 12px rgba(79,70,229,0.4)'" onmouseout="this.style.boxShadow='0 1px 4px rgba(79,70,229,0.25)'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+        Run Audit
+      </button>
+    </form>
   </div>
 </div>
 {% endblock %}
+
 {% block content %}
-<span id="crawl-spinner" class="htmx-indicator text-sm text-gray-500 block mb-2">Crawling, this can take a moment...</span>
-<span id="audit-spinner" class="htmx-indicator text-sm text-gray-500 block mb-2">Auditing pages...</span>
-{% include "partials/pages_table.html" %}
+
+{# ── Computed values ─────────────────────────────── #}
+{% set total_pages = pages|length %}
+{% set ti = namespace(n=0) %}
+{% set ci = namespace(n=0) %}
+{% set wi = namespace(n=0) %}
+{% set pf = namespace(n=0) %}
+{% for cat, issues in grouped_issues.items() %}
+  {% for i in issues %}
+    {% set ti.n = ti.n + 1 %}
+    {% if i.severity == 'error' %}{% set ci.n = ci.n + 1 %}{% endif %}
+    {% if i.severity == 'warning' %}{% set wi.n = wi.n + 1 %}{% endif %}
+  {% endfor %}
+{% endfor %}
+{% for pd in page_data %}
+  {% for s in pd.suggestions %}{% set pf.n = pf.n + 1 %}{% endfor %}
+{% endfor %}
+{% set pw = namespace(n=0) %}
+{% for p in pages %}{% if p.issues|length > 0 %}{% set pw.n = pw.n + 1 %}{% endif %}{% endfor %}
+{% set health = ((total_pages - pw.n) / total_pages * 100)|int if total_pages > 0 else 0 %}
+
+<style>
+  /* ── Spider crawl ── */
+  /* bar straddles header/content boundary so thread sits exactly on y=52 */
+  #spider-bar { display:none; position:fixed; top:43px; left:0; right:0; z-index:300; height:18px; pointer-events:none; }
+  #spider-thread { position:absolute; top:9px; left:0; right:0; height:1px; background:repeating-linear-gradient(90deg,#c7d2fe 0,#c7d2fe 6px,transparent 6px,transparent 14px); }
+  #spider-walker { position:absolute; top:0; animation: spiderMove 16s linear infinite; }
+  #spider-label { position:absolute; right:24px; top:1px; font-size:10px; font-weight:700; color:#4f46e5; letter-spacing:0.09em; text-transform:uppercase; animation: labelPulse 1.2s ease-in-out infinite; }
+  /* Leg strokes */
+  .sp-leg { stroke:#1e1b4b; stroke-width:2.5; stroke-linecap:round; fill:none; }
+  /* Left legs: rotate around each leg's attachment point on left body */
+  .sp-l1 { animation:walkL .55s ease-in-out infinite 0s;   transform-origin:22px 14px; }
+  .sp-l2 { animation:walkL .55s ease-in-out infinite .275s; transform-origin:22px 20px; }
+  .sp-l3 { animation:walkL .55s ease-in-out infinite 0s;   transform-origin:22px 26px; }
+  .sp-l4 { animation:walkL .55s ease-in-out infinite .275s; transform-origin:22px 32px; }
+  /* Right legs: rotate around each leg's attachment point on right body */
+  .sp-r1 { animation:walkR .55s ease-in-out infinite .275s; transform-origin:36px 14px; }
+  .sp-r2 { animation:walkR .55s ease-in-out infinite 0s;   transform-origin:36px 20px; }
+  .sp-r3 { animation:walkR .55s ease-in-out infinite .275s; transform-origin:36px 26px; }
+  .sp-r4 { animation:walkR .55s ease-in-out infinite 0s;   transform-origin:36px 32px; }
+  /* Body bob */
+  #spider-walker svg { animation:spiderBob .55s ease-in-out infinite; }
+  @keyframes spiderMove { from { left:-80px; } to { left:calc(100% + 80px); } }
+  @keyframes walkL { 0%,100%{ transform:rotate(-22deg); } 50%{ transform:rotate(22deg); } }
+  @keyframes walkR { 0%,100%{ transform:rotate(22deg); } 50%{ transform:rotate(-22deg); } }
+  @keyframes spiderBob { 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(3px); } }
+  @keyframes labelPulse { 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
+
+  /* ── KPI cards ── */
+  .kpi-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; position:relative; overflow:hidden; transition:transform .2s ease, box-shadow .2s ease; cursor:default; }
+  .kpi-card:hover { transform:translateY(-3px); box-shadow:0 8px 24px rgba(0,0,0,0.08); }
+  .kpi-card-icon { position:absolute; top:14px; right:14px; width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .kpi-number { font-size:28px; font-weight:800; line-height:1; margin:8px 0 4px; letter-spacing:-0.02em; }
+  .kpi-label { font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.07em; }
+  .kpi-sub { font-size:11px; color:#94a3b8; margin-top:3px; }
+
+  /* ── Issues accordion ── */
+  details.ig { margin-bottom:5px; border-radius:10px; overflow:hidden; border:1px solid #e2e8f0; background:#fff; transition:box-shadow .2s; }
+  details.ig[open] { box-shadow:0 4px 16px rgba(0,0,0,0.06); }
+  details.ig summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:10px; padding:12px 16px; user-select:none; background:#fff; transition:background .15s; }
+  details.ig summary::-webkit-details-marker { display:none; }
+  details.ig summary:hover { background:#f8fafc; }
+  details.ig[open] summary { background:#f8faff; border-bottom:1px solid #e0e7ff; }
+  details.ig summary .caret { transition:transform .2s; flex-shrink:0; }
+  details.ig[open] summary .caret { transform:rotate(90deg); }
+  .ig-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .ig-table th { padding:8px 16px; text-align:left; font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid #f1f5f9; background:#fafafa; }
+  .ig-table td { padding:9px 16px; border-bottom:1px solid #f8fafc; vertical-align:middle; }
+  .ig-table tr:last-child td { border-bottom:none; }
+  .ig-table tr:hover td { background:#f8fafc; }
+
+  /* ── Drawer ── */
+  #drawer-backdrop { display:none; position:fixed; inset:0; background:rgba(15,23,42,.25); z-index:400; backdrop-filter:blur(2px); }
+  .vtx-drawer { position:fixed; top:0; right:0; width:500px; max-width:95vw; height:100vh; background:#fff; box-shadow:-8px 0 40px rgba(0,0,0,.14); z-index:401; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .28s cubic-bezier(.4,0,.2,1); }
+  .vtx-drawer.open { transform:translateX(0); }
+  .drawer-head { padding:18px 20px 14px; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+  .drawer-body { flex:1; overflow-y:auto; padding:16px 20px; }
+  .drawer-foot { padding:14px 20px; border-top:1px solid #e2e8f0; display:flex; gap:8px; justify-content:flex-end; flex-shrink:0; }
+  .dsec summary { list-style:none; display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; color:#0f172a; padding:10px 0; cursor:pointer; user-select:none; border-bottom:1px solid #f1f5f9; margin-bottom:12px; }
+  .dsec summary::-webkit-details-marker { display:none; }
+  .dsec summary .dc { transition:transform .2s; margin-left:auto; color:#94a3b8; }
+  .dsec[open] summary .dc { transform:rotate(90deg); }
+  .drow { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .drow label { font-size:12px; color:#475569; font-weight:500; }
+  .dinput { font-size:12px; padding:5px 10px; border:1px solid #e2e8f0; border-radius:6px; color:#0f172a; outline:none; background:#fff; transition:border-color .15s; }
+  .dinput:focus { border-color:#4f46e5; box-shadow:0 0 0 2px rgba(79,70,229,.1); }
+  .dselect { font-size:12px; padding:5px 10px; border:1px solid #e2e8f0; border-radius:6px; color:#0f172a; outline:none; background:#fff; cursor:pointer; }
+  /* Toggle switch */
+  .tog { position:relative; width:38px; height:21px; flex-shrink:0; }
+  .tog input { opacity:0; width:0; height:0; }
+  .tog-s { position:absolute; inset:0; border-radius:21px; background:#e2e8f0; cursor:pointer; transition:background .2s; }
+  .tog-s::before { content:''; position:absolute; width:17px; height:17px; border-radius:50%; background:#fff; left:2px; top:2px; transition:transform .2s; box-shadow:0 1px 3px rgba(0,0,0,.2); }
+  .tog input:checked + .tog-s { background:#4f46e5; }
+  .tog input:checked + .tog-s::before { transform:translateX(17px); }
+  /* Chip */
+  .chip { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; padding:3px 8px; border-radius:10px; }
+
+  /* ── Toasts ── */
+  #toast-wrap { position:fixed; bottom:24px; right:24px; z-index:500; display:flex; flex-direction:column; gap:8px; }
+  .vtx-toast { display:flex; align-items:center; gap:10px; padding:12px 16px; border-radius:10px; background:#0f172a; color:#fff; font-size:13px; font-weight:500; box-shadow:0 8px 24px rgba(0,0,0,.2); transform:translateX(calc(100% + 28px)); transition:transform .3s cubic-bezier(.4,0,.2,1); min-width:220px; max-width:320px; }
+  .vtx-toast.show { transform:translateX(0); }
+  .vtx-toast.success { background:linear-gradient(135deg,#15803d,#16a34a); }
+  .vtx-toast.info { background:linear-gradient(135deg,#1d4ed8,#4f46e5); }
+  .vtx-toast.warn { background:linear-gradient(135deg,#b45309,#d97706); }
+
+  /* ── Queue badge pulse ── */
+  @keyframes badgePulse { 0%,100%{ box-shadow:0 0 0 0 rgba(79,70,229,.5) } 50%{ box-shadow:0 0 0 4px rgba(79,70,229,0) } }
+  .q-badge { animation:badgePulse 2s infinite; }
+
+  /* ── Range slider ── */
+  .vtx-range { -webkit-appearance:none; width:100%; height:4px; border-radius:4px; background:#e2e8f0; outline:none; }
+  .vtx-range::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:#4f46e5; cursor:pointer; box-shadow:0 1px 4px rgba(79,70,229,.4); }
+
+  /* ── Progress ring ── */
+  .prog-ring { transform:rotate(-90deg); }
+
+  /* ── Animated counter ── */
+  @keyframes countUp { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+  .kpi-number { animation:countUp .4s ease both; }
+</style>
+
+<!-- Spider crawl bar -->
+<div id="spider-bar">
+  <div id="spider-thread"></div>
+  <div id="spider-walker">
+    <svg width="22" height="18" viewBox="0 0 68 52" xmlns="http://www.w3.org/2000/svg">
+      <!-- Left legs (4), rotating around attachment on left body wall -->
+      <line class="sp-leg sp-l1" x1="22" y1="14" x2="4"  y2="3"/>
+      <line class="sp-leg sp-l2" x1="22" y1="20" x2="1"  y2="15"/>
+      <line class="sp-leg sp-l3" x1="22" y1="26" x2="1"  y2="31"/>
+      <line class="sp-leg sp-l4" x1="22" y1="32" x2="5"  y2="46"/>
+      <!-- Right legs (4), rotating around attachment on right body wall -->
+      <line class="sp-leg sp-r1" x1="36" y1="14" x2="56" y2="3"/>
+      <line class="sp-leg sp-r2" x1="36" y1="20" x2="60" y2="15"/>
+      <line class="sp-leg sp-r3" x1="36" y1="26" x2="60" y2="31"/>
+      <line class="sp-leg sp-r4" x1="36" y1="32" x2="54" y2="46"/>
+      <!-- Abdomen (rear, larger oval) -->
+      <ellipse cx="17" cy="23" rx="13" ry="17" fill="#1e1b4b"/>
+      <!-- Abdomen dorsal pattern -->
+      <ellipse cx="15" cy="20" rx="4.5" ry="7" fill="rgba(99,102,241,0.28)"/>
+      <!-- Cephalothorax (front, face to the right) -->
+      <ellipse cx="33" cy="23" rx="13" ry="11" fill="#312e81"/>
+      <!-- Eyes: two large forward-facing pairs -->
+      <circle cx="42" cy="19" r="2.8" fill="#7c3aed"/>
+      <circle cx="46" cy="18" r="2"   fill="#a78bfa"/>
+      <circle cx="42" cy="27" r="2.8" fill="#7c3aed"/>
+      <circle cx="46" cy="28" r="2"   fill="#a78bfa"/>
+      <!-- Pedipalps (small feelers pointing right) -->
+      <line x1="44" y1="21" x2="52" y2="19" stroke="#312e81" stroke-width="2" stroke-linecap="round"/>
+      <line x1="44" y1="25" x2="52" y2="27" stroke="#312e81" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <span id="spider-label">Crawling</span>
+</div>
+
+{# ── KPI Cards ──────────────────────────────────── #}
+<div style="padding:16px 24px;display:grid;grid-template-columns:repeat(6,1fr);gap:10px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
+
+  <!-- Site Health -->
+  <div class="kpi-card" style="border-left:4px solid #16a34a;background:linear-gradient(135deg,#fff 60%,#f0fdf4);">
+    <div class="kpi-icon" style="position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:8px;background:#dcfce7;display:flex;align-items:center;justify-content:center;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="1.5" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z"/></svg>
+    </div>
+    <div class="kpi-label">Site Health</div>
+    <div class="kpi-number" style="color:{% if health >= 80 %}#15803d{% elif health >= 50 %}#a16207{% else %}#dc2626{% endif %};">{{ health }}%</div>
+    <div class="kpi-sub">{{ total_pages - pw.n }} / {{ total_pages }} clean pages</div>
+    <div style="margin-top:8px;height:4px;background:#e2e8f0;border-radius:4px;overflow:hidden;">
+      <div style="height:100%;width:{{ health }}%;background:{% if health >= 80 %}#16a34a{% elif health >= 50 %}#d97706{% else %}#dc2626{% endif %};border-radius:4px;transition:width 1s ease;"></div>
+    </div>
+  </div>
+
+  <!-- Pages -->
+  <div class="kpi-card" style="border-left:4px solid #0284c7;background:linear-gradient(135deg,#fff 60%,#f0f9ff);">
+    <div class="kpi-icon" style="position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:8px;background:#e0f2fe;display:flex;align-items:center;justify-content:center;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="1.5" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>
+    </div>
+    <div class="kpi-label">Pages Crawled</div>
+    <div class="kpi-number" style="color:#0284c7;">{{ total_pages }}</div>
+    <div class="kpi-sub">indexed pages</div>
+  </div>
+
+  <!-- Total Issues -->
+  <div class="kpi-card" style="border-left:4px solid #d97706;background:linear-gradient(135deg,#fff 60%,#fffbeb);">
+    <div class="kpi-icon" style="position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:8px;background:#fef3c7;display:flex;align-items:center;justify-content:center;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="1.5" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/></svg>
+    </div>
+    <div class="kpi-label">Total Issues</div>
+    <div class="kpi-number" style="color:{% if ti.n > 0 %}#b45309{% else %}#15803d{% endif %};">{{ ti.n }}</div>
+    <div class="kpi-sub">across all pages</div>
+  </div>
+
+  <!-- Critical -->
+  <div class="kpi-card" style="border-left:4px solid #dc2626;background:linear-gradient(135deg,#fff 60%,#fef2f2);">
+    <div class="kpi-icon" style="position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:8px;background:#fee2e2;display:flex;align-items:center;justify-content:center;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="1.5" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+    </div>
+    <div class="kpi-label">Critical Errors</div>
+    <div class="kpi-number" style="color:{% if ci.n > 0 %}#dc2626{% else %}#15803d{% endif %};">{{ ci.n }}</div>
+    <div class="kpi-sub">need fix now</div>
+  </div>
+
+  <!-- Warnings -->
+  <div class="kpi-card" style="border-left:4px solid #ea580c;background:linear-gradient(135deg,#fff 60%,#fff7ed);">
+    <div class="kpi-icon" style="position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:8px;background:#ffedd5;display:flex;align-items:center;justify-content:center;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="1.5" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></svg>
+    </div>
+    <div class="kpi-label">Warnings</div>
+    <div class="kpi-number" style="color:{% if wi.n > 0 %}#c2410c{% else %}#15803d{% endif %};">{{ wi.n }}</div>
+    <div class="kpi-sub">opportunities</div>
+  </div>
+
+  <!-- AI Suggestions -->
+  <div class="kpi-card" style="border-left:4px solid #7c3aed;background:linear-gradient(135deg,#fff 60%,#faf5ff);cursor:pointer;" onclick="document.getElementById('audit-form').submit()">
+    <div class="kpi-icon" style="position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:8px;background:#ede9fe;display:flex;align-items:center;justify-content:center;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.5" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
+    </div>
+    <div class="kpi-label">AI Suggestions</div>
+    <div class="kpi-number" style="color:#7c3aed;">{{ pf.n }}</div>
+    <div class="kpi-sub">generated</div>
+  </div>
+
+</div>
+
+{# ── Issues by Category ──────────────────────────── #}
+{% if grouped_issues %}
+<div style="padding:20px 24px 32px;">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+    <div style="width:28px;height:28px;border-radius:8px;background:#eef2ff;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="1.5" width="15" height="15"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z"/></svg>
+    </div>
+    <span style="font-size:15px;font-weight:700;color:#0f172a;">Issues by category</span>
+    <span style="font-size:11px;background:#eef2ff;color:#4f46e5;padding:2px 9px;border-radius:10px;font-weight:700;">{{ grouped_issues|length }}</span>
+    <span style="font-size:11px;color:#94a3b8;margin-left:auto;">{{ ti.n }} total issues across {{ total_pages }} pages</span>
+  </div>
+
+  {% set cat_colors = {
+    'title': '#4f46e5',
+    'meta_description': '#0284c7',
+    'h1': '#7c3aed',
+    'h2': '#6d28d9',
+    'image_alt': '#0891b2',
+    'schema': '#15803d',
+    'canonical': '#b45309',
+    'opengraph': '#c026d3',
+    'twitter': '#1d4ed8',
+    'lang': '#16a34a',
+    'content': '#d97706',
+  } %}
+  {% set cat_labels = {
+    'title': 'Meta Title',
+    'meta_description': 'Meta Description',
+    'h1': 'H1 Heading',
+    'h2': 'H2 Tags',
+    'image_alt': 'Image Alt Text',
+    'schema': 'Schema Markup',
+    'canonical': 'Canonical Link',
+    'opengraph': 'Open Graph',
+    'twitter': 'Twitter Card',
+    'lang': 'Lang Attribute',
+    'content': 'Content Quality',
+  } %}
+
+  {% for category, issues in grouped_issues.items() %}
+  {% set err_n = issues|selectattr('severity','eq','error')|list|length %}
+  {% set warn_n = issues|selectattr('severity','eq','warning')|list|length %}
+  {% set accent = cat_colors.get(category, '#4f46e5') %}
+  {% set label = cat_labels.get(category, category|replace('_',' ')|title) %}
+  {% set uid_seen = namespace(ids=[]) %}
+  {% set upage_n = namespace(n=0) %}
+  {% for i in issues %}
+    {% if i.page.id not in uid_seen.ids %}
+      {% set uid_seen.ids = uid_seen.ids + [i.page.id] %}
+      {% set upage_n.n = upage_n.n + 1 %}
+    {% endif %}
+  {% endfor %}
+
+  <details class="ig" style="border-left:3px solid {{ accent }};">
+    <summary>
+      <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.5" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+      <span style="width:8px;height:8px;border-radius:50%;background:{{ accent }};flex-shrink:0;"></span>
+      <span style="font-size:13px;font-weight:600;color:#0f172a;flex:1;">{{ label }}</span>
+      <span style="font-size:11px;color:#94a3b8;margin-right:12px;">{{ upage_n.n }}/{{ total_pages }} pages</span>
+      {% if err_n > 0 %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;font-weight:700;margin-right:4px;">{{ err_n }} error{% if err_n != 1 %}s{% endif %}</span>{% endif %}
+      {% if warn_n > 0 %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fef9c3;color:#a16207;font-weight:700;margin-right:8px;">{{ warn_n }} warning{% if warn_n != 1 %}s{% endif %}</span>{% endif %}
+      <span style="font-size:11px;font-weight:600;color:{{ accent }};padding:3px 10px;border-radius:5px;border:1px solid;border-color:{{ accent }}20;background:{{ accent }}10;white-space:nowrap;">View tasks</span>
+    </summary>
+    <table class="ig-table">
+      <thead>
+        <tr>
+          <th style="width:38%">🌐 Page</th>
+          <th>Issue</th>
+          <th style="width:95px">Severity</th>
+          <th style="width:70px;text-align:right;padding-right:16px;">Fix</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for issue in issues %}
+        <tr>
+          <td style="font-size:11px;color:#64748b;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ issue.page.url }}">{{ issue.page.url }}</td>
+          <td style="font-size:11px;color:#0f172a;">{{ issue.message }}</td>
+          <td>
+            {% if issue.severity == 'error' %}
+            <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;font-weight:700;">Error</span>
+            {% else %}
+            <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fef9c3;color:#a16207;font-weight:700;">Warning</span>
+            {% endif %}
+          </td>
+          <td style="text-align:right;padding-right:16px;">
+            <a href="/projects/{{ project.id }}/pages/{{ issue.page.id }}"
+               style="font-size:11px;font-weight:600;color:{{ accent }};text-decoration:none;padding:3px 9px;border-radius:5px;border:1px solid {{ accent }}30;background:{{ accent }}10;white-space:nowrap;transition:background .15s;"
+               onmouseover="this.style.background='{{ accent }}20'" onmouseout="this.style.background='{{ accent }}10'">Fix →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endfor %}
+</div>
+
+{% else %}
+<div style="padding:64px 24px;text-align:center;">
+  <div style="max-width:380px;margin:0 auto;">
+    <div style="font-size:48px;margin-bottom:16px;">{{ '🎉' if total_pages > 0 else '🕷️' }}</div>
+    <div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:6px;">
+      {% if total_pages == 0 %}No pages crawled yet{% else %}No issues found — site is clean!{% endif %}
+    </div>
+    <div style="font-size:13px;color:#64748b;margin-bottom:24px;">
+      {% if total_pages == 0 %}Click <strong>Crawl</strong> to discover pages, then <strong>Run Audit</strong>.{% else %}Click <strong>Run Audit</strong> to re-check {{ total_pages }} pages.{% endif %}
+    </div>
+    {% if total_pages == 0 %}
+    <form method="post" action="/projects/{{ project.id }}/crawl" style="display:inline;" onsubmit="startSpider()">
+      <button type="submit" style="padding:10px 24px;border-radius:8px;border:none;background:linear-gradient(135deg,#4f46e5,#6d28d9);color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(79,70,229,.3);">🕷️ Crawl Site</button>
+    </form>
+    {% else %}
+    <form method="post" action="/projects/{{ project.id }}/audit" style="display:inline;" onsubmit="showToast('🔍 Audit started…','info')">
+      <button type="submit" style="padding:10px 24px;border-radius:8px;border:none;background:linear-gradient(135deg,#4f46e5,#6d28d9);color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(79,70,229,.3);">Run Audit</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Crawler Settings Drawer ─────────────────────── #}
+<div id="settings-drawer" class="vtx-drawer">
+  <div class="drawer-head">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:#eef2ff;display:flex;align-items:center;justify-content:center;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="1.5" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
+      </div>
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#0f172a;">Crawler Settings</div>
+        <div style="font-size:11px;color:#94a3b8;">{{ project.base_url }}</div>
+      </div>
+    </div>
+    <button onclick="closeDrawer('settings-drawer')" style="width:28px;height:28px;border-radius:6px;border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#64748b;" onmouseover="this.style.background='#fee2e2';this.style.color='#dc2626'" onmouseout="this.style.background='#f8fafc';this.style.color='#64748b'">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body">
+
+    <!-- 🕷️ Crawler -->
+    <details class="dsec" open>
+      <summary>🕷️ Crawler<svg class="dc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg></summary>
+      <div class="drow"><label>User Agent</label><input class="dinput" style="width:200px;" value="VTechysSEOBot/1.0" placeholder="Bot user agent"/></div>
+      <div class="drow"><label>Max Depth</label><input class="dinput" style="width:80px;" type="number" value="3" min="1" max="10"/></div>
+      <div class="drow"><label>Crawl Delay (ms)</label><input class="dinput" style="width:80px;" type="number" value="500" min="0" step="100"/></div>
+      <div class="drow"><label>Timeout (s)</label><input class="dinput" style="width:80px;" type="number" value="30"/></div>
+      <div class="drow">
+        <label>Respect robots.txt</label>
+        <label class="tog"><input type="checkbox" checked><span class="tog-s"></span></label>
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:12px;color:#475569;font-weight:500;display:block;margin-bottom:5px;">Exclude patterns</label>
+        <textarea class="dinput" style="width:100%;height:60px;resize:vertical;font-family:monospace;font-size:11px;" placeholder="/admin/*&#10;/wp-json/*">/admin/*</textarea>
+      </div>
+    </details>
+
+    <!-- ⚡ Automation -->
+    <details class="dsec">
+      <summary>⚡ Automation<svg class="dc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg></summary>
+      <div class="drow">
+        <label>Automatic Crawling</label>
+        <label class="tog"><input type="checkbox"><span class="tog-s"></span></label>
+      </div>
+      <div class="drow">
+        <label>Schedule</label>
+        <select class="dselect">
+          <option>Every 24 Hours</option>
+          <option>Every 12 Hours</option>
+          <option>Every 6 Hours</option>
+          <option>Weekly</option>
+          <option>Custom Cron</option>
+        </select>
+      </div>
+      <div class="drow"><label>Timezone</label>
+        <select class="dselect">
+          <option>UTC</option><option>Asia/Kolkata</option><option>America/New_York</option><option>Europe/London</option>
+        </select>
+      </div>
+      <div class="drow"><label>Custom Cron</label><input class="dinput" style="width:140px;font-family:monospace;" placeholder="0 2 * * *" value="0 2 * * *"/></div>
+      <div style="padding:10px 12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:12px;">
+        <div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Preview</div>
+        <div style="font-size:12px;color:#4f46e5;font-weight:600;">Next: Tomorrow at 02:00 UTC</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">Then: Daily at 02:00 UTC</div>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+          <div style="font-size:10px;font-weight:600;color:#94a3b8;margin-bottom:2px;">Last Crawl</div>
+          <div style="font-size:12px;font-weight:600;color:#0f172a;">{{ last_crawled_ago }}</div>
+        </div>
+        <div style="flex:1;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+          <div style="font-size:10px;font-weight:600;color:#94a3b8;margin-bottom:2px;">Next Crawl</div>
+          <div style="font-size:12px;font-weight:600;color:#4f46e5;">Not scheduled</div>
+        </div>
+      </div>
+    </details>
+
+    <!-- ⚙️ Workers -->
+    <details class="dsec">
+      <summary>⚙️ Workers<svg class="dc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg></summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div><label style="font-size:11px;color:#64748b;font-weight:500;display:block;margin-bottom:4px;">Worker Count</label><input class="dinput" style="width:100%;" type="number" value="3" min="1" max="20"/></div>
+        <div><label style="font-size:11px;color:#64748b;font-weight:500;display:block;margin-bottom:4px;">Concurrency</label><input class="dinput" style="width:100%;" type="number" value="5" min="1" max="50"/></div>
+        <div><label style="font-size:11px;color:#64748b;font-weight:500;display:block;margin-bottom:4px;">Retry Attempts</label><input class="dinput" style="width:100%;" type="number" value="2" min="0" max="10"/></div>
+        <div><label style="font-size:11px;color:#64748b;font-weight:500;display:block;margin-bottom:4px;">Timeout (s)</label><input class="dinput" style="width:100%;" type="number" value="30"/></div>
+      </div>
+      <div style="margin-bottom:4px;font-size:11px;font-weight:600;color:#64748b;">Worker Health</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <span class="chip" style="background:#dcfce7;color:#15803d;">🟢 Healthy</span>
+        <span class="chip" style="background:#f1f5f9;color:#64748b;">3 workers</span>
+        <span class="chip" style="background:#dbeafe;color:#1d4ed8;">● Idle</span>
+      </div>
+    </details>
+
+    <!-- 🛡️ Verification -->
+    <details class="dsec">
+      <summary>🛡️ Verification<svg class="dc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg></summary>
+      <div class="drow">
+        <label>Firecrawl Validation</label>
+        <label class="tog"><input type="checkbox"><span class="tog-s"></span></label>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <label style="font-size:12px;color:#475569;font-weight:500;">Coverage Target</label>
+          <span style="font-size:12px;font-weight:700;color:#0d9488;" id="cov-val">98%</span>
+        </div>
+        <input type="range" class="vtx-range" min="50" max="100" value="98" oninput="document.getElementById('cov-val').textContent=this.value+'%'"/>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;">
+        <span style="font-size:18px;">🛡️</span>
+        <div>
+          <div style="font-size:12px;font-weight:700;color:#0d9488;">Not Configured</div>
+          <div style="font-size:11px;color:#64748b;">Add FIRECRAWL_API_KEY to activate</div>
+        </div>
+      </div>
+    </details>
+
+  </div>
+  <div class="drawer-foot">
+    <button onclick="closeDrawer('settings-drawer')" style="padding:7px 16px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#64748b;font-size:13px;font-weight:600;cursor:pointer;">Cancel</button>
+    <button onclick="saveSettings()" style="padding:7px 18px;border-radius:7px;border:none;background:linear-gradient(135deg,#4f46e5,#6d28d9);color:#fff;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(79,70,229,.3);">Save Settings</button>
+  </div>
+</div>
+
+{# ── Queue Drawer ─────────────────────────────────── #}
+<div id="queue-drawer" class="vtx-drawer">
+  <div class="drawer-head">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-size:16px;">📦</div>
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#0f172a;">Crawler Queue</div>
+        <div style="font-size:11px;color:#94a3b8;">Live job status</div>
+      </div>
+    </div>
+    <button onclick="closeDrawer('queue-drawer')" style="width:28px;height:28px;border-radius:6px;border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#64748b;" onmouseover="this.style.background='#fee2e2';this.style.color='#dc2626'" onmouseout="this.style.background='#f8fafc';this.style.color='#64748b'">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body">
+    <!-- Tabs -->
+    <div style="display:flex;gap:2px;background:#f1f5f9;border-radius:8px;padding:3px;margin-bottom:16px;">
+      {% for tab in ['Running','Queued','Completed','Failed'] %}
+      <button onclick="switchQTab(this,'{{ tab|lower }}')" data-qtab="{{ tab|lower }}"
+        style="flex:1;padding:5px 8px;border-radius:6px;border:none;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,color .15s;{% if loop.first %}background:#fff;color:#4f46e5;box-shadow:0 1px 3px rgba(0,0,0,.07);{% else %}background:transparent;color:#64748b;{% endif %}">
+        {{ tab }}
+      </button>
+      {% endfor %}
+    </div>
+    <!-- Tab content -->
+    {% for tab in ['running','queued','completed','failed'] %}
+    <div id="qtab-{{ tab }}" style="display:{% if loop.first %}block{% else %}none{% endif %};">
+      <div style="text-align:center;padding:48px 0;">
+        <div style="font-size:36px;margin-bottom:12px;">{% if tab == 'running' %}🔄{% elif tab == 'queued' %}📦{% elif tab == 'completed' %}✅{% else %}❌{% endif %}</div>
+        <div style="font-size:13px;font-weight:600;color:#64748b;">No {{ tab }} jobs</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:4px;">Jobs will appear here when crawling starts</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Backdrop -->
+<div id="drawer-backdrop" onclick="closeAllDrawers()"></div>
+
+<!-- Toasts -->
+<div id="toast-wrap"></div>
+
+<script>
+// ── Drawer system ──────────────────────────────────
+function openDrawer(id) {
+  document.getElementById('drawer-backdrop').style.display = 'block';
+  document.getElementById(id).classList.add('open');
+}
+function closeDrawer(id) {
+  document.getElementById(id).classList.remove('open');
+  var anyOpen = document.querySelectorAll('.vtx-drawer.open').length > 0;
+  if (!anyOpen) document.getElementById('drawer-backdrop').style.display = 'none';
+}
+function closeAllDrawers() {
+  document.querySelectorAll('.vtx-drawer').forEach(function(d){ d.classList.remove('open'); });
+  document.getElementById('drawer-backdrop').style.display = 'none';
+}
+
+// ── Queue tabs ─────────────────────────────────────
+function switchQTab(btn, tab) {
+  document.querySelectorAll('[data-qtab]').forEach(function(b){
+    b.style.background = 'transparent'; b.style.color = '#64748b'; b.style.boxShadow = '';
+  });
+  btn.style.background = '#fff'; btn.style.color = '#4f46e5'; btn.style.boxShadow = '0 1px 3px rgba(0,0,0,.07)';
+  document.querySelectorAll('[id^="qtab-"]').forEach(function(el){ el.style.display = 'none'; });
+  document.getElementById('qtab-' + tab).style.display = 'block';
+}
+
+// ── Spider crawl ───────────────────────────────────
+function startSpider() {
+  document.getElementById('spider-bar').style.display = 'block';
+  showToast('🕷️ Crawling started…', 'info');
+}
+document.getElementById('crawl-form').addEventListener('submit', startSpider);
+document.getElementById('audit-form').addEventListener('submit', function() {
+  showToast('🔍 Audit started…', 'info');
+});
+
+// ── Save settings (shell) ──────────────────────────
+function saveSettings() {
+  closeDrawer('settings-drawer');
+  showToast('✅ Settings saved', 'success');
+}
+
+// ── Toast ──────────────────────────────────────────
+function showToast(msg, type) {
+  var wrap = document.getElementById('toast-wrap');
+  var t = document.createElement('div');
+  t.className = 'vtx-toast ' + (type || 'success');
+  t.innerHTML = '<span>' + msg + '</span>';
+  wrap.appendChild(t);
+  requestAnimationFrame(function(){ requestAnimationFrame(function(){ t.classList.add('show'); }); });
+  setTimeout(function(){
+    t.classList.remove('show');
+    setTimeout(function(){ t.remove(); }, 320);
+  }, 3200);
+}
+</script>
+
 {% endblock %}
