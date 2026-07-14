@@ -4,6 +4,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
+from .keyword_locations import DEFAULT_LOCATION, semrush_database
 from .schemas import NormalizedKeyword
 
 
@@ -78,7 +79,7 @@ def _parse_csv_rows(text: str) -> list[dict]:
     return [dict(zip(headers, line.split(";"))) for line in lines[1:]]
 
 
-def fetch_keyword_overview(keyword: str) -> dict:
+def fetch_keyword_overview(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
     """
     Single-keyword lookup used for tracking + bulk analysis. Returns a dict
     with raw Semrush CSV field names (Ph, Nq, Cp, Co, Kd) plus an error key.
@@ -91,12 +92,16 @@ def fetch_keyword_overview(keyword: str) -> dict:
     if not api_key:
         return {"error": "No API key"}
 
+    database = semrush_database(location)
+    if database is None:
+        return {"error": f"Unsupported location: {location}"}
+
     result = {"Ph": keyword, "Nq": None, "Cp": None, "Co": None, "Kd": None, "error": None}
 
     try:
         url = (
             f"{SEMRUSH_BASE}/?type=phrase_all&key={api_key}"
-            f"&export_columns=Ph,Nq,Cp,Co&phrase={urllib.parse.quote(keyword)}&database=us"
+            f"&export_columns=Ph,Nq,Cp,Co&phrase={urllib.parse.quote(keyword)}&database={database}"
         )
         data = _parse_csv(_get(url))
         result["Nq"] = data.get("Nq")
@@ -113,7 +118,7 @@ def fetch_keyword_overview(keyword: str) -> dict:
     try:
         url = (
             f"{SEMRUSH_BASE}/?type=phrase_kdi&key={api_key}"
-            f"&export_columns=Ph,Kd&phrase={urllib.parse.quote(keyword)}&database=us"
+            f"&export_columns=Ph,Kd&phrase={urllib.parse.quote(keyword)}&database={database}"
         )
         data = _parse_csv(_get(url))
         result["Kd"] = data.get("Kd")
@@ -127,42 +132,44 @@ def fetch_keyword_overview(keyword: str) -> dict:
     return result
 
 
-def fetch_keywords_bulk(keywords: list[str]) -> dict:
+def fetch_keywords_bulk(keywords: list[str], location: str = DEFAULT_LOCATION) -> dict:
     """
     Bulk Analysis tab. NOTE: loops single-keyword lookups rather than
     Semrush's true batch export -- simplest correct MVP implementation.
     Revisit with a real batch report if per-keyword call volume becomes a
     cost problem (see keyword_provider.py routing assumptions).
     """
-    return {kw: fetch_keyword_overview(kw) for kw in keywords}
+    return {kw: fetch_keyword_overview(kw, location) for kw in keywords}
 
 
-def fetch_related_keywords(seed: str) -> list[dict]:
+def fetch_related_keywords(seed: str, location: str = DEFAULT_LOCATION) -> list[dict]:
     """Suggestions tab fallback. Returns raw CSV rows (Ph, Nq, Cp, Co)."""
     api_key = os.environ.get("SEMRUSH_API_KEY", "").strip()
-    if not api_key:
+    database = semrush_database(location)
+    if not api_key or database is None:
         return []
     try:
         url = (
             f"{SEMRUSH_BASE}/?type=phrase_related&key={api_key}"
             f"&export_columns=Ph,Nq,Cp,Co&phrase={urllib.parse.quote(seed)}"
-            f"&database=us&display_limit=20"
+            f"&database={database}&display_limit=20"
         )
         return _parse_csv_rows(_get(url))
     except Exception:
         return []
 
 
-def fetch_keyword_questions(seed: str) -> list[dict]:
+def fetch_keyword_questions(seed: str, location: str = DEFAULT_LOCATION) -> list[dict]:
     """Questions tab fallback. Returns raw CSV rows (Ph, Nq)."""
     api_key = os.environ.get("SEMRUSH_API_KEY", "").strip()
-    if not api_key:
+    database = semrush_database(location)
+    if not api_key or database is None:
         return []
     try:
         url = (
             f"{SEMRUSH_BASE}/?type=phrase_questions&key={api_key}"
             f"&export_columns=Ph,Nq&phrase={urllib.parse.quote(seed)}"
-            f"&database=us&display_limit=20"
+            f"&database={database}&display_limit=20"
         )
         return _parse_csv_rows(_get(url))
     except Exception:

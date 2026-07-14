@@ -17,6 +17,12 @@
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+    <select id="kr-location" title="Market / location for all keyword lookups"
+      style="padding:7px 10px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer;">
+      {% for code, name in locations.items() %}
+      <option value="{{ code }}" {% if code == default_location %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
     <a href="/projects/{{ project.id }}/keywords/export"
       style="display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;transition:background .15s;"
       onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#fff'">
@@ -217,6 +223,12 @@
 <script>
   const KR_PROJECT_ID = {{ project.id }};
 
+  // Market for all provider lookups -- explicit per search, never a hidden
+  // env-var default (spec Bug 2).
+  function krLocation() {
+    return document.getElementById('kr-location').value;
+  }
+
   function krShowTab(name) {
     document.querySelectorAll('.kr-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === name));
     document.querySelectorAll('.kr-panel').forEach(el => el.classList.toggle('active', el.id === 'panel-' + name));
@@ -258,7 +270,7 @@
 
   async function krViewSerp(trackedId) {
     krToast('Loading live SERP…');
-    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/${trackedId}/serp`);
+    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/${trackedId}/serp?location=${krLocation()}`);
     const data = await res.json();
     // Live lookup only -- intentionally not persisted, see keyword_provider.py.
     alert(JSON.stringify(data, null, 2).slice(0, 2000));
@@ -277,7 +289,7 @@
     const body = document.getElementById('kr-suggestions-body');
     if (!seed) return;
     body.innerHTML = '<tr><td colspan="5" class="kr-empty">Loading…</td></tr>';
-    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/suggestions?seed=${encodeURIComponent(seed)}`);
+    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/suggestions?seed=${encodeURIComponent(seed)}&location=${krLocation()}`);
     const rows = await res.json();
     if (!rows.length) {
       body.innerHTML = '<tr><td colspan="5" class="kr-empty">No suggestions found.</td></tr>';
@@ -302,7 +314,7 @@
     const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/bulk`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keywords }),
+      body: JSON.stringify({ keywords, location: krLocation() }),
     });
     const rows = await res.json();
     if (!rows.length) {
@@ -376,7 +388,7 @@
       const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/track`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword }),
+        body: JSON.stringify({ keyword, location: krLocation() }),
       });
       if (!res.ok) {
         const detail = (await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`;

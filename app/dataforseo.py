@@ -12,11 +12,17 @@ from datetime import datetime, timezone
 
 import httpx
 
+from .keyword_locations import DEFAULT_LOCATION, dataforseo_location_code
 from .schemas import NormalizedKeyword
 
 DATAFORSEO_BASE = "https://api.dataforseo.com/v3"
-LOCATION_CODE_US = 2840
 LANGUAGE_CODE_EN = "en"
+
+
+def _location_code(location: str) -> int | None:
+    """None means unsupported -- callers return an explicit error rather than
+    silently falling back to another market (spec Bug 2)."""
+    return dataforseo_location_code(location)
 
 
 def _auth() -> tuple[str, str] | None:
@@ -36,15 +42,18 @@ def _post(path: str, payload: list[dict]) -> dict:
     return resp.json()
 
 
-def fetch_keyword_overview(keyword: str) -> dict:
+def fetch_keyword_overview(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
     """Single-keyword lookup. Returns the raw first result item, {"no_data": True}
     when the API succeeded but has nothing for this keyword, or {"error": ...}
     when the call itself failed. Callers must branch on these -- an error must
     never be rendered as an empty-but-successful row."""
+    code = _location_code(location)
+    if code is None:
+        return {"error": f"Unsupported location: {location}"}
     try:
         data = _post(
             "/dataforseo_labs/google/keyword_overview/live",
-            [{"keywords": [keyword], "location_code": LOCATION_CODE_US, "language_code": LANGUAGE_CODE_EN}],
+            [{"keywords": [keyword], "location_code": code, "language_code": LANGUAGE_CODE_EN}],
         )
         if data.get("error"):
             return data
@@ -54,14 +63,17 @@ def fetch_keyword_overview(keyword: str) -> dict:
         return {"error": str(e)}
 
 
-def fetch_keywords_bulk(keywords: list[str]) -> dict:
+def fetch_keywords_bulk(keywords: list[str], location: str = DEFAULT_LOCATION) -> dict:
     """Bulk Analysis fallback for keywords Semrush couldn't return.
     Same per-keyword contract as fetch_keyword_overview: raw item,
     {"no_data": True}, or {"error": ...}."""
+    code = _location_code(location)
+    if code is None:
+        return {kw: {"error": f"Unsupported location: {location}"} for kw in keywords}
     try:
         data = _post(
             "/dataforseo_labs/google/keyword_overview/live",
-            [{"keywords": keywords, "location_code": LOCATION_CODE_US, "language_code": LANGUAGE_CODE_EN}],
+            [{"keywords": keywords, "location_code": code, "language_code": LANGUAGE_CODE_EN}],
         )
         if data.get("error"):
             return {kw: data for kw in keywords}
@@ -72,14 +84,17 @@ def fetch_keywords_bulk(keywords: list[str]) -> dict:
         return {kw: {"error": str(e)} for kw in keywords}
 
 
-def fetch_related_keywords(seed: str) -> list[dict]:
+def fetch_related_keywords(seed: str, location: str = DEFAULT_LOCATION) -> list[dict]:
     """Suggestions tab primary source. Returns raw keyword_data dicts."""
+    code = _location_code(location)
+    if code is None:
+        return []
     try:
         data = _post(
             "/dataforseo_labs/google/related_keywords/live",
             [{
                 "keyword": seed,
-                "location_code": LOCATION_CODE_US,
+                "location_code": code,
                 "language_code": LANGUAGE_CODE_EN,
                 "limit": 20,
             }],
@@ -90,26 +105,29 @@ def fetch_related_keywords(seed: str) -> list[dict]:
         return []
 
 
-def fetch_keyword_questions(seed: str) -> list[dict]:
+def fetch_keyword_questions(seed: str, location: str = DEFAULT_LOCATION) -> list[dict]:
     """
     DataForSEO's Labs API has no endpoint dedicated to question-style keywords
     the way Semrush has phrase_questions -- this filters related_keywords
     client-side by question-word prefix. Simple heuristic, good enough for MVP.
     """
     QUESTION_WORDS = ("what", "how", "why", "when", "where", "who", "which", "can", "does", "is")
-    related = fetch_related_keywords(seed)
+    related = fetch_related_keywords(seed, location)
     return [r for r in related if str(r.get("keyword", "")).lower().startswith(QUESTION_WORDS)]
 
 
-def fetch_serp(keyword: str) -> dict:
+def fetch_serp(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
     """Live SERP lookup for the 'View SERP' action -- intentionally not cached
     or stored anywhere (see keyword_provider.py / plan point 4)."""
+    code = _location_code(location)
+    if code is None:
+        return {"error": f"Unsupported location: {location}"}
     try:
         data = _post(
             "/serp/google/organic/live/advanced",
             [{
                 "keyword": keyword,
-                "location_code": LOCATION_CODE_US,
+                "location_code": code,
                 "language_code": LANGUAGE_CODE_EN,
                 "device": "desktop",
             }],

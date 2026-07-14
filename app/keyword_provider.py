@@ -13,6 +13,7 @@ import time
 from datetime import datetime, timezone
 
 from . import dataforseo, semrush
+from .keyword_locations import DEFAULT_LOCATION
 from .schemas import NormalizedKeyword
 
 _SEMRUSH_COOLDOWN_UNTIL = 0.0
@@ -50,14 +51,14 @@ def _failed(keyword: str, errors: list[str]) -> NormalizedKeyword:
     )
 
 
-def get_keyword_overview(keyword: str) -> NormalizedKeyword:
+def get_keyword_overview(keyword: str, location: str = DEFAULT_LOCATION) -> NormalizedKeyword:
     """Single-keyword lookup (used when tracking a keyword). Semrush first,
     DataForSEO on error, no-data, or while Semrush is in a rate-limit cooldown.
     Always returns a NormalizedKeyword; check .status before persisting."""
     errors: list[str] = []
 
     if _semrush_available():
-        row = semrush.fetch_keyword_overview(keyword)
+        row = semrush.fetch_keyword_overview(keyword, location)
         if row.get("rate_limited"):
             _mark_semrush_cooldown()
             errors.append(f"semrush: {row.get('error') or 'rate limited'}")
@@ -67,7 +68,7 @@ def get_keyword_overview(keyword: str) -> NormalizedKeyword:
             return semrush.normalize_keyword_row(row, keyword)
         # Semrush no_data still falls through -- DataForSEO may have it.
 
-    row = dataforseo.fetch_keyword_overview(keyword)
+    row = dataforseo.fetch_keyword_overview(keyword, location)
     if row.get("error"):
         errors.append(f"dataforseo: {row['error']}")
         return _failed(keyword, errors)
@@ -76,7 +77,7 @@ def get_keyword_overview(keyword: str) -> NormalizedKeyword:
     return dataforseo.normalize_keyword_row(row, keyword)
 
 
-def get_keywords_bulk(keywords: list[str]) -> list[NormalizedKeyword]:
+def get_keywords_bulk(keywords: list[str], location: str = DEFAULT_LOCATION) -> list[NormalizedKeyword]:
     """
     Bulk Analysis (<=100 keywords). ASSUMPTION (see module docstring): Semrush
     is tried first for all keywords; only keywords it fails to return get a
@@ -87,7 +88,7 @@ def get_keywords_bulk(keywords: list[str]) -> list[NormalizedKeyword]:
     results: dict[str, NormalizedKeyword] = {}
 
     if _semrush_available():
-        rows = semrush.fetch_keywords_bulk(keywords)
+        rows = semrush.fetch_keywords_bulk(keywords, location)
         for kw, row in rows.items():
             if row.get("rate_limited"):
                 _mark_semrush_cooldown()
@@ -96,7 +97,7 @@ def get_keywords_bulk(keywords: list[str]) -> list[NormalizedKeyword]:
 
     missing = [kw for kw in keywords if kw not in results]
     if missing:
-        rows = dataforseo.fetch_keywords_bulk(missing)
+        rows = dataforseo.fetch_keywords_bulk(missing, location)
         for kw, row in rows.items():
             if row.get("error"):
                 results[kw] = _failed(kw, [f"dataforseo: {row['error']}"])
@@ -108,17 +109,17 @@ def get_keywords_bulk(keywords: list[str]) -> list[NormalizedKeyword]:
     return [results[kw] for kw in keywords if kw in results]
 
 
-def get_suggestions(seed: str) -> list[NormalizedKeyword]:
+def get_suggestions(seed: str, location: str = DEFAULT_LOCATION) -> list[NormalizedKeyword]:
     """
     Suggestions & Questions tab. ASSUMPTION (see module docstring): DataForSEO
     is tried first; Semrush's phrase_related/phrase_questions are the fallback
     if DataForSEO returns nothing (missing credentials, no data, error).
     """
-    rows = dataforseo.fetch_related_keywords(seed) + dataforseo.fetch_keyword_questions(seed)
+    rows = dataforseo.fetch_related_keywords(seed, location) + dataforseo.fetch_keyword_questions(seed, location)
     if rows:
         return [dataforseo.normalize_keyword_row(r, r.get("keyword", seed)) for r in rows]
 
-    rows = semrush.fetch_related_keywords(seed) + semrush.fetch_keyword_questions(seed)
+    rows = semrush.fetch_related_keywords(seed, location) + semrush.fetch_keyword_questions(seed, location)
     return [semrush.normalize_keyword_row(r, r.get("Ph", seed)) for r in rows]
 
 

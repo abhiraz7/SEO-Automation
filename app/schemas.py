@@ -75,6 +75,7 @@ class KeywordWithTrend(NormalizedKeyword):
 
 class TrackKeywordIn(BaseModel):
     keyword: str
+    location: str = "IN"  # ISO country code, see app/keyword_locations.py
 
 
 class SavedKeywordIn(BaseModel):
@@ -91,3 +92,4 @@ class SavedKeywordOut(SavedKeywordIn):
 
 class BulkKeywordsIn(BaseModel):
     keywords: list[str] = Field(..., max_length=100)
+    location: str = "IN"  # ISO country code, see app/keyword_locations.py

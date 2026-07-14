@@ -6,13 +6,21 @@ from fastapi.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import dataforseo, keyword_provider, models, schemas
+from .. import dataforseo, keyword_locations, keyword_provider, models, schemas
 from ..database import get_db
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 STOPWORDS = {"the", "a", "an", "for", "to", "of", "in", "on", "and", "is", "how", "what", "near", "me", "vs"}
+
+
+def _require_location(location: str) -> str:
+    """Reject unsupported ISO codes with a 400 instead of letting the adapters
+    each fail separately -- and never silently fall back to another market."""
+    if not keyword_locations.is_supported(location):
+        raise HTTPException(status_code=400, detail=f"Unsupported location: {location}")
+    return location.upper()
 
 
 def _get_project(db: Session, project_id: int) -> models.Project:
@@ -110,7 +118,13 @@ def keyword_research_page(project_id: int, request: Request, db: Session = Depen
     return templates.TemplateResponse(
         request,
         "keyword_research.html",
-        {"project": project, "overview": overview, "keyword_rows": keyword_rows},
+        {
+            "project": project,
+            "overview": overview,
+            "keyword_rows": keyword_rows,
+            "locations": keyword_locations.supported_locations(),
+            "default_location": keyword_locations.DEFAULT_LOCATION,
+        },
     )
 
 
@@ -126,6 +140,7 @@ def track_keyword(project_id: int, payload: schemas.TrackKeywordIn, db: Session 
     keyword = payload.keyword.strip().lower()
     if not keyword:
         raise HTTPException(status_code=400, detail="keyword is required")
+    location = _require_location(payload.location)
 
     tracked = (
         db.query(models.TrackedKeyword)
@@ -139,7 +154,7 @@ def track_keyword(project_id: int, payload: schemas.TrackKeywordIn, db: Session 
         db.commit()
         db.refresh(tracked)
 
-    normalized = keyword_provider.get_keyword_overview(keyword)
+    normalized = keyword_provider.get_keyword_overview(keyword, location)
 
     if normalized.status == "error":
         # Don't leave a just-created row behind for a lookup that failed
@@ -177,9 +192,9 @@ def untrack_keyword(project_id: int, keyword_id: int, db: Session = Depends(get_
 
 
 @router.get("/projects/{project_id}/keywords/suggestions", response_model=list[schemas.NormalizedKeyword])
-def keyword_suggestions(project_id: int, seed: str, db: Session = Depends(get_db)):
+def keyword_suggestions(project_id: int, seed: str, location: str = "IN", db: Session = Depends(get_db)):
     _get_project(db, project_id)
-    return keyword_provider.get_suggestions(seed)
+    return keyword_provider.get_suggestions(seed, _require_location(location))
 
 
 @router.post("/projects/{project_id}/keywords/bulk", response_model=list[schemas.NormalizedKeyword])
@@ -188,7 +203,7 @@ def bulk_analysis(project_id: int, payload: schemas.BulkKeywordsIn, db: Session 
     keywords = [k.strip().lower() for k in payload.keywords if k.strip()]
     if not keywords:
         raise HTTPException(status_code=400, detail="keywords list is empty")
-    return keyword_provider.get_keywords_bulk(keywords)
+    return keyword_provider.get_keywords_bulk(keywords, _require_location(payload.location))
 
 
 @router.get("/projects/{project_id}/keywords/clusters")
@@ -250,13 +265,13 @@ def delete_saved_keyword(project_id: int, saved_id: int, db: Session = Depends(g
 
 
 @router.get("/projects/{project_id}/keywords/{keyword_id}/serp")
-def view_serp(project_id: int, keyword_id: int, db: Session = Depends(get_db)):
+def view_serp(project_id: int, keyword_id: int, location: str = "IN", db: Session = Depends(get_db)):
     tracked = db.get(models.TrackedKeyword, keyword_id)
     if not tracked or tracked.project_id != project_id:
         raise HTTPException(status_code=404, detail="Tracked keyword not found")
     # Live lookup, intentionally not persisted -- SERP results are a point-in-time
     # check, not something we snapshot for trend history (see keyword_provider.py).
-    return dataforseo.fetch_serp(tracked.keyword)
+    return dataforseo.fetch_serp(tracked.keyword, _require_location(location))
 
 
 @router.get("/projects/{project_id}/keywords/export")
