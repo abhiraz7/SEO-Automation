@@ -71,11 +71,7 @@
 
     <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">AI</div>
     {{ nav_link("#", "AI Visibility", "visibility", enabled=False) }}
-    {% if project is defined %}
-    {{ nav_link("/projects/" ~ project.id ~ "/keywords", "Keyword Research", "keyword", active=path.endswith("/keywords")) }}
-    {% else %}
-    {{ nav_link("/", "Keyword Research", "keyword") }}
-    {% endif %}
+    {{ nav_link("/keywords", "Keyword Research", "keyword", active=path.startswith("/keywords")) }}
     {{ nav_link("#", "Rank Tracking", "rank", enabled=False) }}
 
     <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">Tools</div>

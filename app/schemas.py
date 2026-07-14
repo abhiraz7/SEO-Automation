@@ -73,6 +73,19 @@ class KeywordWithTrend(NormalizedKeyword):
     trend_confidence: str  # "insufficient_data" | "computed"
 
 
+class WorkspaceIn(BaseModel):
+    """Keyword workspaces are the standalone container keyword data hangs off
+    (not Project). project_id is an optional link back to a site."""
+    name: str
+    default_location: str = "IN"
+    project_id: int | None = None
+
+
+class WorkspaceOut(WorkspaceIn):
+    id: int
+    model_config = {"from_attributes": True}
+
+
 class TrackKeywordIn(BaseModel):
     keyword: str
     location: str = "IN"  # ISO country code, see app/keyword_locations.py

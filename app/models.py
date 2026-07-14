@@ -146,18 +146,41 @@ class Suggestion(Base):
     issue = relationship("Issue", back_populates="suggestions")
 
 
+class KeywordWorkspace(Base):
+    """Standalone keyword-research container. Keyword Research no longer hangs
+    off Project -- a workspace can exist with no project at all (pure research
+    before a site exists) or link to one via the nullable project_id, keeping
+    the nullability on this one narrow join point instead of scattered across
+    every TrackedKeyword/SavedKeyword row."""
+    __tablename__ = "keyword_workspaces"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)                # e.g. "VTechys India", "Client X"
+    default_location = Column(String, default="IN")      # ISO code, see app/keyword_locations.py
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    tracked_keywords = relationship(
+        "TrackedKeyword", back_populates="workspace", cascade="all, delete-orphan"
+    )
+    saved_keywords = relationship(
+        "SavedKeyword", back_populates="workspace", cascade="all, delete-orphan"
+    )
+
+
 class TrackedKeyword(Base):
-    """A keyword the user is actively tracking for a project (Overview tab).
+    """A keyword the user is actively tracking in a workspace (Overview tab).
     Metrics live in KeywordSnapshot rows, not on this row, so history/trend
     can be computed instead of only ever showing the latest value."""
     __tablename__ = "tracked_keywords"
-    __table_args__ = (UniqueConstraint("project_id", "keyword", name="uq_tracked_keyword_project"),)
+    __table_args__ = (UniqueConstraint("workspace_id", "keyword", name="uq_tracked_keyword_workspace"),)
 
     id = Column(Integer, primary_key=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    workspace_id = Column(Integer, ForeignKey("keyword_workspaces.id"), nullable=False)
     keyword = Column(String, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
 
+    workspace = relationship("KeywordWorkspace", back_populates="tracked_keywords")
     snapshots = relationship(
         "KeywordSnapshot", back_populates="tracked_keyword", cascade="all, delete-orphan"
     )
@@ -185,15 +208,17 @@ class SavedKeyword(Base):
     """User-curated Saved List. Pure curation, not provider-fetched -- metrics
     are copied in at save time and only refreshed if the user asks."""
     __tablename__ = "saved_keywords"
-    __table_args__ = (UniqueConstraint("project_id", "keyword", name="uq_saved_keyword_project"),)
+    __table_args__ = (UniqueConstraint("workspace_id", "keyword", name="uq_saved_keyword_workspace"),)
 
     id = Column(Integer, primary_key=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    workspace_id = Column(Integer, ForeignKey("keyword_workspaces.id"), nullable=False)
     keyword = Column(String, nullable=False)
     volume = Column(Integer)
     difficulty = Column(Integer)
     intent = Column(String)
     created_at = Column(DateTime, default=_utcnow)
+
+    workspace = relationship("KeywordWorkspace", back_populates="saved_keywords")
 
 
 class PageUnderstanding(Base):

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Keyword Workspaces{% endblock %}
+
+{% block topbar %}
+<div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px;min-width:0;">
+  <div style="display:flex;align-items:center;gap:8px;">
+    <span style="font-size:18px;">🔍</span>
+    <span style="font-size:16px;font-weight:800;color:#0f172a;">Keyword Workspaces</span>
+  </div>
+  <button onclick="document.getElementById('kw-create').scrollIntoView({behavior:'smooth'});document.getElementById('kw-name').focus();"
+    style="display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:6px;border:none;background:linear-gradient(135deg,#4f46e5,#6d28d9);color:#fff;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 1px 4px rgba(79,70,229,0.25);">
+    + New Workspace
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div style="padding:24px;max-width:860px;">
+
+  {% if workspaces %}
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:28px;">
+    {% for ws in workspaces %}
+    <a href="/keywords/{{ ws.id }}"
+       style="display:block;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;text-decoration:none;transition:box-shadow .15s;"
+       onmouseover="this.style.boxShadow='0 4px 16px rgba(15,23,42,.08)'" onmouseout="this.style.boxShadow='none'">
+      <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:6px;">{{ ws.name }}</div>
+      <div style="font-size:12px;color:#64748b;">
+        Market: {{ locations.get(ws.default_location, ws.default_location) }}
+        {% if ws.project_id %}<span style="color:#4f46e5;"> · linked to a project</span>{% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="background:#fff;border:1px dashed #cbd5e1;border-radius:12px;padding:36px;text-align:center;color:#64748b;font-size:13px;margin-bottom:28px;">
+    No keyword workspaces yet — create your first one below. A workspace doesn't need a
+    project: use one for pure keyword research, or link it to a client site.
+  </div>
+  {% endif %}
+
+  <div id="kw-create" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;max-width:460px;">
+    <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:14px;">Create a workspace</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <input id="kw-name" placeholder="Workspace name (e.g. VTechys India, Client X)"
+        style="font-size:13px;padding:9px 12px;border:1px solid #e2e8f0;border-radius:7px;outline:none;">
+      <select id="kw-location" style="font-size:13px;padding:9px 12px;border:1px solid #e2e8f0;border-radius:7px;background:#fff;">
+        {% for code, name in locations.items() %}
+        <option value="{{ code }}" {% if code == default_location %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+      <select id="kw-project" style="font-size:13px;padding:9px 12px;border:1px solid #e2e8f0;border-radius:7px;background:#fff;">
+        <option value="">No linked project (pure research)</option>
+        {% for p in projects %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+        {% endfor %}
+      </select>
+      <button onclick="kwCreate()"
+        style="padding:9px 16px;border-radius:7px;border:none;background:#4f46e5;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">
+        Create
+      </button>
+      <div id="kw-error" style="display:none;font-size:12px;color:#dc2626;"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  async function kwCreate() {
+    const name = document.getElementById('kw-name').value.trim();
+    const errEl = document.getElementById('kw-error');
+    errEl.style.display = 'none';
+    if (!name) {
+      errEl.textContent = 'Name is required.';
+      errEl.style.display = 'block';
+      return;
+    }
+    const projectVal = document.getElementById('kw-project').value;
+    const res = await fetch('/keywords/workspaces', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        default_location: document.getElementById('kw-location').value,
+        project_id: projectVal ? parseInt(projectVal, 10) : null,
+      }),
+    });
+    if (!res.ok) {
+      const detail = (await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`;
+      errEl.textContent = `Could not create workspace: ${detail}`;
+      errEl.style.display = 'block';
+      return;
+    }
+    const ws = await res.json();
+    window.location.href = `/keywords/${ws.id}`;
+  }
+</script>
+{% endblock %}

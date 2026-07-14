@@ -1,19 +1,21 @@
 {% extends "base.html" %}
 
-{% block title %}Keyword Research — {{ project.name }}{% endblock %}
+{% block title %}Keyword Research — {{ workspace.name }}{% endblock %}
 
 {% block topbar %}
 <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px;min-width:0;">
   <div style="min-width:0;flex:1;">
     <div style="font-size:11px;color:#94a3b8;margin-bottom:3px;display:flex;align-items:center;gap:4px;">
-      <a href="/" style="color:#94a3b8;text-decoration:none;" onmouseover="this.style.color='#0f172a'" onmouseout="this.style.color='#94a3b8'">Projects</a>
+      <a href="/keywords" style="color:#94a3b8;text-decoration:none;" onmouseover="this.style.color='#0f172a'" onmouseout="this.style.color='#94a3b8'">Keyword Workspaces</a>
       <span style="opacity:0.4;">/</span>
-      <a href="/projects/{{ project.id }}" style="color:#94a3b8;text-decoration:none;" onmouseover="this.style.color='#0f172a'" onmouseout="this.style.color='#94a3b8'">{{ project.name }}</a>
+      <span>{{ workspace.name }}</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
       <span style="font-size:18px;">🔍</span>
       <span style="font-size:16px;font-weight:800;color:#0f172a;">Keyword Research</span>
-      <span style="font-size:12px;color:#94a3b8;">{{ project.base_url }}</span>
+      {% if workspace.project_id %}
+      <a href="/projects/{{ workspace.project_id }}" style="font-size:12px;color:#4f46e5;text-decoration:none;">linked project →</a>
+      {% endif %}
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
@@ -23,7 +25,7 @@
       <option value="{{ code }}" {% if code == default_location %}selected{% endif %}>{{ name }}</option>
       {% endfor %}
     </select>
-    <a href="/projects/{{ project.id }}/keywords/export"
+    <a href="/keywords/{{ workspace.id }}/export"
       style="display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;transition:background .15s;"
       onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#fff'">
       Export CSV
@@ -225,7 +227,7 @@
 </div>
 
 <script>
-  const KR_PROJECT_ID = {{ project.id }};
+  const KR_WORKSPACE_ID = {{ workspace.id }};
 
   // Market for all provider lookups -- explicit per search, never a hidden
   // env-var default (spec Bug 2).
@@ -283,7 +285,7 @@
   }
 
   async function krSaveKeyword(keyword, volume, difficulty, intent) {
-    await fetch(`/projects/${KR_PROJECT_ID}/keywords/saved`, {
+    await fetch(`/keywords/${KR_WORKSPACE_ID}/saved`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ keyword, volume, difficulty, intent }),
@@ -293,7 +295,7 @@
 
   async function krViewSerp(trackedId) {
     krToast('Loading live SERP…');
-    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/${trackedId}/serp?location=${krLocation()}`);
+    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/${trackedId}/serp?location=${krLocation()}`);
     const data = await res.json();
     // Live lookup only -- intentionally not persisted, see keyword_provider.py.
     alert(JSON.stringify(data, null, 2).slice(0, 2000));
@@ -312,7 +314,7 @@
     const body = document.getElementById('kr-suggestions-body');
     if (!seed) return;
     body.innerHTML = '<tr><td colspan="5" class="kr-empty">Loading…</td></tr>';
-    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/suggestions?seed=${encodeURIComponent(seed)}&location=${krLocation()}`);
+    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/suggestions?seed=${encodeURIComponent(seed)}&location=${krLocation()}`);
     const rows = await res.json();
     if (!rows.length) {
       body.innerHTML = '<tr><td colspan="5" class="kr-empty">No suggestions found.</td></tr>';
@@ -334,7 +336,7 @@
     const body = document.getElementById('kr-bulk-body');
     if (!keywords.length) return;
     body.innerHTML = '<tr><td colspan="5" class="kr-empty">Analyzing…</td></tr>';
-    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/bulk`, {
+    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/bulk`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ keywords, location: krLocation() }),
@@ -357,7 +359,7 @@
   async function krLoadClusters() {
     const wrap = document.getElementById('kr-clusters');
     wrap.innerHTML = '<div class="kr-empty">Loading…</div>';
-    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/clusters`);
+    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/clusters`);
     const clusters = await res.json();
     if (!clusters.length) {
       wrap.innerHTML = '<div class="kr-empty">No tracked or saved keywords to cluster yet.</div>';
@@ -373,7 +375,7 @@
   async function krLoadSaved() {
     const body = document.getElementById('kr-saved-body');
     body.innerHTML = '<tr><td colspan="5" class="kr-empty">Loading…</td></tr>';
-    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/saved`);
+    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/saved`);
     const rows = await res.json();
     if (!rows.length) {
       body.innerHTML = '<tr><td colspan="5" class="kr-empty">Nothing saved yet.</td></tr>';
@@ -390,7 +392,7 @@
   }
 
   async function krDeleteSaved(id) {
-    await fetch(`/projects/${KR_PROJECT_ID}/keywords/saved/${id}`, { method: 'DELETE' });
+    await fetch(`/keywords/${KR_WORKSPACE_ID}/saved/${id}`, { method: 'DELETE' });
     krLoadSaved();
   }
 
@@ -408,7 +410,7 @@
     const keywords = raw.split('\n').map(k => k.trim()).filter(Boolean);
     const failures = [];
     for (const keyword of keywords) {
-      const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/track`, {
+      const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/track`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keyword, location: krLocation() }),
