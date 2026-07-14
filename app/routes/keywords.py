@@ -352,6 +352,9 @@ def export_keywords(workspace_id: int, db: Session = Depends(get_db)):
     tracked = db.query(models.TrackedKeyword).filter(models.TrackedKeyword.workspace_id == workspace_id).all()
 
     buf = io.StringIO()
+    # BOM so Excel detects UTF-8 -- without it non-ASCII keywords (Hindi,
+    # regional languages) open as mojibake in the tool clients actually use.
+    buf.write("﻿")
     writer = csv.writer(buf)
     writer.writerow(["Keyword", "Volume", "Difficulty", "Intent", "Trend"])
     for t in tracked:
@@ -361,7 +364,7 @@ def export_keywords(workspace_id: int, db: Session = Depends(get_db)):
 
     return StreamingResponse(
         buf,
-        media_type="text/csv",
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename=keywords.csv"},
     )
 

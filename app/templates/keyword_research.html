@@ -189,6 +189,7 @@
 <div class="kr-panel" id="panel-bulk">
   <div style="margin-bottom:12px;">
     <textarea id="kr-bulk-input" rows="5" class="kr-input" style="width:100%;resize:vertical;" placeholder="Paste up to 100 keywords, one per line…"></textarea>
+    <div id="kr-bulk-notice" style="display:none;margin-top:8px;padding:8px 12px;border-radius:7px;background:#fef3c7;color:#a16207;border:1px solid #fde68a;font-size:12px;font-weight:600;"></div>
   </div>
   <button class="kr-btn" onclick="krRunBulk()">Analyze</button>
   <table class="kr-table" style="margin-top:16px;">
@@ -214,6 +215,19 @@
     </tbody>
   </table>
 </div>
+
+<!-- SERP results modal (replaces the raw JSON debug alert) -->
+<div id="kr-serp-backdrop" onclick="closeSerpModal()" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.3);z-index:400;"></div>
+<div id="kr-serp-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:640px;max-width:94vw;max-height:80vh;overflow-y:auto;background:#fff;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.25);z-index:401;padding:20px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <div id="kr-serp-title" style="font-size:14px;font-weight:700;color:#0f172a;">Live SERP</div>
+    <button onclick="closeSerpModal()" style="border:none;background:none;font-size:18px;color:#94a3b8;cursor:pointer;">×</button>
+  </div>
+  <div id="kr-serp-body"></div>
+</div>
+<style>
+  #kr-serp-modal.open, #kr-serp-backdrop.open { display:block; }
+</style>
 
 <!-- Add Keywords modal -->
 <div id="kr-modal-backdrop" onclick="closeAddKeywordsModal()"></div>
@@ -294,11 +308,39 @@
   }
 
   async function krViewSerp(trackedId) {
-    krToast('Loading live SERP…');
+    const modal = document.getElementById('kr-serp-modal');
+    const backdrop = document.getElementById('kr-serp-backdrop');
+    const body = document.getElementById('kr-serp-body');
+    modal.classList.add('open');
+    backdrop.classList.add('open');
+    body.innerHTML = '<div class="kr-empty">Loading live SERP…</div>';
+    // Live lookup only -- intentionally not persisted, see keyword_provider.py.
     const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/${trackedId}/serp?location=${krLocation()}`);
     const data = await res.json();
-    // Live lookup only -- intentionally not persisted, see keyword_provider.py.
-    alert(JSON.stringify(data, null, 2).slice(0, 2000));
+    if (data.error) {
+      body.innerHTML = `<div class="kr-empty" style="color:#dc2626;">SERP lookup failed: ${data.error}</div>`;
+      return;
+    }
+    const items = (data.items || []).filter(i => i.type === 'organic').slice(0, 10);
+    document.getElementById('kr-serp-title').textContent = `Top results — "${data.keyword ?? ''}"`;
+    if (!items.length) {
+      body.innerHTML = '<div class="kr-empty">No organic results returned.</div>';
+      return;
+    }
+    body.innerHTML = items.map(i => `
+      <div style="padding:10px 0;border-bottom:1px solid #f1f5f9;">
+        <div style="display:flex;gap:8px;align-items:baseline;">
+          <span style="font-size:11px;font-weight:800;color:#94a3b8;min-width:20px;">#${i.rank_absolute ?? i.rank_group ?? '?'}</span>
+          <a href="${i.url ?? '#'}" target="_blank" rel="noopener" style="font-size:13px;font-weight:600;color:#4f46e5;text-decoration:none;">${i.title ?? '(no title)'}</a>
+        </div>
+        <div style="font-size:11px;color:#16a34a;margin:2px 0 0 28px;word-break:break-all;">${i.url ?? ''}</div>
+        ${i.description ? `<div style="font-size:12px;color:#64748b;margin:3px 0 0 28px;">${i.description}</div>` : ''}
+      </div>`).join('');
+  }
+
+  function closeSerpModal() {
+    document.getElementById('kr-serp-modal').classList.remove('open');
+    document.getElementById('kr-serp-backdrop').classList.remove('open');
   }
 
   function krToast(msg) {
@@ -332,7 +374,15 @@
 
   async function krRunBulk() {
     const raw = document.getElementById('kr-bulk-input').value;
-    const keywords = raw.split('\n').map(k => k.trim()).filter(Boolean).slice(0, 100);
+    const all = raw.split('\n').map(k => k.trim()).filter(Boolean);
+    const keywords = all.slice(0, 100);
+    const notice = document.getElementById('kr-bulk-notice');
+    if (all.length > 100) {
+      notice.textContent = `⚠ ${all.length} keywords pasted — only the first 100 were analyzed (provider limit). Run the rest in a second batch.`;
+      notice.style.display = 'block';
+    } else {
+      notice.style.display = 'none';
+    }
     const body = document.getElementById('kr-bulk-body');
     if (!keywords.length) return;
     body.innerHTML = '<tr><td colspan="5" class="kr-empty">Analyzing…</td></tr>';
