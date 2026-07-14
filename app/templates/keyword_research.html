@@ -83,6 +83,10 @@
   #kr-modal.open, #kr-modal-backdrop.open { display:block; }
 </style>
 
+<!-- Provider status banner: unconfigured API keys must be visible, not render
+     identically to "no data" (spec Bug 3). Populated on page load. -->
+<div id="kr-provider-banner" style="display:none;margin:20px 24px 0;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;"></div>
+
 <!-- Stat cards -->
 <div style="padding:20px 24px 4px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
   <div class="kr-stat" style="border-left:4px solid #7c3aed;">
@@ -228,6 +232,25 @@
   function krLocation() {
     return document.getElementById('kr-location').value;
   }
+
+  async function krLoadProviderStatus() {
+    const banner = document.getElementById('kr-provider-banner');
+    try {
+      const res = await fetch('/keywords/provider-status');
+      const status = await res.json();
+      if (status.any_configured && status.semrush && status.dataforseo) return; // all good, no banner
+      banner.style.display = 'block';
+      if (!status.any_configured) {
+        banner.style.cssText += 'background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;';
+        banner.textContent = '⚠ No keyword providers configured — set SEMRUSH_API_KEY and/or DATAFORSEO_LOGIN + DATAFORSEO_PASSWORD in .env and restart. All lookups will fail until then.';
+      } else {
+        const missing = !status.semrush ? 'Semrush' : 'DataForSEO';
+        banner.style.cssText += 'background:#fef3c7;color:#a16207;border:1px solid #fde68a;';
+        banner.textContent = `ℹ ${missing} is not configured — running on a single provider, no fallback available.`;
+      }
+    } catch (e) { /* status endpoint failing shouldn't break the page */ }
+  }
+  krLoadProviderStatus();
 
   function krShowTab(name) {
     document.querySelectorAll('.kr-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === name));

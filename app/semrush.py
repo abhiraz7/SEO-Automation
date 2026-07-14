@@ -12,6 +12,13 @@ SEMRUSH_BASE = "https://api.semrush.com"
 SEMRUSH_ANALYTICS = "https://api.semrush.com/analytics/v1/"
 
 
+def is_configured() -> bool:
+    """Whether credentials exist -- says nothing about whether they're valid.
+    Surfaced by /keywords/provider-status so an unconfigured install looks
+    different from a configured one with no data (spec Bug 3)."""
+    return bool(os.environ.get("SEMRUSH_API_KEY", "").strip())
+
+
 def _get(url: str) -> str:
     with urllib.request.urlopen(url, timeout=10) as r:
         return r.read().decode("utf-8")

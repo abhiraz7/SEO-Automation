@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import dataforseo, keyword_locations, keyword_provider, models, schemas
+from .. import dataforseo, keyword_locations, keyword_provider, models, schemas, semrush
 from ..database import get_db
 
 router = APIRouter()
@@ -101,6 +101,20 @@ def _overview_data(db: Session, project_id: int) -> dict:
         "easy_wins": easy_wins,
         "data_quality": data_quality,
         "keywords": rows,
+    }
+
+
+@router.get("/keywords/provider-status")
+def provider_status():
+    """Which keyword providers have credentials configured. Not project-scoped
+    -- provider config is process-wide env state. Lets the UI tell 'you forgot
+    to set an API key' apart from 'the API has no data' (spec Bug 3)."""
+    semrush_ok = semrush.is_configured()
+    dataforseo_ok = dataforseo.is_configured()
+    return {
+        "semrush": semrush_ok,
+        "dataforseo": dataforseo_ok,
+        "any_configured": semrush_ok or dataforseo_ok,
     }
 
 

@@ -33,6 +33,13 @@ def _auth() -> tuple[str, str] | None:
     return (login, password)
 
 
+def is_configured() -> bool:
+    """Whether credentials exist -- says nothing about whether they're valid.
+    Surfaced by /keywords/provider-status so an unconfigured install looks
+    different from a configured one with no data (spec Bug 3)."""
+    return _auth() is not None
+
+
 def _post(path: str, payload: list[dict]) -> dict:
     auth = _auth()
     if not auth:
