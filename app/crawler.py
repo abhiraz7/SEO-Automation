@@ -1,3 +1,17 @@
+"""
+Crawler for the SEO Automation pipeline.
+
+Crawl4AI is the sole crawling/rendering engine. This module's only job is to
+turn a URL into the minimum SEO context needed downstream (audit engine +
+AI suggestion engine): metadata, headings, links, image alts, schema, and
+markdown/fit_markdown content. It is not a general-purpose scraper - no LLM
+extraction, screenshots, PDFs, MHTML, browser profiles, or network tracing.
+
+URL discovery (sitemap / same-domain link BFS) still uses plain httpx, since
+reading a sitemap or hopping through <a href> tags doesn't need a browser and
+keeps discovery fast when scheduling crawls across hundreds of pages.
+"""
+import asyncio
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -6,12 +20,18 @@ from urllib.parse import urldefrag, urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
+from crawl4ai.content_filter_strategy import PruningContentFilter
+from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+
 USER_AGENT = "VTechSEO-Crawler/1.0"
 HEADERS = {"User-Agent": USER_AGENT}
 REQUEST_TIMEOUT = 15
 SITEMAP_TIMEOUT = 15
 MAX_SITEMAP_DEPTH = 4
 FETCH_WORKERS = 8
+PAGE_TIMEOUT_MS = 30000
+MAX_CONCURRENT_PAGES = 5
 
 DOMAIN_SCHEMA_TYPES = {"organization", "website", "localbusiness"}
 
@@ -29,32 +49,34 @@ COMMON_SITEMAP_PATHS = [
     "page-sitemap.xml",
 ]
 
+_BROWSER_CONFIG = BrowserConfig(
+    headless=True,
+    verbose=False,
+    extra_args=["--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox"],
+)
+
+
+def _run_config() -> CrawlerRunConfig:
+    return CrawlerRunConfig(
+        cache_mode=CacheMode.BYPASS,
+        markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter()),
+        page_timeout=PAGE_TIMEOUT_MS,
+        remove_overlay_elements=True,
+        magic=True,
+        word_count_threshold=10,
+        screenshot=False,
+        pdf=False,
+        capture_mhtml=False,
+        capture_network_requests=False,
+        capture_console_messages=False,
+    )
+
 
 class CrawlError(Exception):
     pass
 
 
-def _fetch(url, timeout=REQUEST_TIMEOUT):
-    try:
-        return httpx.get(url, timeout=timeout, follow_redirects=True, headers=HEADERS)
-    except httpx.RequestError as exc:
-        raise CrawlError(str(exc)) from exc
-
-
-def _fetch_many(urls, timeout=REQUEST_TIMEOUT, max_workers=FETCH_WORKERS):
-    """Fetch URLs concurrently. Returns {url: (response_or_None, error_or_None)}."""
-    results = {}
-    if not urls:
-        return results
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_fetch, url, timeout): url for url in urls}
-        for future in as_completed(futures):
-            url = futures[future]
-            try:
-                results[url] = (future.result(), None)
-            except CrawlError as exc:
-                results[url] = (None, str(exc))
-    return results
+# --- SEO data extraction (from Crawl4AI's rendered HTML) -----------------
 
 
 def _meta_content(soup, **attrs):
@@ -79,18 +101,16 @@ def _extract_jsonld(soup):
     return domain_schema, page_schemas
 
 
-def extract_page_data(url, html, status_code):
+def _extract_page_data(url: str, html: str, status_code: int, crawl_result=None) -> dict:
     soup = BeautifulSoup(html, "lxml")
 
     title = soup.title.get_text(strip=True) if soup.title else None
-
     canonical_tag = soup.find("link", rel="canonical")
     html_tag = soup.find("html")
     main_content = soup.find("main") or soup.find("article") or soup.body
-
     domain_schema, page_schemas = _extract_jsonld(soup)
 
-    return {
+    data = {
         "url": url,
         "status_code": status_code,
         "error": None,
@@ -118,31 +138,71 @@ def extract_page_data(url, html, status_code):
         "twitter_card": _meta_content(soup, name="twitter:card"),
         "lang": html_tag.get("lang") if html_tag else None,
         "custom_content": main_content.get_text(separator=" ", strip=True) if main_content else None,
+        "markdown": None,
+        "fit_markdown": None,
+        "internal_links": [],
     }
+
+    if crawl_result is not None:
+        markdown = crawl_result.markdown
+        if markdown is not None:
+            data["markdown"] = getattr(markdown, "raw_markdown", str(markdown))
+            data["fit_markdown"] = getattr(markdown, "fit_markdown", None)
+        if crawl_result.links:
+            data["internal_links"] = [
+                link["href"] for link in crawl_result.links.get("internal", []) if link.get("href")
+            ]
+
+    return data
 
 
 def _error_result(url, message, status_code=None):
     return {"url": url, "error": message, "status_code": status_code}
 
 
-def _result_for(url, resp, error):
-    if error:
-        return _error_result(url, error)
-    if resp.status_code >= 400:
-        return _error_result(str(resp.url), f"HTTP {resp.status_code}", resp.status_code)
-    return extract_page_data(str(resp.url), resp.text, resp.status_code)
+# --- Single page crawl (Crawl4AI) -----------------------------------------
 
 
-def crawl_single_page(url):
+async def _crawl_single_async(url: str) -> dict:
+    async with AsyncWebCrawler(config=_BROWSER_CONFIG) as crawler:
+        result = await crawler.arun(url=url, config=_run_config())
+    if not result.success:
+        return _error_result(url, result.error_message or "Crawl failed", result.status_code)
+    return _extract_page_data(result.url, result.html, result.status_code, result)
+
+
+def crawl_single_page(url: str) -> dict:
+    """Crawl a single page with Crawl4AI and return its SEO data."""
     try:
-        resp = _fetch(url)
-    except CrawlError as exc:
+        return asyncio.run(_crawl_single_async(url))
+    except Exception as exc:
         return _error_result(url, str(exc))
 
-    if resp.status_code >= 400:
-        return _error_result(str(resp.url), f"HTTP {resp.status_code}", resp.status_code)
 
-    return extract_page_data(str(resp.url), resp.text, resp.status_code)
+# --- Site crawl (sitemap/link discovery via httpx, content via Crawl4AI) --
+
+
+def _fetch(url, timeout=REQUEST_TIMEOUT):
+    try:
+        return httpx.get(url, timeout=timeout, follow_redirects=True, headers=HEADERS)
+    except httpx.RequestError as exc:
+        raise CrawlError(str(exc)) from exc
+
+
+def _fetch_many(urls, timeout=REQUEST_TIMEOUT, max_workers=FETCH_WORKERS):
+    """Fetch URLs concurrently. Returns {url: (response_or_None, error_or_None)}."""
+    results = {}
+    if not urls:
+        return results
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_fetch, url, timeout): url for url in urls}
+        for future in as_completed(futures):
+            url = futures[future]
+            try:
+                results[url] = (future.result(), None)
+            except CrawlError as exc:
+                results[url] = (None, str(exc))
+    return results
 
 
 def _clean_link(base_url, href, domain):
@@ -170,9 +230,6 @@ def discover_links(base_url, html):
         if link:
             links.add(link)
     return links
-
-
-# --- Sitemap discovery -------------------------------------------------
 
 
 def _extract_sitemap_locs(xml_text):
@@ -244,18 +301,11 @@ def discover_via_sitemap(base_origin, max_pages):
     return []
 
 
-# --- Site crawl ----------------------------------------------------------
-
-
-def _crawl_known_urls(urls):
-    fetched = _fetch_many(urls)
-    return [_result_for(url, resp, error) for url, (resp, error) in fetched.items()]
-
-
-def _crawl_via_links(start_url, max_pages, batch_size=FETCH_WORKERS):
+def _discover_via_links(start_url, max_pages, batch_size=FETCH_WORKERS):
+    """BFS same-domain link discovery over plain HTML (no rendering) when no sitemap exists."""
     visited = set()
     queue = [start_url]
-    results = []
+    discovered = []
 
     while queue and len(visited) < max_pages:
         batch = []
@@ -268,23 +318,60 @@ def _crawl_via_links(start_url, max_pages, batch_size=FETCH_WORKERS):
 
         fetched = _fetch_many(batch)
         for url, (resp, error) in fetched.items():
-            results.append(_result_for(url, resp, error))
             if resp is not None and resp.status_code < 400:
+                discovered.append(url)
                 for link in discover_links(url, resp.text):
                     if link not in visited and link not in queue and len(visited) + len(queue) < max_pages:
                         queue.append(link)
+            elif error is None:
+                discovered.append(url)
 
+    return discovered
+
+
+async def _crawl_urls_async(urls: list) -> list:
+    if not urls:
+        return []
+    results = []
+    async with AsyncWebCrawler(config=_BROWSER_CONFIG) as crawler:
+        crawl_results = await crawler.arun_many(
+            urls,
+            config=_run_config(),
+            dispatcher=None,
+        )
+        async for result in _as_async_iterable(crawl_results):
+            if result.success:
+                results.append(_extract_page_data(result.url, result.html, result.status_code, result))
+            else:
+                results.append(_error_result(result.url, result.error_message or "Crawl failed", result.status_code))
     return results
 
 
-def crawl_site(base_url, max_pages=25):
+async def _as_async_iterable(crawl_results):
+    """arun_many returns either a list-like container or an async generator depending on config."""
+    if hasattr(crawl_results, "__aiter__"):
+        async for item in crawl_results:
+            yield item
+    else:
+        for item in crawl_results:
+            yield item
+
+
+def crawl_site(base_url: str, max_pages: int = 25) -> list:
+    """Discover URLs (sitemap, falling back to link BFS) then crawl them all with Crawl4AI."""
     parsed = urlparse(base_url)
     base_origin = f"{parsed.scheme}://{parsed.netloc}"
     base_url_clean = base_url.rstrip("/")
 
-    sitemap_urls = discover_via_sitemap(base_origin, max_pages)
-    if sitemap_urls:
-        urls = [base_url_clean] + [u for u in sitemap_urls if u != base_url_clean]
-        return _crawl_known_urls(urls[:max_pages])
+    urls = discover_via_sitemap(base_origin, max_pages)
+    if urls:
+        urls = [base_url_clean] + [u for u in urls if u != base_url_clean]
+    else:
+        urls = _discover_via_links(base_url_clean, max_pages)
 
-    return _crawl_via_links(base_url_clean, max_pages)
+    urls = urls[:max_pages]
+
+    try:
+        return asyncio.run(_crawl_urls_async(urls))
+    except Exception as exc:
+        return [_error_result(url, str(exc)) for url in urls]

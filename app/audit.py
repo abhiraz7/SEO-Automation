@@ -1,4 +1,5 @@
 from collections import Counter
+from types import SimpleNamespace
 
 TITLE_MIN, TITLE_MAX = 30, 60
 META_DESC_MIN, META_DESC_MAX = 50, 160
@@ -184,3 +185,159 @@ def title_checklist(page, issues):
         (f"Length is {TITLE_MIN}-{TITLE_MAX} characters", not ({"too_short", "too_long"} & live_rules)),
         ("Not duplicated on another page", not has_duplicate),
     ]
+
+
+def current_value_for(page, category):
+    """Return the page's actual current value for an issue category, not a description of what's
+    wrong with it. Shared by the project detail template's "Current" card and the AI suggestion
+    prompt context, so the category-to-field mapping lives in exactly one place.
+
+    The "kind" key tells callers how to render/flatten the payload: text (single string), list
+    (h1/h2 tags), kv (labeled pairs), images (src/alt pairs), schema (JSON-LD types + raw items),
+    or markdown (a content excerpt + the full text).
+    """
+    if category == "title":
+        return {"kind": "text", "value": page.title}
+    if category == "meta_description":
+        return {"kind": "text", "value": page.meta_description}
+    if category == "h1":
+        return {"kind": "list", "items": page.h1 or []}
+    if category == "h2":
+        return {"kind": "list", "items": page.h2 or []}
+    if category == "canonical":
+        return {"kind": "text", "value": page.canonical}
+    if category == "opengraph":
+        return {"kind": "kv", "items": [
+            ("OG Title", page.og_title),
+            ("OG Description", page.og_description),
+            ("OG URL", page.og_url),
+        ]}
+    if category == "twitter":
+        return {"kind": "kv", "items": [
+            ("Twitter Card", page.twitter_card),
+            ("Twitter Title", page.twitter_title),
+            ("Twitter Description", page.twitter_description),
+        ]}
+    if category == "lang":
+        return {"kind": "text", "value": page.lang}
+    if category == "image_alt":
+        return {"kind": "images", "items": page.image_alts or []}
+    if category == "schema":
+        items = (page.domain_schema or []) + (page.page_schemas or [])
+        types = sorted({item.get("@type") for item in items if isinstance(item, dict) and item.get("@type")})
+        return {"kind": "schema", "types": types, "raw": items}
+    if category == "content":
+        text = page.fit_markdown or page.custom_content or ""
+        return {"kind": "markdown", "excerpt": text[:400], "full": text}
+    return {"kind": "text", "value": None}
+
+
+# --- Candidate-value validation (does a suggested replacement pass its own rule?) ---
+
+_VALIDATABLE_RULES = {
+    "title": _audit_title,
+    "meta_description": _audit_meta_description,
+    "h1": _audit_h1,
+    "h2": _audit_h2,
+    "canonical": _audit_canonical,
+    "lang": _audit_lang,
+}
+
+
+def _mock_page_for(category, value):
+    """Build the minimal page-like object each rule function actually reads.
+    h1/h2 also carry heading_structure so the h2 order check doesn't misfire on an h1-less mock."""
+    if category == "title":
+        return SimpleNamespace(title=value)
+    if category == "meta_description":
+        return SimpleNamespace(meta_description=value)
+    if category == "h1":
+        h1 = [value] if value else []
+        return SimpleNamespace(h1=h1, heading_structure=[{"tag": "h1", "text": value}] if value else [])
+    if category == "h2":
+        h2 = [value] if value else []
+        structure = [{"tag": "h1", "text": "placeholder"}]
+        if value:
+            structure.append({"tag": "h2", "text": value})
+        return SimpleNamespace(h2=h2, heading_structure=structure)
+    if category == "canonical":
+        return SimpleNamespace(canonical=value)
+    if category == "lang":
+        return SimpleNamespace(lang=value)
+    return None
+
+
+def validate_value(category: str, value: str) -> dict:
+    """Run the real audit rule for `category` against a candidate replacement value, so
+    the UI can show whether an AI suggestion would actually pass the audit that flagged
+    it — instead of only restating the original issue's severity. Reuses the exact same
+    rule functions run_audit() uses; there is no second copy of the thresholds anywhere.
+
+    Only categories with a single free-text value to validate (title, meta_description,
+    h1, h2, canonical, lang) are supported — image_alt/schema/opengraph/twitter/content
+    are structural/aggregate checks that don't map to "does this one string pass?".
+    """
+    rule_fn = _VALIDATABLE_RULES.get(category)
+    if not rule_fn:
+        return {"applicable": False, "passed": None, "issues": []}
+
+    mock_page = _mock_page_for(category, (value or "").strip())
+    issues = rule_fn(mock_page)
+    return {
+        "applicable": True,
+        "passed": len(issues) == 0,
+        "issues": [{"rule": i["rule"], "severity": i["severity"], "message": i["message"]} for i in issues],
+    }
+
+
+# --- Rule reference (for the "View all rules" UI) --------------------------
+# Built from the same constants the rule functions above actually enforce, so this
+# can never drift out of sync with real behavior — there is no second copy of a
+# threshold anywhere.
+
+RULE_REQUIREMENTS = {
+    "title": [
+        {"rule": "missing", "severity": "error", "description": "A page title must be present."},
+        {"rule": "too_short", "severity": "warning", "description": f"Title should be at least {TITLE_MIN} characters."},
+        {"rule": "too_long", "severity": "warning", "description": f"Title should be at most {TITLE_MAX} characters."},
+        {"rule": "duplicate", "severity": "warning", "description": "Title must not be duplicated on another page in the same project."},
+    ],
+    "meta_description": [
+        {"rule": "missing", "severity": "error", "description": "A meta description must be present."},
+        {"rule": "too_short", "severity": "warning", "description": f"Meta description should be at least {META_DESC_MIN} characters."},
+        {"rule": "too_long", "severity": "warning", "description": f"Meta description should be at most {META_DESC_MAX} characters."},
+    ],
+    "h1": [
+        {"rule": "missing", "severity": "error", "description": "At least one H1 tag must be present."},
+        {"rule": "multiple", "severity": "warning", "description": "Only one H1 tag should be used per page."},
+        {"rule": "too_short", "severity": "warning", "description": f"H1 should be at least {H1_MIN} characters."},
+        {"rule": "too_long", "severity": "warning", "description": f"H1 should be at most {H1_MAX} characters."},
+    ],
+    "h2": [
+        {"rule": "missing", "severity": "warning", "description": "At least one H2 tag should be present."},
+        {"rule": "poor_structure", "severity": "warning", "description": "H2 tags must not appear before the H1 in document order."},
+    ],
+    "image_alt": [
+        {"rule": "missing", "severity": "warning", "description": "Every image should have an alt attribute."},
+        {"rule": "empty", "severity": "warning", "description": "Alt attributes should not be left empty."},
+    ],
+    "schema": [
+        {"rule": "missing", "severity": "error", "description": "At least one JSON-LD structured data block should be present."},
+        {"rule": "invalid", "severity": "warning", "description": "Every structured data item must declare an @type."},
+    ],
+    "canonical": [
+        {"rule": "missing", "severity": "warning", "description": "A canonical link tag should be present."},
+    ],
+    "opengraph": [
+        {"rule": "missing", "severity": "warning", "description": "Both og:title and og:description should be present."},
+    ],
+    "twitter": [
+        {"rule": "missing", "severity": "warning", "description": "A twitter:card meta tag should be present."},
+    ],
+    "lang": [
+        {"rule": "missing", "severity": "error", "description": "The HTML lang attribute must be present."},
+    ],
+    "content": [
+        {"rule": "thin", "severity": "warning", "description": f"Page content should be at least {THIN_CONTENT_WORDS} words."},
+    ],
+}

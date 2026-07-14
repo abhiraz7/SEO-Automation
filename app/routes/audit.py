@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -49,3 +49,10 @@ def reaudit_page(project_id: int, page_id: int, db: Session = Depends(get_db)):
     _persist_issues(db, project_id, audit_engine.run_audit(pages))
 
     return RedirectResponse(url=f"/projects/{project_id}/pages/{page_id}", status_code=303)
+
+
+@router.post("/api/validate-rule")
+def validate_rule(category: str = Form(...), value: str = Form(...)):
+    """Check whether a candidate replacement value (e.g. an AI suggestion the user is
+    about to save) would actually pass the audit rule for its category."""
+    return audit_engine.validate_value(category, value)

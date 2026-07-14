@@ -12,7 +12,7 @@ PAGE_FIELDS = [
     "h1", "h2", "heading_structure", "image_alts", "domain_schema", "page_schemas",
     "canonical", "og_title", "og_description", "og_url",
     "twitter_title", "twitter_description", "twitter_site", "twitter_card",
-    "lang", "custom_content",
+    "lang", "custom_content", "markdown", "fit_markdown", "internal_links",
 ]
 
 

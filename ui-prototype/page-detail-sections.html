@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page Detail — Sections Preview</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', system-ui, sans-serif; }
+
+    /* Accordion */
+    .accordion-body {
+      max-height: 1200px;
+      overflow: hidden;
+      transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .accordion-body.collapsed { max-height: 0; }
+    .chevron-icon { transition: transform 0.3s ease; }
+    .chevron-icon.rotated { transform: rotate(-90deg); }
+
+    /* Suggestion cards */
+    .sugg-card {
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+      border-left: 3px solid transparent;
+    }
+    .sugg-card:hover { background: #f5f3ff; }
+    .sugg-card.active {
+      background: #eef2ff;
+      border-left: 3px solid #6366f1;
+    }
+
+    /* Radio dot */
+    .radio-dot {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      border: 2px solid #D1D5DB;
+      flex-shrink: 0;
+      margin-top: 2px;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.12s;
+    }
+    .sugg-card.active .radio-dot {
+      border-color: #6366f1;
+      background: #6366f1;
+    }
+    .sugg-card.active .radio-dot::after {
+      content: '';
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: white;
+    }
+
+    /* Action buttons */
+    .action-btn { transition: opacity 0.12s, transform 0.12s; }
+    .action-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+    .action-btn:active { transform: translateY(0); }
+
+    /* KPI card hover */
+    .kpi-card { transition: box-shadow 0.15s, transform 0.15s; }
+    .kpi-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); transform: translateY(-1px); }
+
+    /* Step connector */
+    .step-connector {
+      flex: 1;
+      height: 2px;
+      border-top: 2px dashed #E5E7EB;
+      margin: 0 8px;
+      margin-top: -20px;
+    }
+
+    /* Save button success state */
+    .save-btn.saved { background: #10B981 !important; }
+  </style>
+</head>
+<body class="bg-[#F8F9FB] p-6 min-h-screen">
+  <div class="max-w-[1600px] mx-auto space-y-4">
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SECTION 1: WORKFLOW STEPPER                                    -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 px-8 py-5">
+      <div class="flex items-start">
+
+        <!-- Step 1: Current — COMPLETED -->
+        <div class="flex flex-col items-center flex-shrink-0 min-w-[90px]">
+          <div class="w-9 h-9 rounded-full border-2 border-green-500 bg-white flex items-center justify-center">
+            <svg width="15" height="12" viewBox="0 0 15 12" fill="none">
+              <path d="M1.5 6L5.5 10L13.5 1.5" stroke="#22C55E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="mt-2 text-center">
+            <div class="text-xs font-semibold text-green-600 leading-tight">Current</div>
+            <div class="text-[10px] text-gray-400 leading-tight mt-0.5">See existing</div>
+          </div>
+        </div>
+
+        <!-- Connector 1→2 -->
+        <div class="step-connector"></div>
+
+        <!-- Step 2: AI Suggestion — ACTIVE -->
+        <div class="flex flex-col items-center flex-shrink-0 min-w-[100px]">
+          <div class="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center ring-4 ring-indigo-100 shadow-sm">
+            <span class="text-white text-sm font-bold select-none">2</span>
+          </div>
+          <div class="mt-2 text-center">
+            <div class="text-xs font-semibold text-indigo-600 leading-tight">AI Suggestion</div>
+            <div class="text-[10px] text-indigo-400 leading-tight mt-0.5">Generate fixes</div>
+          </div>
+        </div>
+
+        <!-- Connector 2→3 -->
+        <div class="step-connector"></div>
+
+        <!-- Step 3: Rule Validation — FUTURE -->
+        <div class="flex flex-col items-center flex-shrink-0 min-w-[100px]">
+          <div class="w-9 h-9 rounded-full border-2 border-gray-200 bg-white flex items-center justify-center">
+            <span class="text-gray-400 text-sm font-semibold select-none">3</span>
+          </div>
+          <div class="mt-2 text-center">
+            <div class="text-xs font-semibold text-gray-400 leading-tight">Rule Validation</div>
+            <div class="text-[10px] text-gray-300 leading-tight mt-0.5">Check by rules</div>
+          </div>
+        </div>
+
+        <!-- Connector 3→4 -->
+        <div class="step-connector"></div>
+
+        <!-- Step 4: LLM Judge — FUTURE -->
+        <div class="flex flex-col items-center flex-shrink-0 min-w-[90px]">
+          <div class="w-9 h-9 rounded-full border-2 border-gray-200 bg-white flex items-center justify-center">
+            <span class="text-gray-400 text-sm font-semibold select-none">4</span>
+          </div>
+          <div class="mt-2 text-center">
+            <div class="text-xs font-semibold text-gray-400 leading-tight">LLM Judge</div>
+            <div class="text-[10px] text-gray-300 leading-tight mt-0.5">AI quality score</div>
+          </div>
+        </div>
+
+        <!-- Connector 4→5 -->
+        <div class="step-connector"></div>
+
+        <!-- Step 5: AI Visibility — FUTURE -->
+        <div class="flex flex-col items-center flex-shrink-0 min-w-[100px]">
+          <div class="w-9 h-9 rounded-full border-2 border-gray-200 bg-white flex items-center justify-center">
+            <span class="text-gray-400 text-sm font-semibold select-none">5</span>
+          </div>
+          <div class="mt-2 text-center">
+            <div class="text-xs font-semibold text-gray-400 leading-tight">AI Visibility</div>
+            <div class="text-[10px] text-gray-300 leading-tight mt-0.5">Track in AI models</div>
+          </div>
+        </div>
+
+        <!-- Connector 5→6 -->
+        <div class="step-connector"></div>
+
+        <!-- Step 6: Deploy — FUTURE -->
+        <div class="flex flex-col items-center flex-shrink-0 min-w-[80px]">
+          <div class="w-9 h-9 rounded-full border-2 border-gray-200 bg-white flex items-center justify-center">
+            <span class="text-gray-400 text-sm font-semibold select-none">6</span>
+          </div>
+          <div class="mt-2 text-center">
+            <div class="text-xs font-semibold text-gray-400 leading-tight">Deploy</div>
+            <div class="text-[10px] text-gray-300 leading-tight mt-0.5">Push to WordPress</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SECTION 2: KPI SCORE CARDS                                    -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="flex gap-4">
+
+      <!-- Card 1: On-Page Score (Gauge) -->
+      <div class="kpi-card flex-1 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-3">On-Page Score</div>
+        <div class="flex items-center gap-3">
+          <!-- Rainbow semicircular gauge SVG -->
+          <div class="flex-shrink-0">
+            <svg width="96" height="62" viewBox="0 0 200 118" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <!-- Rainbow gradient L→R matching red→green -->
+                <linearGradient id="rainbowGrad" x1="20" y1="0" x2="180" y2="0" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%"   stop-color="#EF4444"/>
+                  <stop offset="35%"  stop-color="#F97316"/>
+                  <stop offset="60%"  stop-color="#EAB308"/>
+                  <stop offset="100%" stop-color="#22C55E"/>
+                </linearGradient>
+              </defs>
+              <!-- Track arc -->
+              <path d="M 20 100 A 80 80 0 0 1 180 100"
+                    fill="none" stroke="#F3F4F6" stroke-width="13" stroke-linecap="round"/>
+              <!-- Colored arc -->
+              <path d="M 20 100 A 80 80 0 0 1 180 100"
+                    fill="none" stroke="url(#rainbowGrad)" stroke-width="9" stroke-linecap="round"/>
+              <!-- Needle: 79% → angle from left = 79/100 * 180° = 142.2° → standard angle = 37.8°
+                   cos(37.8°)=0.7902, sin(37.8°)=0.6131
+                   tip at radius 65: (100+65*0.7902, 100-65*0.6131) = (151.4, 60.1) -->
+              <line x1="100" y1="100" x2="151" y2="60"
+                    stroke="#374151" stroke-width="2.5" stroke-linecap="round"/>
+              <circle cx="100" cy="100" r="4.5" fill="#374151"/>
+              <!-- Tick labels -->
+              <text x="12" y="116" font-size="10" fill="#9CA3AF" font-family="Inter,sans-serif">0</text>
+              <text x="170" y="116" font-size="10" fill="#9CA3AF" font-family="Inter,sans-serif">100</text>
+            </svg>
+          </div>
+          <div class="flex flex-col items-start gap-1">
+            <div class="flex items-baseline gap-1">
+              <span class="text-3xl font-bold text-red-500 leading-none">79</span>
+              <span class="text-sm text-gray-400 font-medium">/100</span>
+            </div>
+            <span class="bg-green-100 text-green-700 text-[11px] font-semibold px-2.5 py-0.5 rounded-full">Good</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Total Issues -->
+      <div class="kpi-card flex-1 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div class="flex items-center gap-1.5 mb-3">
+          <span class="w-2 h-2 rounded-full bg-teal-500 flex-shrink-0"></span>
+          <span class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Total Issues</span>
+        </div>
+        <div class="text-[28px] font-bold text-gray-900 leading-none">3,537</div>
+        <a href="#" class="text-xs text-indigo-600 font-medium hover:underline mt-2 inline-block">View details</a>
+      </div>
+
+      <!-- Card 3: Critical Issues -->
+      <div class="kpi-card flex-1 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div class="flex items-center gap-1.5 mb-3">
+          <span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></span>
+          <span class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Critical Issues</span>
+        </div>
+        <div class="text-[28px] font-bold text-gray-900 leading-none">586</div>
+        <a href="#" class="text-xs text-indigo-600 font-medium hover:underline mt-2 inline-block">View details</a>
+      </div>
+
+      <!-- Card 4: Warnings -->
+      <div class="kpi-card flex-1 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div class="flex items-center gap-1.5 mb-3">
+          <span class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"></span>
+          <span class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Warnings</span>
+        </div>
+        <div class="text-[28px] font-bold text-gray-900 leading-none">1,892</div>
+        <a href="#" class="text-xs text-indigo-600 font-medium hover:underline mt-2 inline-block">View details</a>
+      </div>
+
+      <!-- Card 5: Fixed Issues -->
+      <div class="kpi-card flex-1 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div class="flex items-center gap-1.5 mb-3">
+          <span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
+          <span class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Fixed Issues</span>
+        </div>
+        <div class="text-[28px] font-bold text-gray-900 leading-none">2,951</div>
+        <a href="#" class="text-xs text-indigo-600 font-medium hover:underline mt-2 inline-block">View details</a>
+      </div>
+
+      <!-- Card 6: Pages Crawled -->
+      <div class="kpi-card flex-1 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Pages Crawled</div>
+        <div class="text-[28px] font-bold text-gray-900 leading-none">106 / 106</div>
+        <div class="text-xs text-gray-400 mt-2 font-medium">100%</div>
+      </div>
+
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SECTION 3: META TITLE ACCORDION PANEL                         -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+
+      <!-- Accordion Header -->
+      <button
+        id="accordion-btn"
+        class="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-inset"
+        onclick="toggleAccordion()"
+        aria-expanded="true"
+        aria-controls="accordion-body"
+      >
+        <!-- Chevron -->
+        <svg id="chevron-icon" class="chevron-icon w-4 h-4 text-indigo-600 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+        </svg>
+        <span class="text-sm font-semibold text-gray-900">Meta Title</span>
+        <!-- Status badge -->
+        <span class="ml-1 inline-flex items-center bg-indigo-50 text-indigo-600 text-xs font-medium px-2.5 py-0.5 rounded-full">Too short</span>
+      </button>
+
+      <!-- Accordion Body -->
+      <div id="accordion-body" class="accordion-body border-t border-gray-100">
+
+        <!-- 7-column grid -->
+        <div class="grid grid-cols-7 divide-x divide-gray-100 bg-[#FAFBFC]">
+
+          <!-- ── COL 1: CURRENT ── -->
+          <div class="p-5">
+            <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Current</div>
+            <div class="text-sm font-bold text-gray-900">SEO Services</div>
+            <div class="text-xs text-red-500 font-medium mt-1">12 / 60 characters</div>
+            <div class="mt-3 bg-gray-100 rounded-lg px-3 py-2.5">
+              <code class="text-[10px] text-gray-500 font-mono break-all leading-relaxed">&lt;title&gt;SEO Services&lt;/title&gt;</code>
+            </div>
+          </div>
+
+          <!-- ── COL 2: AI SUGGESTIONS ── -->
+          <div class="p-5 flex flex-col">
+            <div class="flex items-center gap-1.5 mb-3">
+              <span class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">AI Suggestions</span>
+              <!-- Info icon -->
+              <svg class="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-label="What are AI suggestions?">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </div>
+
+            <!-- Generate button -->
+            <button class="w-full bg-indigo-600 text-white text-xs font-semibold px-3 py-2 rounded-lg mb-3 flex items-center justify-center gap-1.5 hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
+              <span class="text-sm leading-none">✦</span>
+              Generate AI Suggestion
+            </button>
+
+            <!-- Suggestion cards -->
+            <div class="space-y-1.5" id="sugg-list">
+
+              <!-- #1 — selected -->
+              <div class="sugg-card active rounded-lg border border-indigo-200 p-2.5"
+                   onclick="selectSugg(this)"
+                   data-text="SEO Services Agency in India | Grow Organic Traffic">
+                <div class="flex items-start gap-2">
+                  <div class="radio-dot mt-0.5"></div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-[11px] font-medium text-gray-800 leading-snug">SEO Services Agency in India | Grow Organic Traffic</p>
+                    <div class="flex items-center justify-between mt-1 gap-1">
+                      <span class="text-[10px] text-gray-400">59 / 60 characters</span>
+                      <span class="sugg-selected-badge bg-green-100 text-green-700 text-[9px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap">Currently selected</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- #2 -->
+              <div class="sugg-card rounded-lg border border-gray-100 bg-white p-2.5"
+                   onclick="selectSugg(this)"
+                   data-text="Best SEO Services in India | Boost Rankings &amp; Traffic">
+                <div class="flex items-start gap-2">
+                  <span class="text-[10px] text-gray-400 font-bold mt-0.5 flex-shrink-0 w-5">#2</span>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-[11px] font-medium text-gray-700 leading-snug">Best SEO Services in India | Boost Rankings &amp; Traffic</p>
+                    <div class="flex items-center justify-between mt-1">
+                      <span class="text-[10px] text-gray-400">57 / 60 characters</span>
+                      <span class="text-[10px] text-gray-500 font-bold">8.1</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- #3 -->
+              <div class="sugg-card rounded-lg border border-gray-100 bg-white p-2.5"
+                   onclick="selectSugg(this)"
+                   data-text="SEO Agency in India | Increase Website Traffic">
+                <div class="flex items-start gap-2">
+                  <span class="text-[10px] text-gray-400 font-bold mt-0.5 flex-shrink-0 w-5">#3</span>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-[11px] font-medium text-gray-700 leading-snug">SEO Agency in India | Increase Website Traffic</p>
+                    <div class="flex items-center justify-between mt-1">
+                      <span class="text-[10px] text-gray-400">50 / 60 characters</span>
+                      <span class="text-[10px] text-gray-500 font-bold">7.8</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- #4 -->
+              <div class="sugg-card rounded-lg border border-gray-100 bg-white p-2.5"
+                   onclick="selectSugg(this)"
+                   data-text="Top SEO Services in India for Business Growth">
+                <div class="flex items-start gap-2">
+                  <span class="text-[10px] text-gray-400 font-bold mt-0.5 flex-shrink-0 w-5">#4</span>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-[11px] font-medium text-gray-700 leading-snug">Top SEO Services in India for Business Growth</p>
+                    <div class="flex items-center justify-between mt-1">
+                      <span class="text-[10px] text-gray-400">48 / 60 characters</span>
+                      <span class="text-[10px] text-gray-500 font-bold">7.5</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+            <a href="#" class="text-xs text-indigo-600 font-medium hover:underline mt-2 inline-block">▼ View all 6 suggestions</a>
+          </div>
+
+          <!-- ── COL 3: EDIT SUGGESTION ── -->
+          <div class="p-5 flex flex-col">
+            <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Edit Suggestion</div>
+            <div class="relative flex-1">
+              <textarea
+                id="edit-textarea"
+                rows="5"
+                class="w-full text-xs text-gray-800 bg-white border border-gray-200 rounded-lg p-3 pr-8 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 transition-shadow leading-relaxed"
+                aria-label="Edit suggestion text"
+              >SEO Services Agency in India | Organic Traffic</textarea>
+              <button
+                class="absolute top-2.5 right-2.5 text-gray-400 hover:text-indigo-500 transition-colors"
+                title="Edit"
+                onclick="document.getElementById('edit-textarea').focus()"
+              >
+                <!-- Pencil icon -->
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                </svg>
+              </button>
+            </div>
+            <div id="char-count" class="text-[10px] text-gray-400 mt-1.5">59 / 60 characters</div>
+            <div class="flex gap-2 mt-3">
+              <button
+                id="save-btn"
+                class="save-btn bg-indigo-600 text-white text-xs font-semibold px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+                onclick="saveEdit()"
+              >Save</button>
+              <button
+                class="bg-white border border-gray-300 text-gray-700 text-xs font-medium px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
+                onclick="cancelEdit()"
+              >Cancel</button>
+            </div>
+          </div>
+
+          <!-- ── COL 4: RULE VALIDATION ── -->
+          <div class="p-5">
+            <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Rule Validation</div>
+            <span class="inline-flex items-center bg-green-100 text-green-700 text-[11px] font-semibold px-3 py-1 rounded-full">Passed (5/5)</span>
+
+            <div class="mt-3 space-y-2.5">
+              <!-- Rule items -->
+              <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </div>
+                <span class="text-[11px] text-gray-600">Length (30 - 60 chars)</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </div>
+                <span class="text-[11px] text-gray-600">Contains Primary Keyword</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </div>
+                <span class="text-[11px] text-gray-600">Not Clickbait</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </div>
+                <span class="text-[11px] text-gray-600">Unique</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </div>
+                <span class="text-[11px] text-gray-600">No Special Characters</span>
+              </div>
+            </div>
+
+            <a href="#" class="text-xs text-indigo-600 font-medium hover:underline mt-3 inline-block">View all rules</a>
+          </div>
+
+          <!-- ── COL 5: LLM JUDGE ── -->
+          <div class="p-5">
+            <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-3">LLM Judge</div>
+            <span class="inline-flex items-center bg-green-100 text-green-700 text-[11px] font-semibold px-3 py-1 rounded-full">Best in Memory</span>
+
+            <!-- Circular progress ring -->
+            <!-- circumference = 2π × 36 ≈ 226.2 | 8.6/10 = 86% | dashoffset = 226.2 × 0.14 ≈ 31.7 -->
+            <div class="flex flex-col items-center mt-4">
+              <div class="relative w-[88px] h-[88px]">
+                <svg width="88" height="88" viewBox="0 0 88 88" fill="none">
+                  <!-- Track -->
+                  <circle cx="44" cy="44" r="36" stroke="#F3F4F6" stroke-width="8"/>
+                  <!-- Progress: 86% filled -->
+                  <circle
+                    cx="44" cy="44" r="36"
+                    stroke="#10B981" stroke-width="8"
+                    stroke-linecap="round"
+                    stroke-dasharray="226.2"
+                    stroke-dashoffset="31.7"
+                    transform="rotate(-90 44 44)"
+                  />
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                  <span class="text-xl font-bold text-green-600 leading-none">8.6</span>
+                  <span class="text-[10px] text-gray-400 leading-tight">/10</span>
+                </div>
+              </div>
+              <div class="text-xs text-green-600 font-semibold mt-2">Verdict: Good</div>
+            </div>
+
+            <a href="#" class="text-xs text-indigo-600 font-medium hover:underline mt-2 inline-block">View full analysis</a>
+          </div>
+
+          <!-- ── COL 6: AI VISIBILITY IMPACT ── -->
+          <div class="p-5">
+            <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">AI Visibility Impact</div>
+            <div class="text-[10px] text-gray-400 leading-snug mb-4">Average visibility increase if applied</div>
+
+            <div class="space-y-3">
+
+              <!-- Claude -->
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <div class="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0">
+                    <span class="text-white text-[9px] font-bold">C</span>
+                  </div>
+                  <span class="text-[11px] text-gray-700 truncate">Claude 3.5 Sonnet</span>
+                </div>
+                <span class="text-[11px] font-bold text-green-600 flex-shrink-0">+12%</span>
+              </div>
+
+              <!-- GPT-4o -->
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <div class="w-5 h-5 rounded-full bg-gray-800 flex items-center justify-center flex-shrink-0">
+                    <span class="text-white text-[9px] font-bold">G</span>
+                  </div>
+                  <span class="text-[11px] text-gray-700 truncate">GPT-4o</span>
+                </div>
+                <span class="text-[11px] font-bold text-green-600 flex-shrink-0">+9%</span>
+              </div>
+
+              <!-- Gemini -->
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <div class="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+                    <span class="text-white text-[9px] font-bold">G</span>
+                  </div>
+                  <span class="text-[11px] text-gray-700 truncate">Gemini 1.5 Pro</span>
+                </div>
+                <span class="text-[11px] font-bold text-green-600 flex-shrink-0">+8%</span>
+              </div>
+
+            </div>
+
+            <div class="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+              <span class="text-[11px] text-gray-500 font-medium">Average Impact</span>
+              <span class="bg-indigo-100 text-indigo-700 text-[11px] font-bold px-2.5 py-1 rounded-lg">+10%</span>
+            </div>
+          </div>
+
+          <!-- ── COL 7: ACTION ── -->
+          <div class="p-5">
+            <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Action</div>
+            <div class="space-y-2">
+
+              <!-- Deploy -->
+              <button class="action-btn w-full bg-indigo-600 text-white text-xs font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2 hover:bg-indigo-700 transition-colors">
+                <!-- WordPress W icon -->
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M12 2C6.486 2 2 6.486 2 12s4.486 10 10 10 10-4.486 10-10S17.514 2 12 2zm0 1.5c1.568 0 3.038.432 4.295 1.185L5.685 16.295A8.476 8.476 0 013.5 12c0-4.687 3.813-8.5 8.5-8.5zm0 17c-1.568 0-3.038-.432-4.295-1.185l10.61-11.61A8.476 8.476 0 0120.5 12c0 4.687-3.813 8.5-8.5 8.5z"/>
+                </svg>
+                Deploy
+              </button>
+
+              <!-- Preview -->
+              <button class="action-btn w-full bg-white border border-gray-200 text-gray-700 text-xs font-medium py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors">
+                <svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+                Preview
+              </button>
+
+              <!-- Skip -->
+              <button class="action-btn w-full bg-white border border-gray-200 text-gray-700 text-xs font-medium py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors">
+                <svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13 5l7 7-7 7M5 5l7 7-7 7"/>
+                </svg>
+                Skip
+              </button>
+
+            </div>
+          </div>
+
+        </div><!-- /grid -->
+      </div><!-- /accordion-body -->
+    </div><!-- /accordion -->
+
+  </div><!-- /max-w container -->
+
+  <script>
+    // ── ACCORDION ──────────────────────────────────────────────────────
+    const accordionBtn  = document.getElementById('accordion-btn');
+    const accordionBody = document.getElementById('accordion-body');
+    const chevronIcon   = document.getElementById('chevron-icon');
+
+    function toggleAccordion() {
+      const expanded = accordionBtn.getAttribute('aria-expanded') === 'true';
+      accordionBtn.setAttribute('aria-expanded', String(!expanded));
+      accordionBody.classList.toggle('collapsed');
+      chevronIcon.classList.toggle('rotated');
+    }
+
+    // ── SUGGESTION SELECTION ───────────────────────────────────────────
+    let selectedText = 'SEO Services Agency in India | Grow Organic Traffic';
+
+    function selectSugg(card) {
+      // Deselect all cards
+      document.querySelectorAll('.sugg-card').forEach(c => {
+        c.classList.remove('active', 'border-indigo-200');
+        c.classList.add('border-gray-100', 'bg-white');
+
+        // Remove "Currently selected" badge if present
+        const badge = c.querySelector('.sugg-selected-badge');
+        if (badge) badge.remove();
+
+        // Swap radio dot → rank number for non-#1 cards that get deselected
+        const radioDot = c.querySelector('.radio-dot');
+        if (radioDot && !c.dataset.rank) {
+          // leave as-is (was already radio)
+        }
+      });
+
+      // Select clicked card
+      card.classList.add('active', 'border-indigo-200');
+      card.classList.remove('border-gray-100', 'bg-white');
+
+      // Add "Currently selected" badge inside clicked card's char-count row
+      const charSpan = card.querySelector('.text-\\[10px\\].text-gray-400');
+      if (charSpan && !card.querySelector('.sugg-selected-badge')) {
+        const badge = document.createElement('span');
+        badge.className = 'sugg-selected-badge bg-green-100 text-green-700 text-[9px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap';
+        badge.textContent = 'Currently selected';
+        charSpan.parentElement.appendChild(badge);
+      }
+
+      // Update textarea + char count
+      const rawText = card.dataset.text.replace(/&amp;/g, '&');
+      selectedText = rawText;
+      const ta = document.getElementById('edit-textarea');
+      ta.value = rawText;
+      updateCharCount(rawText.length);
+    }
+
+    // ── EDIT SUGGESTION ────────────────────────────────────────────────
+    const textarea  = document.getElementById('edit-textarea');
+    const charCount = document.getElementById('char-count');
+    const saveBtn   = document.getElementById('save-btn');
+
+    function updateCharCount(len) {
+      charCount.textContent = len + ' / 60 characters';
+      charCount.style.color = len > 60 ? '#EF4444' : '#9CA3AF';
+    }
+
+    textarea.addEventListener('input', () => updateCharCount(textarea.value.length));
+
+    function saveEdit() {
+      console.log('Saving:', textarea.value);
+      saveBtn.textContent = 'Saved ✓';
+      saveBtn.classList.add('saved');
+      saveBtn.disabled = true;
+      setTimeout(() => {
+        saveBtn.textContent = 'Save';
+        saveBtn.classList.remove('saved');
+        saveBtn.disabled = false;
+        selectedText = textarea.value;
+      }, 1800);
+    }
+
+    function cancelEdit() {
+      textarea.value = selectedText;
+      updateCharCount(selectedText.length);
+    }
+  </script>
+</body>
+</html>

@@ -8,12 +8,14 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import audit, models
+from .. import audit, models, schemas
 from ..semrush import fetch_domain_metrics
 from ..database import get_db
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["current_value_for"] = audit.current_value_for
+templates.env.globals["RULE_REQUIREMENTS"] = audit.RULE_REQUIREMENTS
 
 ISSUES_PAGE_SIZE = 10
 
@@ -58,6 +60,48 @@ def create_project(
     db.commit()
     db.refresh(project)
     return RedirectResponse(url=f"/projects/{project.id}", status_code=303)
+
+
+PROFILE_FIELDS = ["brand", "industry", "services", "locations", "audiences", "tone", "usp"]
+
+
+@router.get("/projects/{project_id}/business-profile", response_model=schemas.BusinessProfileOut)
+def get_business_profile(project_id: int, db: Session = Depends(get_db)):
+    profile = (
+        db.query(models.BusinessProfile)
+        .filter(models.BusinessProfile.project_id == project_id)
+        .first()
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail="No business profile for this project")
+    return profile
+
+
+@router.post("/projects/{project_id}/business-profile", response_model=schemas.BusinessProfileOut)
+def save_business_profile(
+    project_id: int,
+    payload: schemas.BusinessProfileIn,
+    db: Session = Depends(get_db),
+):
+    project = db.get(models.Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    profile = (
+        db.query(models.BusinessProfile)
+        .filter(models.BusinessProfile.project_id == project_id)
+        .first()
+    )
+    if not profile:
+        profile = models.BusinessProfile(project_id=project_id)
+        db.add(profile)
+
+    for field in PROFILE_FIELDS:
+        setattr(profile, field, getattr(payload, field))
+
+    db.commit()
+    db.refresh(profile)
+    return profile
 
 
 @router.post("/projects/{project_id}/delete")
@@ -135,6 +179,12 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
     last_page = max(pages, key=lambda p: p.updated_at or datetime.min) if pages else None
     last_crawled_ago = _time_ago(last_page.updated_at) if last_page and last_page.updated_at else "Never"
 
+    profile = (
+        db.query(models.BusinessProfile)
+        .filter(models.BusinessProfile.project_id == project_id)
+        .first()
+    )
+
     return templates.TemplateResponse(
         request, "project_detail.html", {
             "project": project,
@@ -144,6 +194,7 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
             "semrush_connected": semrush_connected,
             "semrush_data": semrush_data,
             "last_crawled_ago": last_crawled_ago,
+            "profile": profile,
         }
     )
 

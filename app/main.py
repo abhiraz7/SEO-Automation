@@ -8,7 +8,11 @@ from .routes import audit, crawl, projects, suggestions
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="VTechSEO")
+app = FastAPI(
+    title="VTechSEO",
+    description="SEO Automation Platform with AI-powered crawling and analysis",
+    version="2.0.0"
+)
 
 app.include_router(projects.router)
 app.include_router(crawl.router)
