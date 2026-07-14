@@ -132,7 +132,11 @@
     <tbody id="kr-overview-body">
       {% for tracked_id, kw in keyword_rows %}
       <tr>
-        <td>{{ kw.keyword }}</td>
+        <td>{{ kw.keyword }}
+          {% if kw.status == 'no_data' %}
+          <span class="kr-badge" style="background:#fef3c7;color:#a16207;" title="Providers responded but have no metrics for this keyword/location">No data</span>
+          {% endif %}
+        </td>
         <td>{{ kw.volume if kw.volume is not none else '—' }}</td>
         <td>{{ kw.difficulty if kw.difficulty is not none else '—' }}</td>
         <td>{% if kw.intent %}<span class="kr-badge kr-intent-{{ kw.intent }}">{{ kw.intent|title }}</span>{% else %}—{% endif %}</td>
@@ -225,11 +229,22 @@
   }
 
   function krRowActions(kw) {
+    if (kw.status && kw.status !== 'ok') return '';
     const kwJson = JSON.stringify(kw.keyword);
     const vol = kw.volume ?? 'null';
     const diff = kw.difficulty ?? 'null';
     const intent = kw.intent ? JSON.stringify(kw.intent) : 'null';
     return `<a class="kr-link" href="#" onclick="krSaveKeyword(${kwJson}, ${vol}, ${diff}, ${intent});return false;">+ Save</a>`;
+  }
+
+  // A lookup result is one of ok / no_data / error -- render the last two
+  // visibly instead of a blank row (spec Bug 1).
+  function krStatusBadge(kw) {
+    if (kw.status === 'no_data')
+      return ' <span class="kr-badge" style="background:#fef3c7;color:#a16207;">No data</span>';
+    if (kw.status === 'error')
+      return ` <span class="kr-badge" style="background:#fee2e2;color:#dc2626;" title="${(kw.error ?? '').replace(/"/g, '&quot;')}">Lookup failed</span>`;
+    return '';
   }
 
   async function krSaveKeyword(keyword, volume, difficulty, intent) {
@@ -270,7 +285,7 @@
     }
     body.innerHTML = rows.map(kw => `
       <tr>
-        <td>${kw.keyword}</td>
+        <td>${kw.keyword}${krStatusBadge(kw)}</td>
         <td>${kw.volume ?? '—'}</td>
         <td>${kw.difficulty ?? '—'}</td>
         <td>${krIntentBadge(kw.intent)}</td>
@@ -296,7 +311,7 @@
     }
     body.innerHTML = rows.map(kw => `
       <tr>
-        <td>${kw.keyword}</td>
+        <td>${kw.keyword}${krStatusBadge(kw)}</td>
         <td>${kw.volume ?? '—'}</td>
         <td>${kw.difficulty ?? '—'}</td>
         <td>${krIntentBadge(kw.intent)}</td>
@@ -356,16 +371,24 @@
   async function krSubmitAddKeywords() {
     const raw = document.getElementById('kr-add-input').value;
     const keywords = raw.split('\n').map(k => k.trim()).filter(Boolean);
+    const failures = [];
     for (const keyword of keywords) {
-      await fetch(`/projects/${KR_PROJECT_ID}/keywords/track`, {
+      const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/track`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keyword }),
       });
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`;
+        failures.push(`${keyword}: ${detail}`);
+      }
     }
     closeAddKeywordsModal();
     document.getElementById('kr-add-input').value = '';
-    location.reload();
+    if (failures.length) {
+      alert(`Some keywords could not be tracked:\n\n${failures.join('\n')}`);
+    }
+    if (failures.length < keywords.length) location.reload();
   }
 </script>
 {% endblock %}

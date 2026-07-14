@@ -37,7 +37,10 @@ def _post(path: str, payload: list[dict]) -> dict:
 
 
 def fetch_keyword_overview(keyword: str) -> dict:
-    """Single-keyword lookup. Returns the raw first result item, or {"error": ...}."""
+    """Single-keyword lookup. Returns the raw first result item, {"no_data": True}
+    when the API succeeded but has nothing for this keyword, or {"error": ...}
+    when the call itself failed. Callers must branch on these -- an error must
+    never be rendered as an empty-but-successful row."""
     try:
         data = _post(
             "/dataforseo_labs/google/keyword_overview/live",
@@ -46,21 +49,25 @@ def fetch_keyword_overview(keyword: str) -> dict:
         if data.get("error"):
             return data
         items = data["tasks"][0]["result"][0]["items"]
-        return items[0] if items else {"error": "No data"}
+        return items[0] if items else {"no_data": True}
     except Exception as e:
         return {"error": str(e)}
 
 
 def fetch_keywords_bulk(keywords: list[str]) -> dict:
-    """Bulk Analysis fallback for keywords Semrush couldn't return."""
+    """Bulk Analysis fallback for keywords Semrush couldn't return.
+    Same per-keyword contract as fetch_keyword_overview: raw item,
+    {"no_data": True}, or {"error": ...}."""
     try:
         data = _post(
             "/dataforseo_labs/google/keyword_overview/live",
             [{"keywords": keywords, "location_code": LOCATION_CODE_US, "language_code": LANGUAGE_CODE_EN}],
         )
+        if data.get("error"):
+            return {kw: data for kw in keywords}
         items = data["tasks"][0]["result"][0]["items"]
         by_keyword = {item.get("keyword"): item for item in items}
-        return {kw: by_keyword.get(kw, {"error": "No data"}) for kw in keywords}
+        return {kw: by_keyword.get(kw, {"no_data": True}) for kw in keywords}
     except Exception as e:
         return {kw: {"error": str(e)} for kw in keywords}
 
@@ -113,10 +120,9 @@ def fetch_serp(keyword: str) -> dict:
 
 
 def normalize_keyword_row(row: dict, keyword: str) -> NormalizedKeyword:
-    """Maps a raw DataForSEO Labs item into NormalizedKeyword."""
-    if not row or row.get("error"):
-        return NormalizedKeyword(keyword=keyword, source="dataforseo", fetched_at=datetime.now(timezone.utc))
-
+    """Maps a raw DataForSEO Labs item into NormalizedKeyword. Only ever called
+    on successful rows -- error/no_data results are handled by keyword_provider,
+    which builds an explicit non-ok NormalizedKeyword instead of a fake blank one."""
     keyword_info = row.get("keyword_info") or {}
     keyword_props = row.get("keyword_properties") or {}
     intent_info = row.get("search_intent_info") or {}

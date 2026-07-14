@@ -45,14 +45,24 @@ class PageUnderstandingResult(BaseModel):
 class NormalizedKeyword(BaseModel):
     """Single shape both semrush.py and dataforseo.py normalize their
     provider-specific responses into. Nothing above the adapter layer should
-    ever branch on which provider answered."""
+    ever branch on which provider answered.
+
+    A lookup has three distinct outcomes and status carries them end-to-end
+    (adapter -> provider router -> route -> template):
+      ok      -> provider returned real metrics
+      no_data -> provider(s) succeeded but have nothing for this keyword+location
+      error   -> the lookup itself failed (auth, network, rate limit, ...)
+    no_data/error results must never be persisted as KeywordSnapshots -- they'd
+    be indistinguishable from a real zero-volume answer and corrupt trend history."""
     keyword: str
     volume: int | None = None
     difficulty: int | None = None          # 0-100
     intent: str | None = None              # informational | navigational | commercial | local
     cpc: float | None = None
-    source: str                            # "semrush" | "dataforseo"
+    source: str                            # "semrush" | "dataforseo" | "none" (no provider answered)
     fetched_at: datetime
+    status: str = "ok"                     # "ok" | "no_data" | "error"
+    error: str | None = None               # human-readable reason, only set when status == "error"
 
 
 class KeywordWithTrend(NormalizedKeyword):

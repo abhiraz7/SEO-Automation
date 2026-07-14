@@ -22,9 +22,19 @@ def _get_project(db: Session, project_id: int) -> models.Project:
     return project
 
 
-def _latest_snapshot_view(tracked: models.TrackedKeyword) -> schemas.KeywordWithTrend | None:
+def _latest_snapshot_view(tracked: models.TrackedKeyword) -> schemas.KeywordWithTrend:
+    """A tracked keyword with no snapshots is one whose every lookup so far
+    came back no_data/error (failed lookups don't write snapshots) -- shown as
+    an explicit 'no data' row rather than hidden or faked as zeros."""
     if not tracked.snapshots:
-        return None
+        return schemas.KeywordWithTrend(
+            keyword=tracked.keyword,
+            source="none",
+            fetched_at=tracked.created_at,
+            status="no_data",
+            trend="stable",
+            trend_confidence="insufficient_data",
+        )
     latest = max(tracked.snapshots, key=lambda s: s.fetched_at)
     trend, confidence = keyword_provider.compute_trend(tracked.snapshots)
     return schemas.KeywordWithTrend(
@@ -54,7 +64,7 @@ def _cluster_keywords(keywords: list[str]) -> list[dict]:
 
 def _overview_data(db: Session, project_id: int) -> dict:
     tracked = db.query(models.TrackedKeyword).filter(models.TrackedKeyword.project_id == project_id).all()
-    rows = [r for r in (_latest_snapshot_view(t) for t in tracked) if r is not None]
+    rows = [_latest_snapshot_view(t) for t in tracked]
 
     # "Avg. Position" and "Easy Wins" (position 11-20) in the mockup are SERP
     # rank stats. position on KeywordSnapshot is only ever populated once Rank
@@ -95,9 +105,7 @@ def keyword_research_page(project_id: int, request: Request, db: Session = Depen
     # tracked_keyword id for the "View SERP" link, so pair it up here instead
     # of adding an id field to the shared normalized schema.
     tracked = db.query(models.TrackedKeyword).filter(models.TrackedKeyword.project_id == project_id).all()
-    keyword_rows = [
-        (t.id, view) for t in tracked if (view := _latest_snapshot_view(t)) is not None
-    ]
+    keyword_rows = [(t.id, _latest_snapshot_view(t)) for t in tracked]
 
     return templates.TemplateResponse(
         request,
@@ -124,23 +132,36 @@ def track_keyword(project_id: int, payload: schemas.TrackKeywordIn, db: Session 
         .filter(models.TrackedKeyword.project_id == project_id, models.TrackedKeyword.keyword == keyword)
         .first()
     )
-    if not tracked:
+    newly_created = tracked is None
+    if newly_created:
         tracked = models.TrackedKeyword(project_id=project_id, keyword=keyword)
         db.add(tracked)
         db.commit()
         db.refresh(tracked)
 
     normalized = keyword_provider.get_keyword_overview(keyword)
-    db.add(models.KeywordSnapshot(
-        tracked_keyword_id=tracked.id,
-        volume=normalized.volume,
-        difficulty=normalized.difficulty,
-        intent=normalized.intent,
-        source=normalized.source,
-        fetched_at=normalized.fetched_at,
-    ))
-    db.commit()
-    db.refresh(tracked)
+
+    if normalized.status == "error":
+        # Don't leave a just-created row behind for a lookup that failed
+        # outright -- the user should fix the cause (keys/network) and retry.
+        if newly_created:
+            db.delete(tracked)
+            db.commit()
+        raise HTTPException(status_code=502, detail=f"Keyword lookup failed: {normalized.error}")
+
+    # no_data keeps the tracked keyword but writes no snapshot -- a fabricated
+    # zero-value snapshot would poison compute_trend() forever (spec Bug 1).
+    if normalized.status == "ok":
+        db.add(models.KeywordSnapshot(
+            tracked_keyword_id=tracked.id,
+            volume=normalized.volume,
+            difficulty=normalized.difficulty,
+            intent=normalized.intent,
+            source=normalized.source,
+            fetched_at=normalized.fetched_at,
+        ))
+        db.commit()
+        db.refresh(tracked)
 
     return _latest_snapshot_view(tracked)
 

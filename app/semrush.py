@@ -83,7 +83,9 @@ def fetch_keyword_overview(keyword: str) -> dict:
     Single-keyword lookup used for tracking + bulk analysis. Returns a dict
     with raw Semrush CSV field names (Ph, Nq, Cp, Co, Kd) plus an error key.
     Sets rate_limited=True on HTTP 429 so keyword_provider can trigger the
-    DataForSEO fallback and put Semrush on cooldown.
+    DataForSEO fallback and put Semrush on cooldown, and no_data=True when the
+    API answered fine but simply has nothing for this keyword (Semrush signals
+    that with an "ERROR 50 :: NOTHING FOUND" body, which parses to no fields).
     """
     api_key = os.environ.get("SEMRUSH_API_KEY", "").strip()
     if not api_key:
@@ -118,6 +120,9 @@ def fetch_keyword_overview(keyword: str) -> dict:
     except Exception as e:
         existing = result["error"] or ""
         result["error"] = (existing + f" | phrase_kdi: {e}").strip(" |") or None
+
+    if not result["error"] and result["Nq"] is None and result["Kd"] is None:
+        result["no_data"] = True
 
     return result
 

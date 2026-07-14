@@ -10,6 +10,7 @@ actual Semrush/DataForSEO accounts. Revisit once real usage/billing data is
 available -- treat these as a starting default, not a permanent design.
 """
 import time
+from datetime import datetime, timezone
 
 from . import dataforseo, semrush
 from .schemas import NormalizedKeyword
@@ -30,17 +31,48 @@ def _mark_semrush_cooldown() -> None:
     _SEMRUSH_COOLDOWN_UNTIL = time.monotonic() + _SEMRUSH_COOLDOWN_SECONDS
 
 
+def _no_data(keyword: str) -> NormalizedKeyword:
+    """Both providers answered but neither has metrics for this keyword."""
+    return NormalizedKeyword(
+        keyword=keyword, source="none", fetched_at=datetime.now(timezone.utc), status="no_data"
+    )
+
+
+def _failed(keyword: str, errors: list[str]) -> NormalizedKeyword:
+    """Every provider that was tried failed outright -- distinct from no_data
+    so the UI can say 'lookup failed' instead of rendering a blank row."""
+    return NormalizedKeyword(
+        keyword=keyword,
+        source="none",
+        fetched_at=datetime.now(timezone.utc),
+        status="error",
+        error="; ".join(errors) or "all providers failed",
+    )
+
+
 def get_keyword_overview(keyword: str) -> NormalizedKeyword:
     """Single-keyword lookup (used when tracking a keyword). Semrush first,
-    DataForSEO on error or while Semrush is in a rate-limit cooldown."""
+    DataForSEO on error, no-data, or while Semrush is in a rate-limit cooldown.
+    Always returns a NormalizedKeyword; check .status before persisting."""
+    errors: list[str] = []
+
     if _semrush_available():
         row = semrush.fetch_keyword_overview(keyword)
         if row.get("rate_limited"):
             _mark_semrush_cooldown()
-        elif not row.get("error"):
+            errors.append(f"semrush: {row.get('error') or 'rate limited'}")
+        elif row.get("error"):
+            errors.append(f"semrush: {row['error']}")
+        elif not row.get("no_data"):
             return semrush.normalize_keyword_row(row, keyword)
+        # Semrush no_data still falls through -- DataForSEO may have it.
 
     row = dataforseo.fetch_keyword_overview(keyword)
+    if row.get("error"):
+        errors.append(f"dataforseo: {row['error']}")
+        return _failed(keyword, errors)
+    if row.get("no_data"):
+        return _no_data(keyword)
     return dataforseo.normalize_keyword_row(row, keyword)
 
 
@@ -48,7 +80,9 @@ def get_keywords_bulk(keywords: list[str]) -> list[NormalizedKeyword]:
     """
     Bulk Analysis (<=100 keywords). ASSUMPTION (see module docstring): Semrush
     is tried first for all keywords; only keywords it fails to return get a
-    DataForSEO fallback call, rather than re-querying the whole list.
+    DataForSEO fallback call, rather than re-querying the whole list. Every
+    input keyword gets a result row back -- non-ok ones carry status
+    no_data/error instead of being silently dropped.
     """
     results: dict[str, NormalizedKeyword] = {}
 
@@ -57,14 +91,19 @@ def get_keywords_bulk(keywords: list[str]) -> list[NormalizedKeyword]:
         for kw, row in rows.items():
             if row.get("rate_limited"):
                 _mark_semrush_cooldown()
-            elif not row.get("error"):
+            elif not row.get("error") and not row.get("no_data"):
                 results[kw] = semrush.normalize_keyword_row(row, kw)
 
     missing = [kw for kw in keywords if kw not in results]
     if missing:
         rows = dataforseo.fetch_keywords_bulk(missing)
         for kw, row in rows.items():
-            results[kw] = dataforseo.normalize_keyword_row(row, kw)
+            if row.get("error"):
+                results[kw] = _failed(kw, [f"dataforseo: {row['error']}"])
+            elif row.get("no_data"):
+                results[kw] = _no_data(kw)
+            else:
+                results[kw] = dataforseo.normalize_keyword_row(row, kw)
 
     return [results[kw] for kw in keywords if kw in results]
 
