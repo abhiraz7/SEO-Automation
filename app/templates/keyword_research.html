@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+
+{% block title %}Keyword Research — {{ project.name }}{% endblock %}
+
+{% block topbar %}
+<div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px;min-width:0;">
+  <div style="min-width:0;flex:1;">
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:3px;display:flex;align-items:center;gap:4px;">
+      <a href="/" style="color:#94a3b8;text-decoration:none;" onmouseover="this.style.color='#0f172a'" onmouseout="this.style.color='#94a3b8'">Projects</a>
+      <span style="opacity:0.4;">/</span>
+      <a href="/projects/{{ project.id }}" style="color:#94a3b8;text-decoration:none;" onmouseover="this.style.color='#0f172a'" onmouseout="this.style.color='#94a3b8'">{{ project.name }}</a>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:18px;">🔍</span>
+      <span style="font-size:16px;font-weight:800;color:#0f172a;">Keyword Research</span>
+      <span style="font-size:12px;color:#94a3b8;">{{ project.base_url }}</span>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+    <a href="/projects/{{ project.id }}/keywords/export"
+      style="display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;transition:background .15s;"
+      onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#fff'">
+      Export CSV
+    </a>
+    <button onclick="openAddKeywordsModal()"
+      style="display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:6px;border:none;background:linear-gradient(135deg,#4f46e5,#6d28d9);color:#fff;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 1px 4px rgba(79,70,229,0.25);">
+      + Add Keywords
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .kr-stat { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; }
+  .kr-stat-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+  .kr-stat-value { font-size:26px; font-weight:800; color:#0f172a; line-height:1; }
+  .kr-stat-value.pending { color:#94a3b8; font-size:20px; }
+  .kr-stat-sub { font-size:11px; color:#64748b; margin-top:4px; }
+
+  .kr-tabs { display:flex; gap:4px; border-bottom:1px solid #e2e8f0; padding:0 24px; background:#fff; }
+  .kr-tab { padding:12px 6px; margin-right:20px; font-size:13px; font-weight:600; color:#64748b; cursor:pointer; border-bottom:2px solid transparent; user-select:none; }
+  .kr-tab:hover { color:#0f172a; }
+  .kr-tab.active { color:#4f46e5; border-bottom-color:#4f46e5; }
+
+  .kr-panel { display:none; padding:20px 24px 40px; }
+  .kr-panel.active { display:block; }
+
+  .kr-table { width:100%; border-collapse:collapse; background:#fff; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; }
+  .kr-table th { padding:10px 16px; text-align:left; font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; background:#fafafa; border-bottom:1px solid #f1f5f9; }
+  .kr-table td { padding:11px 16px; font-size:13px; color:#0f172a; border-bottom:1px solid #f8fafc; }
+  .kr-table tr:last-child td { border-bottom:none; }
+  .kr-table tr:hover td { background:#f8fafc; }
+  .kr-empty { padding:32px; text-align:center; color:#94a3b8; font-size:13px; }
+
+  .kr-badge { font-size:11px; font-weight:600; padding:2px 9px; border-radius:10px; display:inline-block; }
+  .kr-intent-informational { background:#e0e7ff; color:#4338ca; }
+  .kr-intent-local { background:#dcfce7; color:#15803d; }
+  .kr-intent-commercial { background:#ede9fe; color:#6d28d9; }
+  .kr-intent-navigational { background:#fef3c7; color:#a16207; }
+
+  .kr-trend-rising { color:#16a34a; font-weight:700; }
+  .kr-trend-falling { color:#dc2626; font-weight:700; }
+  .kr-trend-stable { color:#94a3b8; font-weight:600; }
+
+  .kr-link { color:#4f46e5; font-size:12px; font-weight:600; text-decoration:none; cursor:pointer; }
+  .kr-link:hover { text-decoration:underline; }
+
+  .kr-input { font-size:13px; padding:8px 12px; border:1px solid #e2e8f0; border-radius:7px; outline:none; }
+  .kr-input:focus { border-color:#4f46e5; box-shadow:0 0 0 2px rgba(79,70,229,.1); }
+  .kr-btn { padding:8px 16px; border-radius:7px; border:none; background:#4f46e5; color:#fff; font-size:12px; font-weight:700; cursor:pointer; }
+  .kr-btn:hover { opacity:.9; }
+  .kr-btn-secondary { background:#fff; border:1px solid #e2e8f0; color:#374151; }
+
+  #kr-modal-backdrop { display:none; position:fixed; inset:0; background:rgba(15,23,42,.3); z-index:400; }
+  #kr-modal { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:420px; max-width:92vw; background:#fff; border-radius:12px; box-shadow:0 20px 50px rgba(0,0,0,.25); z-index:401; padding:20px; }
+  #kr-modal.open, #kr-modal-backdrop.open { display:block; }
+</style>
+
+<!-- Stat cards -->
+<div style="padding:20px 24px 4px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+  <div class="kr-stat" style="border-left:4px solid #7c3aed;">
+    <div class="kr-stat-label" style="color:#7c3aed;">🎯 Tracked Keywords</div>
+    <div class="kr-stat-value">{{ overview.tracked_keywords }}</div>
+    <div class="kr-stat-sub">across all pages</div>
+  </div>
+  <div class="kr-stat" style="border-left:4px solid #16a34a;">
+    <div class="kr-stat-label" style="color:#16a34a;">🚀 Avg. Position</div>
+    {% if overview.data_quality == "live" %}
+    <div class="kr-stat-value">{{ overview.avg_position }}</div>
+    <div class="kr-stat-sub">from Rank Tracking</div>
+    {% else %}
+    <div class="kr-stat-value pending">—</div>
+    <div class="kr-stat-sub">Coming soon — enable Rank Tracking</div>
+    {% endif %}
+  </div>
+  <div class="kr-stat" style="border-left:4px solid #0284c7;">
+    <div class="kr-stat-label" style="color:#0284c7;">🔥 Search Volume</div>
+    <div class="kr-stat-value">{{ overview.search_volume }}</div>
+    <div class="kr-stat-sub">monthly total</div>
+  </div>
+  <div class="kr-stat" style="border-left:4px solid #d97706;">
+    <div class="kr-stat-label" style="color:#d97706;">✨ Easy Wins</div>
+    {% if overview.data_quality == "live" %}
+    <div class="kr-stat-value">{{ overview.easy_wins }}</div>
+    <div class="kr-stat-sub">position 11-20</div>
+    {% else %}
+    <div class="kr-stat-value pending">—</div>
+    <div class="kr-stat-sub">Coming soon — enable Rank Tracking</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="kr-tabs" style="margin-top:16px;">
+  <div class="kr-tab active" data-tab="overview" onclick="krShowTab('overview')">Overview</div>
+  <div class="kr-tab" data-tab="suggestions" onclick="krShowTab('suggestions')">Suggestions &amp; Questions</div>
+  <div class="kr-tab" data-tab="bulk" onclick="krShowTab('bulk')">Bulk Analysis</div>
+  <div class="kr-tab" data-tab="clustering" onclick="krShowTab('clustering')">Clustering</div>
+  <div class="kr-tab" data-tab="saved" onclick="krShowTab('saved')">Saved List</div>
+</div>
+
+<!-- Overview panel -->
+<div class="kr-panel active" id="panel-overview">
+  <table class="kr-table">
+    <thead>
+      <tr>
+        <th>Keyword</th><th>Volume</th><th>Difficulty</th><th>Intent</th><th>Trend</th>
+        <th style="text-align:right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="kr-overview-body">
+      {% for tracked_id, kw in keyword_rows %}
+      <tr>
+        <td>{{ kw.keyword }}</td>
+        <td>{{ kw.volume if kw.volume is not none else '—' }}</td>
+        <td>{{ kw.difficulty if kw.difficulty is not none else '—' }}</td>
+        <td>{% if kw.intent %}<span class="kr-badge kr-intent-{{ kw.intent }}">{{ kw.intent|title }}</span>{% else %}—{% endif %}</td>
+        <td>
+          {% if kw.trend_confidence == "insufficient_data" %}
+          <span class="kr-badge" style="background:#f1f5f9;color:#94a3b8;" title="Not enough snapshot history yet">Pending</span>
+          {% else %}
+          <span class="kr-trend-{{ kw.trend }}">{% if kw.trend == 'rising' %}▲{% elif kw.trend == 'falling' %}▼{% else %}—{% endif %} {{ kw.trend|title }}</span>
+          {% endif %}
+        </td>
+        <td style="text-align:right;white-space:nowrap;">
+          <a class="kr-link" href="#" onclick="krViewSerp({{ tracked_id }});return false;">View SERP</a>
+          &nbsp;&nbsp;<a class="kr-link" href="#" onclick="krSaveKeyword({{ kw.keyword|tojson }}, {{ kw.volume|tojson }}, {{ kw.difficulty|tojson }}, {{ kw.intent|tojson }});return false;">+ Save</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="kr-empty">No tracked keywords yet — click "+ Add Keywords" to start.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Suggestions & Questions panel -->
+<div class="kr-panel" id="panel-suggestions">
+  <div style="display:flex;gap:8px;margin-bottom:16px;">
+    <input class="kr-input" id="kr-seed-input" placeholder="Enter a seed keyword…" style="flex:1;">
+    <button class="kr-btn" onclick="krLoadSuggestions()">Search</button>
+  </div>
+  <table class="kr-table">
+    <thead><tr><th>Keyword</th><th>Volume</th><th>Difficulty</th><th>Intent</th><th style="text-align:right;">Actions</th></tr></thead>
+    <tbody id="kr-suggestions-body">
+      <tr><td colspan="5" class="kr-empty">Enter a seed keyword to see suggestions and questions.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Bulk Analysis panel -->
+<div class="kr-panel" id="panel-bulk">
+  <div style="margin-bottom:12px;">
+    <textarea id="kr-bulk-input" rows="5" class="kr-input" style="width:100%;resize:vertical;" placeholder="Paste up to 100 keywords, one per line…"></textarea>
+  </div>
+  <button class="kr-btn" onclick="krRunBulk()">Analyze</button>
+  <table class="kr-table" style="margin-top:16px;">
+    <thead><tr><th>Keyword</th><th>Volume</th><th>Difficulty</th><th>Intent</th><th style="text-align:right;">Actions</th></tr></thead>
+    <tbody id="kr-bulk-body">
+      <tr><td colspan="5" class="kr-empty">Paste keywords above and click Analyze.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Clustering panel -->
+<div class="kr-panel" id="panel-clustering">
+  <button class="kr-btn" onclick="krLoadClusters()">Generate Clusters</button>
+  <div id="kr-clusters" style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;"></div>
+</div>
+
+<!-- Saved List panel -->
+<div class="kr-panel" id="panel-saved">
+  <table class="kr-table">
+    <thead><tr><th>Keyword</th><th>Volume</th><th>Difficulty</th><th>Intent</th><th style="text-align:right;">Actions</th></tr></thead>
+    <tbody id="kr-saved-body">
+      <tr><td colspan="5" class="kr-empty">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Add Keywords modal -->
+<div id="kr-modal-backdrop" onclick="closeAddKeywordsModal()"></div>
+<div id="kr-modal">
+  <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:12px;">Add keywords to track</div>
+  <textarea id="kr-add-input" rows="5" class="kr-input" style="width:100%;resize:vertical;box-sizing:border-box;" placeholder="One keyword per line…"></textarea>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="kr-btn kr-btn-secondary" onclick="closeAddKeywordsModal()">Cancel</button>
+    <button class="kr-btn" onclick="krSubmitAddKeywords()">Add &amp; Track</button>
+  </div>
+</div>
+
+<script>
+  const KR_PROJECT_ID = {{ project.id }};
+
+  function krShowTab(name) {
+    document.querySelectorAll('.kr-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === name));
+    document.querySelectorAll('.kr-panel').forEach(el => el.classList.toggle('active', el.id === 'panel-' + name));
+    if (name === 'saved') krLoadSaved();
+  }
+
+  function krIntentBadge(intent) {
+    if (!intent) return '—';
+    return `<span class="kr-badge kr-intent-${intent}">${intent.charAt(0).toUpperCase() + intent.slice(1)}</span>`;
+  }
+
+  function krRowActions(kw) {
+    const kwJson = JSON.stringify(kw.keyword);
+    const vol = kw.volume ?? 'null';
+    const diff = kw.difficulty ?? 'null';
+    const intent = kw.intent ? JSON.stringify(kw.intent) : 'null';
+    return `<a class="kr-link" href="#" onclick="krSaveKeyword(${kwJson}, ${vol}, ${diff}, ${intent});return false;">+ Save</a>`;
+  }
+
+  async function krSaveKeyword(keyword, volume, difficulty, intent) {
+    await fetch(`/projects/${KR_PROJECT_ID}/keywords/saved`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword, volume, difficulty, intent }),
+    });
+    krToast(`Saved "${keyword}"`);
+  }
+
+  async function krViewSerp(trackedId) {
+    krToast('Loading live SERP…');
+    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/${trackedId}/serp`);
+    const data = await res.json();
+    // Live lookup only -- intentionally not persisted, see keyword_provider.py.
+    alert(JSON.stringify(data, null, 2).slice(0, 2000));
+  }
+
+  function krToast(msg) {
+    const el = document.createElement('div');
+    el.textContent = msg;
+    el.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#0f172a;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.2);';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2500);
+  }
+
+  async function krLoadSuggestions() {
+    const seed = document.getElementById('kr-seed-input').value.trim();
+    const body = document.getElementById('kr-suggestions-body');
+    if (!seed) return;
+    body.innerHTML = '<tr><td colspan="5" class="kr-empty">Loading…</td></tr>';
+    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/suggestions?seed=${encodeURIComponent(seed)}`);
+    const rows = await res.json();
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="5" class="kr-empty">No suggestions found.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(kw => `
+      <tr>
+        <td>${kw.keyword}</td>
+        <td>${kw.volume ?? '—'}</td>
+        <td>${kw.difficulty ?? '—'}</td>
+        <td>${krIntentBadge(kw.intent)}</td>
+        <td style="text-align:right;">${krRowActions(kw)}</td>
+      </tr>`).join('');
+  }
+
+  async function krRunBulk() {
+    const raw = document.getElementById('kr-bulk-input').value;
+    const keywords = raw.split('\n').map(k => k.trim()).filter(Boolean).slice(0, 100);
+    const body = document.getElementById('kr-bulk-body');
+    if (!keywords.length) return;
+    body.innerHTML = '<tr><td colspan="5" class="kr-empty">Analyzing…</td></tr>';
+    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords }),
+    });
+    const rows = await res.json();
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="5" class="kr-empty">No data returned.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(kw => `
+      <tr>
+        <td>${kw.keyword}</td>
+        <td>${kw.volume ?? '—'}</td>
+        <td>${kw.difficulty ?? '—'}</td>
+        <td>${krIntentBadge(kw.intent)}</td>
+        <td style="text-align:right;">${krRowActions(kw)}</td>
+      </tr>`).join('');
+  }
+
+  async function krLoadClusters() {
+    const wrap = document.getElementById('kr-clusters');
+    wrap.innerHTML = '<div class="kr-empty">Loading…</div>';
+    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/clusters`);
+    const clusters = await res.json();
+    if (!clusters.length) {
+      wrap.innerHTML = '<div class="kr-empty">No tracked or saved keywords to cluster yet.</div>';
+      return;
+    }
+    wrap.innerHTML = clusters.map(c => `
+      <div class="kr-stat">
+        <div style="font-size:12px;font-weight:700;color:#4f46e5;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;">${c.root}</div>
+        ${c.keywords.map(k => `<div style="font-size:13px;color:#0f172a;padding:3px 0;">${k}</div>`).join('')}
+      </div>`).join('');
+  }
+
+  async function krLoadSaved() {
+    const body = document.getElementById('kr-saved-body');
+    body.innerHTML = '<tr><td colspan="5" class="kr-empty">Loading…</td></tr>';
+    const res = await fetch(`/projects/${KR_PROJECT_ID}/keywords/saved`);
+    const rows = await res.json();
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="5" class="kr-empty">Nothing saved yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(kw => `
+      <tr>
+        <td>${kw.keyword}</td>
+        <td>${kw.volume ?? '—'}</td>
+        <td>${kw.difficulty ?? '—'}</td>
+        <td>${krIntentBadge(kw.intent)}</td>
+        <td style="text-align:right;"><a class="kr-link" href="#" onclick="krDeleteSaved(${kw.id});return false;">Remove</a></td>
+      </tr>`).join('');
+  }
+
+  async function krDeleteSaved(id) {
+    await fetch(`/projects/${KR_PROJECT_ID}/keywords/saved/${id}`, { method: 'DELETE' });
+    krLoadSaved();
+  }
+
+  function openAddKeywordsModal() {
+    document.getElementById('kr-modal').classList.add('open');
+    document.getElementById('kr-modal-backdrop').classList.add('open');
+  }
+  function closeAddKeywordsModal() {
+    document.getElementById('kr-modal').classList.remove('open');
+    document.getElementById('kr-modal-backdrop').classList.remove('open');
+  }
+
+  async function krSubmitAddKeywords() {
+    const raw = document.getElementById('kr-add-input').value;
+    const keywords = raw.split('\n').map(k => k.trim()).filter(Boolean);
+    for (const keyword of keywords) {
+      await fetch(`/projects/${KR_PROJECT_ID}/keywords/track`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword }),
+      });
+    }
+    closeAddKeywordsModal();
+    document.getElementById('kr-add-input').value = '';
+    location.reload();
+  }
+</script>
+{% endblock %}
