@@ -264,3 +264,28 @@ Add `app/validator.py` — validate each suggestion against length, keyword pres
 Update the Business Profile drawer UI and `prompt_builder._profile_block()`/`build_meta_optimization_prompt()` to the new entity shape (currently only the suggestion-generation path was updated, per explicit scope for this session).
 
 ---
+
+## 2026-07-14 — Session: Keyword Research standalone rework (spec implementation)
+
+Implemented `prompts/keyword-research-standalone-spec.md` end-to-end, in 6 commits (each pushed):
+
+### Bug fixes (why the tool showed blank `—` rows)
+- **Bug 1 — error propagation** (`bf16001`): `NormalizedKeyword` gained `status` ("ok"|"no_data"|"error") + `error`; adapters return explicit `{"no_data": True}` / `{"error": ...}` markers; `keyword_provider` propagates them (Semrush no_data still falls through to DataForSEO); tracking writes a `KeywordSnapshot` **only** on ok (error rolls back a just-created tracked row, HTTP 502); UI renders "No data" / "Lookup failed" badges. Fabricated zero-value snapshots can no longer poison `compute_trend()`.
+- **Bug 2 — location threading** (`1164bdd`): new `app/keyword_locations.py` maps ISO country codes → Semrush database codes + DataForSEO location_codes (9 markets, IN default). Location is an explicit parameter through every fetch and route, with a market selector in the topbar. Unsupported codes are rejected (400), never silently mapped to US. `fetch_domain_metrics`' `database=us` deliberately untouched (project dashboard, not this tool).
+- **Bug 3 — provider visibility** (`cbbf42e`): `GET /keywords/provider-status` + page banner (red = none configured, amber = one). Immediately diagnostic: this install has Semrush configured, DataForSEO not.
+
+### Tests (`efe2191`)
+`tests/` created — 18 pytest tests, no network (adapters mocked, snapshots as SimpleNamespace): full `compute_trend` matrix + router contract (429 → cooldown → fallback, bulk row-per-keyword, unsupported location). pytest added to requirements.
+
+### Standalone detachment (`2071292`)
+- New `KeywordWorkspace` model: keyword data hangs off workspaces, not projects; nullable `project_id` on the workspace only (spec §3.2's narrow-join-point design).
+- Routes moved `/projects/{id}/keywords/*` → `/keywords/{workspace_id}/*`; `/keywords` = picker (auto-enter if only one) + create form; old project URL 303-redirects, creating the linked workspace on first use; sidebar link now `/keywords` everywhere.
+- `migrations/003_keyword_workspaces.py`: backfills one workspace per project with keyword data, rebuilds tracked/saved tables with `workspace_id`. Deviation from spec's add-then-drop-later documented in the migration docstring: SQLite can't relax NOT NULL in place, so it's a single verified rebuild (row counts checked before COMMIT, mismatch rolls back). Ran live: 3 workspaces, 3 tracked + 1 saved moved, counts match, snapshot ids untouched. DB backed up first.
+
+### UX (`1002a05`)
+Bulk >100 paste shows truncation notice; View SERP renders top-10 organic results in a modal (was a raw JSON `alert`); CSV export gets UTF-8 BOM — verified end-to-end with a Hindi keyword.
+
+### Status / open items
+- All MVP checklist items pass except live provider verification with real credentials (DataForSEO creds not set in this env) and a real ≥7-day trend diff (needs calendar time).
+- Rank Tracking still a stub (`position` always NULL) — Avg. Position / Easy Wins stay "Coming soon" by design.
+- Provider priority order still the flagged assumption; revisit with billing data.

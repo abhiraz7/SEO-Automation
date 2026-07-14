@@ -574,3 +574,32 @@ for category in categories:                     for category in categories:
 
 **1 architectural decision that should never be changed without discussion**
 **All AI prompt construction goes through `app/prompt_builder.py` — no inline prompt strings in routes, `claude.py`, templates, or anywhere else.** Every future AI feature (meta title, description, H1/H2, schema, AI visibility) calls `build_context()` + a `build_*_prompt()` function. An inline prompt anywhere else recreates the drift this session was designed to prevent — and means the next data source (SEMrush, DataForSEO, RAG) silently won't reach that feature.
+
+---
+
+## 2026-07-14 — Session: Why "no data" and "error" must be different things (Keyword Research rework)
+
+### The bug that motivated everything
+The keyword tool showed `dentist in new delhi` as a row of dashes. Three completely different causes rendered *identically*: (1) API credentials missing, (2) network/HTTP failure, (3) the keyword genuinely not being in the provider's index — because we were querying the **US** keyword database for an Indian keyword. The adapter collapsed all failures into an empty-but-valid-looking object, and the route persisted it as a real snapshot.
+
+**Testing analogy:** this is a test that swallows exceptions and reports PASS. If your Selenium wrapper catches `NoSuchElementException` and returns `""`, every assertion downstream compares against `""` and you can't tell "element missing" from "element legitimately empty". The fix is the same in both worlds: *make failure a first-class value, not a default*.
+
+### The three-state result pattern
+`NormalizedKeyword.status` is now `ok | no_data | error` — the difference between:
+- `ok` → assert on the data
+- `no_data` → the system worked, the answer is "nothing" (a real, honest answer)
+- `error` → the measurement itself failed; **do not record it as data**
+
+That last rule matters most: a failed lookup used to write a zero-volume snapshot, and `compute_trend()` diffing a real snapshot against a fabricated zero looks like a −100% crash. In testing terms: never let a broken test write to the same results table as passing runs — quarantine it.
+
+### Parameterize what you hardcoded (location threading)
+`database=us` was hardcoded in every provider URL. A healthy, authenticated API returning "no data" for `dentist in new delhi` is *correct behavior* against the wrong market. New `keyword_locations.py` maps one ISO code to each provider's addressing scheme, and unsupported codes fail loudly instead of falling back silently. Lesson: a silent default is a hidden global; the moment two callers need different values it becomes a bug you can't see.
+
+### Schema migration discipline (SQLite edition)
+Detaching the tool from projects meant moving `tracked_keywords.project_id` → `workspace_id`. The spec said "add column now, drop old one later" — but SQLite can't relax a NOT NULL constraint in place, so interim inserts would crash. The migration instead does one **verified rebuild inside a transaction**: create new table, copy rows (preserving primary keys so `keyword_snapshots` FKs stay valid), count rows on both sides, roll back on mismatch. Same discipline as before, compressed into one step — and the reasoning is written in the migration's docstring so future-you knows it was a deliberate deviation, not ignorance of the spec.
+
+### Interview questions this session answers
+1. *How do you distinguish "no data" from "failure" in an API integration?* — Three-state result contract carried end-to-end; errors never persisted as data.
+2. *Why are fabricated/zero rows dangerous in time-series data?* — They corrupt every future diff (trend computation) against them.
+3. *How do you rename/move a NOT NULL column in SQLite?* — Table rebuild in a transaction with row-count verification; SQLite has no ALTER COLUMN.
+4. *How do you test provider fallback logic without hitting APIs?* — Mock the adapter boundary (the raw-dict contract), assert on routing decisions: 18 tests, zero network.
