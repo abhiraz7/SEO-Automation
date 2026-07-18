@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 def _utcnow():
     return datetime.now(timezone.utc)
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -220,6 +220,48 @@ class SavedKeyword(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     workspace = relationship("KeywordWorkspace", back_populates="saved_keywords")
+
+
+class Job(Base):
+    """A unit of scheduled or on-demand background work (crawl, rank_check,
+    keyword_refresh, ...). Handlers are looked up by job_type in
+    app/jobs/registry.py; this table only records what ran and its outcome --
+    it has no opinion on what a job actually does."""
+    __tablename__ = "jobs"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    job_type = Column(String, nullable=False)  # "crawl" | "rank_check" | "keyword_refresh" | ...
+    status = Column(String, nullable=False, default="queued")  # queued|running|completed|failed|cancelled
+    payload = Column(JSON)
+    result_summary = Column(JSON)
+    error = Column(Text)
+    attempts = Column(Integer, default=0)
+    scheduled_for = Column(DateTime)
+    started_at = Column(DateTime)
+    finished_at = Column(DateTime)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class Schedule(Base):
+    """Recurring-job configuration for one project+job_type pair. The
+    scheduler polls enabled rows where next_run_at <= now, creates a Job from
+    each, and advances next_run_at -- this table only holds *when/how often*;
+    job-specific settings (crawl behavior, etc.) live in payload."""
+    __tablename__ = "schedules"
+    __table_args__ = (UniqueConstraint("project_id", "job_type", name="uq_schedule_project_job_type"),)
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    job_type = Column(String, nullable=False)
+    enabled = Column(Boolean, default=True)
+    interval = Column(String)  # "24h" | "12h" | "6h" | "weekly" | "cron"
+    cron_expression = Column(String)
+    timezone = Column(String, default="Asia/Kolkata")
+    payload = Column(JSON)
+    last_run_at = Column(DateTime)
+    next_run_at = Column(DateTime)
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class PageUnderstanding(Base):
