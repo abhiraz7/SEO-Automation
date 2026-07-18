@@ -153,6 +153,36 @@ def fetch_keyword_questions(seed: str, location: str = DEFAULT_LOCATION) -> list
     return [r for r in related if str(r.get("keyword", "")).lower().startswith(QUESTION_WORDS)]
 
 
+# DataForSEO SERP item types -> the feature flags the UI shows as icons.
+# Anything not mapped just doesn't show -- unknown new SERP furniture should
+# never crash the summary.
+_SERP_FEATURE_TYPES = {
+    "ai_overview": "ai_overview",
+    "featured_snippet": "featured_snippet",
+    "people_also_ask": "people_also_ask",
+    "local_pack": "local_pack",
+    "map": "local_pack",
+    "video": "video",
+    "images": "images",
+    "shopping": "shopping",
+    "popular_products": "shopping",
+}
+
+
+def summarize_serp_features(result: dict) -> dict:
+    """Boils a raw SERP result's item list down to {feature: True, ads: N}.
+    Feeds both the feature icons in the UI and keyword_scoring's SERP penalty."""
+    features: dict = {"ads": 0}
+    for item in result.get("items") or []:
+        item_type = item.get("type")
+        if item_type == "paid":
+            features["ads"] += 1
+        mapped = _SERP_FEATURE_TYPES.get(item_type)
+        if mapped:
+            features[mapped] = True
+    return features
+
+
 def fetch_serp(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
     """Live SERP lookup for the 'View SERP' action -- intentionally not cached
     or stored anywhere (see keyword_provider.py / plan point 4)."""
@@ -169,7 +199,9 @@ def fetch_serp(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
                 "device": "desktop",
             }],
         )
-        return data["tasks"][0]["result"][0]
+        result = data["tasks"][0]["result"][0]
+        result["features"] = summarize_serp_features(result)
+        return result
     except Exception as e:
         return {"error": str(e)}
 

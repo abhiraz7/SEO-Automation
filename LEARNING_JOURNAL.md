@@ -617,3 +617,17 @@ DataForSEO's `appendix/user_data` returns success even for accounts blocked from
 
 ### Degrade, don't die
 "View SERP" depended on one provider. Now the router tries DataForSEO (rich results) and falls back to Semrush `phrase_organic` (domain+URL only): a thinner answer beats an error dialog. Same principle as graceful test-environment degradation: partial signal > red X with no information.
+
+## 2026-07-18 (later) — Turning metrics into judgment: the "Worth It" layer
+
+### Data tools sell numbers; users need verdicts
+Semrush gives volume and KD; a non-SEO marketer can't combine five numbers into "chase it or skip it". The scoring module encodes that judgment once (volume log-scale + difficulty + intent value − SERP crowding) and — critically — returns its *factors* as human sentences alongside the score. Testing analogy: a dashboard that shows raw latency percentiles vs one that says "SLO breached because p99 doubled after deploy X". Same data, different altitude.
+
+### Score what you know, flag what you don't
+The SERP penalty only applies when a SERP was actually inspected; unknown ≠ zero. The factor literally says "SERP features not checked yet — score may drop once inspected". Same three-state discipline as ok/no_data/error, now inside a derived metric.
+
+### Free data you're already paying for
+Two upgrades cost zero extra API units: `phrase_this` returns a 12-month trend series the old `phrase_all` call silently dropped (same endpoint family, same price), and the SERP response we already fetched contains every SERP feature (AI Overview, ads count) we were discarding. Before adding a data source, re-read the response you already get.
+
+### LLM as the judgment layer, not the data layer
+The Claude brief prompt receives only facts we fetched (metrics, top-10 URLs, real question keywords) and asks for structure + strategy. Claude never invents volumes; the API never writes prose. Clean separation means a hallucinated number can't appear — there are no numbers for it to make up, they're all injected.

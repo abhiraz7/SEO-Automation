@@ -8,11 +8,12 @@ import csv
 import io
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import keyword_locations, keyword_provider, models, schemas
+from .. import claude, keyword_locations, keyword_provider, keyword_scoring, models, prompt_builder, schemas
 from ..database import get_db
 
 router = APIRouter()
@@ -36,6 +37,22 @@ def _get_workspace(db: Session, workspace_id: int) -> models.KeywordWorkspace:
     return workspace
 
 
+def _with_score(kw: schemas.NormalizedKeyword, serp_features: dict | None = None):
+    """Attach the Worth It verdict to any ok row -- scoring a failed/empty
+    lookup would just dress missing data up as a real 0."""
+    if kw.status == "ok":
+        kw.worth_it = keyword_scoring.score_keyword(kw.volume, kw.difficulty, kw.intent, serp_features)
+    return kw
+
+
+def _parse_trend_points(raw: str | None) -> list[float] | None:
+    try:
+        points = [float(p) for p in (raw or "").split(",") if p.strip()]
+        return points or None
+    except ValueError:
+        return None
+
+
 def _latest_snapshot_view(tracked: models.TrackedKeyword) -> schemas.KeywordWithTrend:
     """A tracked keyword with no snapshots is one whose every lookup so far
     came back no_data/error (failed lookups don't write snapshots) -- shown as
@@ -51,7 +68,7 @@ def _latest_snapshot_view(tracked: models.TrackedKeyword) -> schemas.KeywordWith
         )
     latest = max(tracked.snapshots, key=lambda s: s.fetched_at)
     trend, confidence = keyword_provider.compute_trend(tracked.snapshots)
-    return schemas.KeywordWithTrend(
+    return _with_score(schemas.KeywordWithTrend(
         keyword=tracked.keyword,
         volume=latest.volume,
         difficulty=latest.difficulty,
@@ -60,7 +77,8 @@ def _latest_snapshot_view(tracked: models.TrackedKeyword) -> schemas.KeywordWith
         fetched_at=latest.fetched_at,
         trend=trend,
         trend_confidence=confidence,
-    )
+        trend_points=_parse_trend_points(latest.trend_points),
+    ))
 
 
 def _cluster_keywords(keywords: list[str]) -> list[dict]:
@@ -87,25 +105,18 @@ def _overview_data(db: Session, workspace_id: int) -> dict:
     # stay None and data_quality tells the frontend to render "--"/"Coming
     # soon" instead of a 0 or a proxy number. No code change needed here once
     # Rank Tracking ships: real position values just start appearing.
-    latest_positions = [
-        s.position
-        for t in tracked
-        if t.snapshots
-        for s in [max(t.snapshots, key=lambda s: s.fetched_at)]
-        if s.position is not None
-    ]
-    data_quality = "live" if latest_positions else "position_data_pending"
-    avg_position = round(sum(latest_positions) / len(latest_positions), 1) if latest_positions else None
-    easy_wins = sum(1 for p in latest_positions if 11 <= p <= 20) if latest_positions else None
-
     total_volume = sum(r.volume for r in rows if r.volume is not None)
+    difficulties = [r.difficulty for r in rows if r.difficulty is not None]
+    avg_kd = round(sum(difficulties) / len(difficulties)) if difficulties else None
+    # Easy Wins = Worth It band, not SERP position (position needs Rank
+    # Tracking, which doesn't exist yet) -- an honest number available today.
+    easy_wins = sum(1 for r in rows if r.worth_it and r.worth_it.band == "easy")
 
     return {
         "tracked_keywords": len(tracked),
-        "avg_position": avg_position,
         "search_volume": total_volume,
+        "avg_kd": avg_kd,
         "easy_wins": easy_wins,
-        "data_quality": data_quality,
         "keywords": rows,
     }
 
@@ -186,11 +197,13 @@ def keyword_research_page(workspace_id: int, request: Request, db: Session = Dep
     workspace = _get_workspace(db, workspace_id)
     overview = _overview_data(db, workspace_id)
 
-    # The API schema (KeywordWithTrend) has no id -- the template needs the
-    # tracked_keyword id for the "View SERP" link, so pair it up here instead
-    # of adding an id field to the shared normalized schema.
+    # The tables are rendered client-side (filters/selection/expand rows need
+    # one uniform row pipeline), so ship the rows as JSON with the tracked id
+    # bolted on rather than server-rendering the table.
     tracked = db.query(models.TrackedKeyword).filter(models.TrackedKeyword.workspace_id == workspace_id).all()
-    keyword_rows = [(t.id, _latest_snapshot_view(t)) for t in tracked]
+    keywords_json = jsonable_encoder(
+        [{**_latest_snapshot_view(t).model_dump(), "id": t.id} for t in tracked]
+    )
 
     return templates.TemplateResponse(
         request,
@@ -198,7 +211,7 @@ def keyword_research_page(workspace_id: int, request: Request, db: Session = Dep
         {
             "workspace": workspace,
             "overview": overview,
-            "keyword_rows": keyword_rows,
+            "keywords_json": keywords_json,
             "locations": keyword_locations.supported_locations(),
             "default_location": workspace.default_location or keyword_locations.DEFAULT_LOCATION,
         },
@@ -251,6 +264,7 @@ def track_keyword(workspace_id: int, payload: schemas.TrackKeywordIn, db: Sessio
             intent=normalized.intent,
             source=normalized.source,
             fetched_at=normalized.fetched_at,
+            trend_points=",".join(f"{p:g}" for p in normalized.trend_points) if normalized.trend_points else None,
         ))
         db.commit()
         db.refresh(tracked)
@@ -268,10 +282,19 @@ def untrack_keyword(workspace_id: int, keyword_id: int, db: Session = Depends(ge
     return {"deleted": keyword_id}
 
 
-@router.get("/keywords/{workspace_id}/suggestions", response_model=list[schemas.NormalizedKeyword])
-def keyword_suggestions(workspace_id: int, seed: str, location: str = "IN", db: Session = Depends(get_db)):
+@router.get("/keywords/{workspace_id}/suggestions", response_model=dict[str, list[schemas.NormalizedKeyword]])
+def keyword_suggestions(
+    workspace_id: int, seed: str, location: str = "IN", modes: str = "related,questions",
+    db: Session = Depends(get_db),
+):
+    """modes: comma-separated subset of related,questions,prepositions,comparisons.
+    Returns one group per requested mode so the UI can render sections."""
     _get_workspace(db, workspace_id)
-    return keyword_provider.get_suggestions(seed, _require_location(location))
+    requested = tuple(m for m in (m.strip() for m in modes.split(",")) if m in keyword_provider.SUGGESTION_MODES)
+    if not requested:
+        raise HTTPException(status_code=400, detail=f"modes must include one of {keyword_provider.SUGGESTION_MODES}")
+    groups = keyword_provider.get_suggestion_groups(seed, _require_location(location), requested)
+    return {mode: [_with_score(kw) for kw in rows] for mode, rows in groups.items()}
 
 
 @router.post("/keywords/{workspace_id}/bulk", response_model=list[schemas.NormalizedKeyword])
@@ -280,7 +303,77 @@ def bulk_analysis(workspace_id: int, payload: schemas.BulkKeywordsIn, db: Sessio
     keywords = [k.strip().lower() for k in payload.keywords if k.strip()]
     if not keywords:
         raise HTTPException(status_code=400, detail="keywords list is empty")
-    return keyword_provider.get_keywords_bulk(keywords, _require_location(payload.location))
+    return [_with_score(kw) for kw in keyword_provider.get_keywords_bulk(keywords, _require_location(payload.location))]
+
+
+@router.get("/keywords/{workspace_id}/detail")
+def keyword_detail(workspace_id: int, keyword: str, location: str = "IN", db: Session = Depends(get_db)):
+    """Expand-row payload: live metrics + SERP top results + SERP features +
+    question keywords, in one call. The SERP-aware Worth It score computed here
+    is sharper than the table's (which never pays for a SERP call per row)."""
+    _get_workspace(db, workspace_id)
+    location = _require_location(location)
+    keyword = keyword.strip().lower()
+    if not keyword:
+        raise HTTPException(status_code=400, detail="keyword is required")
+
+    metrics = keyword_provider.get_keyword_overview(keyword, location)
+    serp = keyword_provider.get_serp(keyword, location)
+    serp_ok = not serp.get("error")
+    features = serp.get("features") if serp_ok else None
+    organic = [
+        {"rank": i.get("rank_absolute"), "title": i.get("title"), "url": i.get("url")}
+        for i in (serp.get("items") or []) if i.get("type") == "organic"
+    ][:10] if serp_ok else []
+
+    questions = keyword_provider.get_suggestion_groups(keyword, location, ("questions",)).get("questions", [])
+
+    return {
+        "keyword": keyword,
+        "location": location,
+        "metrics": _with_score(metrics, features),
+        "serp_results": organic,
+        "serp_features": features,
+        "serp_error": serp.get("error"),
+        "questions": [q.keyword for q in questions[:8]],
+    }
+
+
+@router.post("/keywords/{workspace_id}/brief")
+def generate_brief(workspace_id: int, payload: schemas.TrackKeywordIn, db: Session = Depends(get_db)):
+    """Claude-generated client-ready content brief. Uses data we already
+    fetch (metrics, SERP, questions) -- Claude adds the judgment layer, at
+    roughly a cent per brief on Haiku."""
+    _get_workspace(db, workspace_id)
+    location = _require_location(payload.location)
+    keyword = payload.keyword.strip().lower()
+    if not keyword:
+        raise HTTPException(status_code=400, detail="keyword is required")
+
+    metrics = keyword_provider.get_keyword_overview(keyword, location)
+    serp = keyword_provider.get_serp(keyword, location)
+    serp_ok = not serp.get("error")
+    features = serp.get("features") or {} if serp_ok else {}
+    questions = keyword_provider.get_suggestion_groups(keyword, location, ("questions",)).get("questions", [])
+
+    context = {
+        "keyword": keyword,
+        "location": keyword_locations.supported_locations().get(location, location),
+        "volume": metrics.volume,
+        "difficulty": metrics.difficulty,
+        "intent": metrics.intent,
+        "serp_features": sorted(k for k, v in features.items() if v),
+        "serp_results": [
+            {"title": i.get("title"), "url": i.get("url")}
+            for i in (serp.get("items") or []) if i.get("type") == "organic"
+        ][:10],
+        "questions": [q.keyword for q in questions[:8]],
+    }
+    try:
+        brief = claude.complete(prompt_builder.build_keyword_brief_prompt(context), max_tokens=1500, temperature=0.7)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Brief generation failed: {e}")
+    return {"keyword": keyword, "brief": brief}
 
 
 @router.get("/keywords/{workspace_id}/clusters")

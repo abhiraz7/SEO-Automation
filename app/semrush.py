@@ -23,6 +23,7 @@ _HEADER_TO_CODE = {
     "Competition": "Co",
     "Keyword Difficulty Index": "Kd",
     "Intent": "In",
+    "Trends": "Td",
     "Number of Results": "Nr",
     "Domain": "Dn",
     "Url": "Ur",
@@ -137,24 +138,28 @@ def fetch_keyword_overview(keyword: str, location: str = DEFAULT_LOCATION) -> di
     if database is None:
         return {"error": f"Unsupported location: {location}"}
 
-    result = {"Ph": keyword, "Nq": None, "Cp": None, "Co": None, "Kd": None, "In": None, "error": None}
+    result = {"Ph": keyword, "Nq": None, "Cp": None, "Co": None, "Kd": None, "In": None, "Td": None, "error": None}
 
     try:
+        # phrase_this rather than phrase_all: same columns, same call, but it
+        # also honors Td (12 monthly trend points) which phrase_all silently
+        # drops -- that powers the sparkline for free.
         url = (
-            f"{SEMRUSH_BASE}/?type=phrase_all&key={api_key}"
-            f"&export_columns=Ph,Nq,Cp,Co,In&phrase={urllib.parse.quote(keyword)}&database={database}"
+            f"{SEMRUSH_BASE}/?type=phrase_this&key={api_key}"
+            f"&export_columns=Ph,Nq,Cp,Co,In,Td&phrase={urllib.parse.quote(keyword)}&database={database}"
         )
         data = _parse_csv(_get(url))
         result["Nq"] = data.get("Nq")
         result["Cp"] = data.get("Cp")
         result["Co"] = data.get("Co")
         result["In"] = data.get("In")
+        result["Td"] = data.get("Td")
     except urllib.error.HTTPError as e:
         if e.code == 429:
             result["rate_limited"] = True
-        result["error"] = f"phrase_all: {e}"
+        result["error"] = f"phrase_this: {e}"
     except Exception as e:
-        result["error"] = f"phrase_all: {e}"
+        result["error"] = f"phrase_this: {e}"
 
     # Keyword difficulty is a separate report from the overview call above.
     try:
@@ -201,6 +206,24 @@ def fetch_related_keywords(seed: str, location: str = DEFAULT_LOCATION) -> list[
         return []
 
 
+def fetch_broad_matches(seed: str, location: str = DEFAULT_LOCATION, limit: int = 50) -> list[dict]:
+    """phrase_fullsearch: keywords containing the seed in any form. The raw
+    pool the route layer filters into preposition/comparison suggestion modes."""
+    api_key = os.environ.get("SEMRUSH_API_KEY", "").strip()
+    database = semrush_database(location)
+    if not api_key or database is None:
+        return []
+    try:
+        url = (
+            f"{SEMRUSH_BASE}/?type=phrase_fullsearch&key={api_key}"
+            f"&export_columns=Ph,Nq,Cp,Co,In&phrase={urllib.parse.quote(seed)}"
+            f"&database={database}&display_limit={limit}"
+        )
+        return _parse_csv_rows(_get(url))
+    except Exception:
+        return []
+
+
 def fetch_keyword_questions(seed: str, location: str = DEFAULT_LOCATION) -> list[dict]:
     """Questions tab fallback. Returns raw CSV rows (Ph, Nq)."""
     api_key = os.environ.get("SEMRUSH_API_KEY", "").strip()
@@ -233,14 +256,27 @@ def normalize_keyword_row(row: dict, keyword: str) -> NormalizedKeyword:
         except (TypeError, ValueError):
             return None
 
+    def _trend(v):
+        # Td is "1.00,0.82,..." -- 12 monthly relative-volume points, oldest first.
+        try:
+            points = [float(p) for p in str(v).split(",") if p.strip()]
+            return points if points else None
+        except ValueError:
+            return None
+
+    # Multi-intent keywords come back as e.g. "1,0" -- the first code is the
+    # dominant intent, which is all the UI badge shows.
+    intent_code = str(row.get("In") or "").split(",")[0]
+
     return NormalizedKeyword(
         keyword=row.get("Ph") or keyword,
         volume=_int(row.get("Nq")),
         difficulty=_int(row.get("Kd")),
-        intent=_INTENT_CODES.get(str(row.get("In"))),
+        intent=_INTENT_CODES.get(intent_code),
         cpc=_float(row.get("Cp")),
         source="semrush",
         fetched_at=datetime.now(timezone.utc),
+        trend_points=_trend(row.get("Td")) if row.get("Td") else None,
     )
 
 

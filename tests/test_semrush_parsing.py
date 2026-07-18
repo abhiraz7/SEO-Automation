@@ -57,6 +57,17 @@ def test_normalize_without_intent_column_is_none():
     assert normalized.intent is None
 
 
+def test_normalize_parses_trend_points():
+    row = {"Ph": "dentist", "Nq": "90500", "Td": "1.00,0.82,0.67,0.81"}
+    normalized = semrush.normalize_keyword_row(row, "dentist")
+    assert normalized.trend_points == [1.0, 0.82, 0.67, 0.81]
+
+
+def test_normalize_multi_intent_takes_dominant():
+    row = {"Ph": "x", "Nq": "10", "In": "1,0"}
+    assert semrush.normalize_keyword_row(row, "x").intent == "informational"
+
+
 def test_serp_rows_shape_matches_modal_contract():
     rows = semrush._parse_csv_rows(ORGANIC_CSV)
     assert rows[0] == {"Dn": "practo.com", "Ur": "https://www.practo.com/dentist"}

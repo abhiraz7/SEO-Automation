@@ -42,6 +42,15 @@ class PageUnderstandingResult(BaseModel):
     context_confidence: float
 
 
+class WorthIt(BaseModel):
+    """Actionability verdict computed from the metrics (keyword_scoring.py) --
+    the number users actually want instead of raw KD. factors is the
+    human-readable explanation shown when the score is clicked."""
+    score: float                           # 0-10, one decimal
+    band: str                              # "easy" | "medium" | "avoid"
+    factors: list[str]
+
+
 class NormalizedKeyword(BaseModel):
     """Single shape both semrush.py and dataforseo.py normalize their
     provider-specific responses into. Nothing above the adapter layer should
@@ -63,6 +72,8 @@ class NormalizedKeyword(BaseModel):
     fetched_at: datetime
     status: str = "ok"                     # "ok" | "no_data" | "error"
     error: str | None = None               # human-readable reason, only set when status == "error"
+    trend_points: list[float] | None = None  # 12 monthly relative-volume points (0-1), oldest first
+    worth_it: WorthIt | None = None        # computed by keyword_scoring, attached at the route layer
 
 
 class KeywordWithTrend(NormalizedKeyword):

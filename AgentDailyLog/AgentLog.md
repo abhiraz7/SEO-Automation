@@ -310,3 +310,26 @@ Track `dentist in new delhi` (IN) → volume 50, KD 0 via Semrush. Track `best c
 ### Open items
 - **DataForSEO verification** — the one thing code can't fix; once verified, intent-rich suggestions, full SERP descriptions, and the second provider light up with zero code change (banner will go away by itself).
 - Trend arrows still need ≥7 days of snapshot history to leave "Pending".
+
+---
+
+## 2026-07-18 (later) — Keyword Research: "Worth It" scoring, Claude briefs, and the 16-point UX upgrade
+
+Implemented the user's 16-item enhancement list end-to-end:
+
+### New capabilities
+- **Worth It score (USP)**: `app/keyword_scoring.py` — 0-10 verdict per keyword from volume (log scale, 0-4 pts) + difficulty (0-4) + intent value (0-2) + SERP-feature penalty (AI Overview −1.2, ads up to −0.8, snippet, map pack). Bands: 🟢 easy ≥7.5 / 🟡 medium / 🔴 avoid <4. Factors list = plain-language explanation, shown in the expand row + tooltip. Weights are deliberately all in one file for future tuning.
+- **Claude content briefs**: `POST /keywords/{ws}/brief` — metrics + live SERP + question keywords go to Haiku via `prompt_builder.build_keyword_brief_prompt()`; returns a client-ready Markdown brief (intent, angle to win, title, outline, FAQs, AI-visibility tips). ~1¢/brief. Rendered in a modal with copy button.
+- **Expand row / detail**: `GET /keywords/{ws}/detail` — one call returns metrics + SERP-aware Worth It + top-10 results + SERP feature chips (🤖 AI, 📦 Ads×N, 📍 Maps, …) + questions. Cached client-side per keyword+location. (Avg DR / word count / backlinks deferred — needs per-URL backlink API spend.)
+- **Sparklines**: swapped Semrush `phrase_all` → `phrase_this` (same call, same units) which honors the `Td` 12-month trend column that phrase_all silently drops. Stored on snapshots via additive migration 004 (`trend_points` TEXT) so Overview reloads keep them.
+- **Suggestion modes**: seed + checkboxes (Related/Questions/Prepositions/Comparisons) — related/questions DataForSEO-first as before; prepositions/comparisons filter Semrush `phrase_fullsearch` broad matches by word lists. Grouped sections in one table, dedup across groups.
+- **UI rework** (client-rendered tables): filters (intent/min-vol/max-KD/include/exclude/easy-only), intent+volume distribution mini bar charts, checkbox selection with sticky action bar (save/track/export-selected-CSV/untrack), hover-revealed icon actions (👁 ⚡ 📋 📈 ♡/❤️ ✕), standardized intent colors (txn green / info blue / commercial orange / nav purple / local teal), compact dismissible provider banner with "Verify Account →" link when DataForSEO reports the verification error.
+- **Stat cards**: Tracked / Total Volume / Easy Wins (= Worth It band, honest and available today, replacing position-based placeholder) / Avg KD.
+- Also: Semrush multi-intent values ("1,0") now take the dominant code.
+
+### Verified live
+Track `dentist near me` (IN) → 90.5K, KD 56, transactional, 12 trend points, Worth It 7.1 🟡 with 4 factors. Grouped suggestions: 20 questions / 39 prepositions / 1 comparison for "dentist". Detail: 10 SERP results (Semrush fallback), questions, SERP-aware score. Claude brief generated and correctly identifies the aggregator-gap angle. 39/39 tests pass (10 new).
+
+### Notes
+- SERP feature chips show "Not available" until the DataForSEO account is verified (Semrush fallback carries no features); scoring then says "SERP features not checked yet" instead of pretending.
+- Old `/keywords/{ws}/{id}/serp` endpoint kept (API compat); UI now uses /detail.

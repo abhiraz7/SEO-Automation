@@ -125,18 +125,63 @@ def get_keywords_bulk(keywords: list[str], location: str = DEFAULT_LOCATION) -> 
     return [results[kw] for kw in keywords if kw in results]
 
 
-def get_suggestions(seed: str, location: str = DEFAULT_LOCATION) -> list[NormalizedKeyword]:
-    """
-    Suggestions & Questions tab. ASSUMPTION (see module docstring): DataForSEO
-    is tried first; Semrush's phrase_related/phrase_questions are the fallback
-    if DataForSEO returns nothing (missing credentials, no data, error).
-    """
-    rows = dataforseo.fetch_related_keywords(seed, location) + dataforseo.fetch_keyword_questions(seed, location)
-    if rows:
-        return [dataforseo.normalize_keyword_row(r, r.get("keyword", seed)) for r in rows]
+# Suggestion-mode filters. A broad match is a "preposition" keyword when it
+# glues the seed to a context word, a "comparison" when the searcher is
+# weighing options -- both signal clearer intent than a plain related term.
+_PREPOSITION_WORDS = {"for", "with", "without", "near", "to", "in", "on", "at", "under", "before", "after"}
+_COMPARISON_WORDS = {"vs", "versus", "or", "best", "top", "alternative", "alternatives", "cheapest", "review", "reviews"}
 
-    rows = semrush.fetch_related_keywords(seed, location) + semrush.fetch_keyword_questions(seed, location)
-    return [semrush.normalize_keyword_row(r, r.get("Ph", seed)) for r in rows]
+SUGGESTION_MODES = ("related", "questions", "prepositions", "comparisons")
+
+
+def _match_mode(keyword: str, words: set[str]) -> bool:
+    return bool(set(keyword.lower().split()) & words)
+
+
+def get_suggestion_groups(
+    seed: str, location: str = DEFAULT_LOCATION, modes: tuple[str, ...] = SUGGESTION_MODES
+) -> dict[str, list[NormalizedKeyword]]:
+    """
+    Suggestions tab: seed keyword in, grouped ideas out. related/questions use
+    DataForSEO-first with Semrush fallback (see module docstring assumption);
+    prepositions/comparisons filter Semrush's broad-match pool. A keyword only
+    appears in the first group that claims it.
+    """
+    groups: dict[str, list[NormalizedKeyword]] = {}
+    seen: set[str] = set()
+
+    def _add(mode: str, rows: list[NormalizedKeyword]) -> None:
+        fresh = [r for r in rows if r.keyword not in seen]
+        seen.update(r.keyword for r in fresh)
+        groups[mode] = fresh
+
+    if "related" in modes:
+        rows = dataforseo.fetch_related_keywords(seed, location)
+        if rows:
+            _add("related", [dataforseo.normalize_keyword_row(r, r.get("keyword", seed)) for r in rows])
+        else:
+            rows = semrush.fetch_related_keywords(seed, location)
+            _add("related", [semrush.normalize_keyword_row(r, r.get("Ph", seed)) for r in rows])
+
+    if "questions" in modes:
+        rows = dataforseo.fetch_keyword_questions(seed, location)
+        if rows:
+            _add("questions", [dataforseo.normalize_keyword_row(r, r.get("keyword", seed)) for r in rows])
+        else:
+            rows = semrush.fetch_keyword_questions(seed, location)
+            _add("questions", [semrush.normalize_keyword_row(r, r.get("Ph", seed)) for r in rows])
+
+    if "prepositions" in modes or "comparisons" in modes:
+        pool = [
+            semrush.normalize_keyword_row(r, r.get("Ph", seed))
+            for r in semrush.fetch_broad_matches(seed, location)
+        ]
+        if "prepositions" in modes:
+            _add("prepositions", [r for r in pool if _match_mode(r.keyword, _PREPOSITION_WORDS)])
+        if "comparisons" in modes:
+            _add("comparisons", [r for r in pool if _match_mode(r.keyword, _COMPARISON_WORDS)])
+
+    return groups
 
 
 def get_serp(keyword: str, location: str = DEFAULT_LOCATION) -> dict:

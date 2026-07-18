@@ -198,6 +198,7 @@ class KeywordSnapshot(Base):
     difficulty = Column(Integer)
     intent = Column(String)
     position = Column(Integer)  # SERP rank, populated once rank tracking is wired up; unused for now
+    trend_points = Column(String)  # provider 12-month trend series as "1.00,0.82,..." -- drives the sparkline
     source = Column(String, nullable=False)  # "semrush" | "dataforseo" -- kept for provider cost/usage auditing
     fetched_at = Column(DateTime, default=_utcnow)
 

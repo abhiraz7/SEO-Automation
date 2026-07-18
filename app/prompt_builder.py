@@ -188,3 +188,40 @@ Page content (fit markdown):
 Return ONLY these two lines:
 Title: <optimized title, 30-60 characters>
 Description: <optimized meta description, 50-160 characters>"""
+
+
+def build_keyword_brief_prompt(context: dict) -> str:
+    """Prompt for a client-ready content brief for one keyword. Context comes
+    from the keyword routes: live metrics + the top SERP results + question
+    keywords we already fetched -- Claude adds judgment, not data."""
+    serp_lines = "\n".join(
+        f"{i}. {r.get('title') or r.get('url') or '?'} — {r.get('url', '')}"
+        for i, r in enumerate(context.get("serp_results") or [], start=1)
+    ) or "N/A (SERP not available)"
+    question_lines = "\n".join(f"- {q}" for q in context.get("questions") or []) or "N/A"
+    features = ", ".join(context.get("serp_features") or []) or "unknown"
+
+    return f"""You are an SEO strategist at a digital marketing agency. Write a concise, client-ready content brief for the keyword below. The writer who receives this brief is not an SEO expert.
+
+Keyword: {context.get('keyword', '')}
+Market: {context.get('location', '')}
+Monthly search volume: {context.get('volume', 'unknown')}
+Keyword difficulty: {context.get('difficulty', 'unknown')}
+Search intent: {context.get('intent', 'unknown')}
+SERP features present: {features}
+
+Current top-ranking results:
+{serp_lines}
+
+Questions people ask:
+{question_lines}
+
+Write the brief in Markdown with exactly these sections:
+## Search Intent (2-3 sentences: what the searcher actually wants)
+## Angle To Win (what the current top results miss; the gap to exploit)
+## Suggested Title
+## Outline (H2/H3 headings the article should use)
+## FAQs To Answer (from the questions above; pick the best 3-5)
+## AI-Visibility Tips (2-3 concrete tips to structure the page so AI search engines cite it: direct answers near the top, stats, FAQ schema)
+
+Keep the whole brief under 400 words. No preamble, start directly with the first section."""

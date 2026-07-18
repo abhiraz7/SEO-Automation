@@ -55,18 +55,25 @@
   .kr-panel.active { display:block; }
 
   .kr-table { width:100%; border-collapse:collapse; background:#fff; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; }
-  .kr-table th { padding:10px 16px; text-align:left; font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; background:#fafafa; border-bottom:1px solid #f1f5f9; }
-  .kr-table td { padding:11px 16px; font-size:13px; color:#0f172a; border-bottom:1px solid #f8fafc; }
-  .kr-table tr:last-child td { border-bottom:none; }
+  .kr-table th { padding:10px 12px; text-align:left; font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; background:#fafafa; border-bottom:1px solid #f1f5f9; }
+  .kr-table td { padding:10px 12px; font-size:13px; color:#0f172a; border-bottom:1px solid #f8fafc; }
   .kr-table tr:hover td { background:#f8fafc; }
   .kr-empty { padding:32px; text-align:center; color:#94a3b8; font-size:13px; }
+  .kr-group-header td { background:#f8fafc; font-size:11px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:.05em; }
 
   .kr-badge { font-size:11px; font-weight:600; padding:2px 9px; border-radius:10px; display:inline-block; }
-  .kr-intent-informational { background:#e0e7ff; color:#4338ca; }
-  .kr-intent-local { background:#dcfce7; color:#15803d; }
-  .kr-intent-commercial { background:#ede9fe; color:#6d28d9; }
-  .kr-intent-navigational { background:#fef3c7; color:#a16207; }
+  /* Standardized intent colors: transactional green, informational blue,
+     commercial orange, navigational purple, local teal. */
   .kr-intent-transactional { background:#dcfce7; color:#15803d; }
+  .kr-intent-informational { background:#dbeafe; color:#1d4ed8; }
+  .kr-intent-commercial { background:#ffedd5; color:#c2410c; }
+  .kr-intent-navigational { background:#ede9fe; color:#6d28d9; }
+  .kr-intent-local { background:#ccfbf1; color:#0f766e; }
+
+  .kr-worth { font-size:12px; font-weight:700; padding:2px 10px; border-radius:10px; cursor:pointer; white-space:nowrap; }
+  .kr-worth-easy { background:#dcfce7; color:#15803d; }
+  .kr-worth-medium { background:#fef3c7; color:#a16207; }
+  .kr-worth-avoid { background:#fee2e2; color:#dc2626; }
 
   .kr-trend-rising { color:#16a34a; font-weight:700; }
   .kr-trend-falling { color:#dc2626; font-weight:700; }
@@ -75,59 +82,94 @@
   .kr-link { color:#4f46e5; font-size:12px; font-weight:600; text-decoration:none; cursor:pointer; }
   .kr-link:hover { text-decoration:underline; }
 
-  .kr-input { font-size:13px; padding:8px 12px; border:1px solid #e2e8f0; border-radius:7px; outline:none; }
+  .kr-input { font-size:13px; padding:8px 12px; border:1px solid #e2e8f0; border-radius:7px; outline:none; background:#fff; }
   .kr-input:focus { border-color:#4f46e5; box-shadow:0 0 0 2px rgba(79,70,229,.1); }
   .kr-btn { padding:8px 16px; border-radius:7px; border:none; background:#4f46e5; color:#fff; font-size:12px; font-weight:700; cursor:pointer; }
   .kr-btn:hover { opacity:.9; }
   .kr-btn-secondary { background:#fff; border:1px solid #e2e8f0; color:#374151; }
 
-  #kr-modal-backdrop { display:none; position:fixed; inset:0; background:rgba(15,23,42,.3); z-index:400; }
-  #kr-modal { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:420px; max-width:92vw; background:#fff; border-radius:12px; box-shadow:0 20px 50px rgba(0,0,0,.25); z-index:401; padding:20px; }
-  #kr-modal.open, #kr-modal-backdrop.open { display:block; }
+  /* Row actions: hidden until hover so the table stays clean. */
+  .kr-actions { display:flex; gap:6px; justify-content:flex-end; opacity:0; transition:opacity .12s; }
+  tr:hover .kr-actions, .kr-actions.pinned { opacity:1; }
+  .kr-icon-btn { border:none; background:none; cursor:pointer; font-size:14px; padding:2px 4px; border-radius:5px; line-height:1; }
+  .kr-icon-btn:hover { background:#eef2ff; }
+
+  .kr-check { width:14px; height:14px; accent-color:#4f46e5; cursor:pointer; }
+
+  /* Filters bar */
+  .kr-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px; }
+  .kr-filters .kr-input, .kr-filters select { font-size:12px; padding:6px 9px; }
+  .kr-filters label { font-size:12px; color:#64748b; font-weight:600; display:flex; align-items:center; gap:5px; }
+
+  /* Selection action bar */
+  #kr-selbar { display:none; position:sticky; top:0; z-index:50; margin-bottom:12px; padding:8px 14px; border-radius:9px; background:#0f172a; color:#fff; font-size:12px; align-items:center; gap:12px; }
+  #kr-selbar.open { display:flex; }
+  #kr-selbar button { background:#1e293b; border:1px solid #334155; color:#fff; border-radius:6px; padding:5px 11px; font-size:12px; font-weight:600; cursor:pointer; }
+  #kr-selbar button:hover { background:#334155; }
+
+  /* Mini charts */
+  .kr-chart { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:12px 16px; flex:1; min-width:220px; }
+  .kr-chart-title { font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }
+  .kr-bar-row { display:flex; align-items:center; gap:8px; margin:4px 0; font-size:11px; color:#374151; }
+  .kr-bar-label { width:90px; flex-shrink:0; text-align:right; color:#64748b; font-weight:600; }
+  .kr-bar-track { flex:1; height:10px; background:#f1f5f9; border-radius:5px; overflow:hidden; }
+  .kr-bar-fill { height:100%; border-radius:5px; background:#4f46e5; }
+  .kr-bar-count { width:34px; font-weight:700; }
+
+  /* Expand/detail row */
+  .kr-detail td { background:#fafbff !important; padding:16px 20px; }
+  .kr-detail-grid { display:grid; grid-template-columns:1fr 1.4fr; gap:20px; }
+  .kr-detail h4 { margin:0 0 8px; font-size:11px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; }
+  .kr-detail ul, .kr-detail ol { margin:0; padding-left:18px; }
+  .kr-detail li { font-size:12px; color:#374151; padding:2px 0; }
+  .kr-feature-chip { display:inline-block; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; border-radius:8px; padding:3px 9px; margin:0 4px 4px 0; }
+
+  /* Modals */
+  .kr-backdrop { display:none; position:fixed; inset:0; background:rgba(15,23,42,.3); z-index:400; }
+  .kr-modal { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); max-width:94vw; max-height:82vh; overflow-y:auto; background:#fff; border-radius:12px; box-shadow:0 20px 50px rgba(0,0,0,.25); z-index:401; padding:20px; }
+  .kr-modal.open, .kr-backdrop.open { display:block; }
+
+  #kr-provider-banner { display:none; margin:14px 24px 0; padding:7px 14px; border-radius:8px; font-size:12px; font-weight:600; align-items:center; gap:10px; }
+  #kr-provider-banner.open { display:flex; }
+  #kr-provider-banner a { font-weight:700; }
 </style>
 
-<!-- Provider status banner: unconfigured API keys must be visible, not render
-     identically to "no data" (spec Bug 3). Populated on page load. -->
-<div id="kr-provider-banner" style="display:none;margin:20px 24px 0;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;"></div>
+<!-- Provider status: compact + dismissible instead of a permanent block (live
+     health check behind it, so "credentials broken" is as visible as "unset"). -->
+<div id="kr-provider-banner">
+  <span id="kr-provider-text" style="flex:1;"></span>
+  <a id="kr-provider-link" href="#" target="_blank" rel="noopener" style="display:none;color:inherit;">Verify Account →</a>
+  <button onclick="krDismissBanner()" style="border:none;background:none;cursor:pointer;color:inherit;font-size:14px;line-height:1;">×</button>
+</div>
 
-<!-- Stat cards -->
-<div style="padding:20px 24px 4px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+<!-- Stat cards: immediate-value numbers only, no placeholders. -->
+<div style="padding:16px 24px 4px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
   <div class="kr-stat" style="border-left:4px solid #7c3aed;">
     <div class="kr-stat-label" style="color:#7c3aed;">🎯 Tracked Keywords</div>
     <div class="kr-stat-value">{{ overview.tracked_keywords }}</div>
-    <div class="kr-stat-sub">across all pages</div>
-  </div>
-  <div class="kr-stat" style="border-left:4px solid #16a34a;">
-    <div class="kr-stat-label" style="color:#16a34a;">🚀 Avg. Position</div>
-    {% if overview.data_quality == "live" %}
-    <div class="kr-stat-value">{{ overview.avg_position }}</div>
-    <div class="kr-stat-sub">from Rank Tracking</div>
-    {% else %}
-    <div class="kr-stat-value pending">—</div>
-    <div class="kr-stat-sub">Coming soon — enable Rank Tracking</div>
-    {% endif %}
+    <div class="kr-stat-sub">in this workspace</div>
   </div>
   <div class="kr-stat" style="border-left:4px solid #0284c7;">
-    <div class="kr-stat-label" style="color:#0284c7;">🔥 Search Volume</div>
-    <div class="kr-stat-value">{{ overview.search_volume }}</div>
-    <div class="kr-stat-sub">monthly total</div>
+    <div class="kr-stat-label" style="color:#0284c7;">🔥 Total Search Volume</div>
+    <div class="kr-stat-value">{{ "{:,}".format(overview.search_volume) }}</div>
+    <div class="kr-stat-sub">monthly, all tracked</div>
+  </div>
+  <div class="kr-stat" style="border-left:4px solid #16a34a;">
+    <div class="kr-stat-label" style="color:#16a34a;">✨ Easy Wins</div>
+    <div class="kr-stat-value">{{ overview.easy_wins }}</div>
+    <div class="kr-stat-sub">Worth It score ≥ 7.5</div>
   </div>
   <div class="kr-stat" style="border-left:4px solid #d97706;">
-    <div class="kr-stat-label" style="color:#d97706;">✨ Easy Wins</div>
-    {% if overview.data_quality == "live" %}
-    <div class="kr-stat-value">{{ overview.easy_wins }}</div>
-    <div class="kr-stat-sub">position 11-20</div>
-    {% else %}
-    <div class="kr-stat-value pending">—</div>
-    <div class="kr-stat-sub">Coming soon — enable Rank Tracking</div>
-    {% endif %}
+    <div class="kr-stat-label" style="color:#d97706;">⚖️ Avg. Difficulty</div>
+    <div class="kr-stat-value">{{ overview.avg_kd if overview.avg_kd is not none else '—' }}</div>
+    <div class="kr-stat-sub">keyword difficulty 0-100</div>
   </div>
 </div>
 
 <!-- Tabs -->
-<div class="kr-tabs" style="margin-top:16px;">
+<div class="kr-tabs" style="margin-top:14px;">
   <div class="kr-tab active" data-tab="overview" onclick="krShowTab('overview')">Overview</div>
-  <div class="kr-tab" data-tab="suggestions" onclick="krShowTab('suggestions')">Suggestions &amp; Questions</div>
+  <div class="kr-tab" data-tab="suggestions" onclick="krShowTab('suggestions')">Suggestions</div>
   <div class="kr-tab" data-tab="bulk" onclick="krShowTab('bulk')">Bulk Analysis</div>
   <div class="kr-tab" data-tab="clustering" onclick="krShowTab('clustering')">Clustering</div>
   <div class="kr-tab" data-tab="saved" onclick="krShowTab('saved')">Saved List</div>
@@ -135,53 +177,65 @@
 
 <!-- Overview panel -->
 <div class="kr-panel active" id="panel-overview">
+  <div style="display:flex;gap:12px;margin-bottom:14px;">
+    <div class="kr-chart"><div class="kr-chart-title">Keyword Intent</div><div id="kr-chart-intent"></div></div>
+    <div class="kr-chart"><div class="kr-chart-title">Volume Distribution</div><div id="kr-chart-volume"></div></div>
+  </div>
+
+  <div class="kr-filters" id="kr-filters">
+    <select class="kr-input" id="f-intent" onchange="krApplyFilters()">
+      <option value="">All intents</option>
+      <option value="transactional">Transactional</option>
+      <option value="commercial">Commercial</option>
+      <option value="informational">Informational</option>
+      <option value="navigational">Navigational</option>
+      <option value="local">Local</option>
+    </select>
+    <input class="kr-input" id="f-minvol" type="number" placeholder="Min volume" style="width:100px;" oninput="krApplyFilters()">
+    <input class="kr-input" id="f-maxkd" type="number" placeholder="Max KD" style="width:90px;" oninput="krApplyFilters()">
+    <input class="kr-input" id="f-include" placeholder="Include word…" style="width:130px;" oninput="krApplyFilters()">
+    <input class="kr-input" id="f-exclude" placeholder="Exclude word…" style="width:130px;" oninput="krApplyFilters()">
+    <label><input type="checkbox" class="kr-check" id="f-easy" onchange="krApplyFilters()"> 🟢 Easy Wins only</label>
+    <a class="kr-link" onclick="krClearFilters()">Clear</a>
+  </div>
+
+  <div id="kr-selbar">
+    <span id="kr-selcount"></span>
+    <button onclick="krBulkSave()">♡ Save</button>
+    <button onclick="krBulkTrack()">📈 Track</button>
+    <button onclick="krBulkExport()">⬇ Export CSV</button>
+    <button id="kr-bulk-untrack" onclick="krBulkUntrack()">✕ Untrack</button>
+    <button onclick="krClearSelection()" style="margin-left:auto;">Clear</button>
+  </div>
+
   <table class="kr-table">
-    <thead>
-      <tr>
-        <th>Keyword</th><th>Volume</th><th>Difficulty</th><th>Intent</th><th>Trend</th>
-        <th style="text-align:right;">Actions</th>
-      </tr>
-    </thead>
-    <tbody id="kr-overview-body">
-      {% for tracked_id, kw in keyword_rows %}
-      <tr>
-        <td>{{ kw.keyword }}
-          {% if kw.status == 'no_data' %}
-          <span class="kr-badge" style="background:#fef3c7;color:#a16207;" title="Providers responded but have no metrics for this keyword/location">No data</span>
-          {% endif %}
-        </td>
-        <td>{{ kw.volume if kw.volume is not none else '—' }}</td>
-        <td>{{ kw.difficulty if kw.difficulty is not none else '—' }}</td>
-        <td>{% if kw.intent %}<span class="kr-badge kr-intent-{{ kw.intent }}">{{ kw.intent|title }}</span>{% else %}—{% endif %}</td>
-        <td>
-          {% if kw.trend_confidence == "insufficient_data" %}
-          <span class="kr-badge" style="background:#f1f5f9;color:#94a3b8;" title="Not enough snapshot history yet">Pending</span>
-          {% else %}
-          <span class="kr-trend-{{ kw.trend }}">{% if kw.trend == 'rising' %}▲{% elif kw.trend == 'falling' %}▼{% else %}—{% endif %} {{ kw.trend|title }}</span>
-          {% endif %}
-        </td>
-        <td style="text-align:right;white-space:nowrap;">
-          <a class="kr-link" href="#" onclick="krViewSerp({{ tracked_id }});return false;">View SERP</a>
-          &nbsp;&nbsp;<a class="kr-link" href="#" onclick="krSaveKeyword({{ kw.keyword|tojson }}, {{ kw.volume|tojson }}, {{ kw.difficulty|tojson }}, {{ kw.intent|tojson }});return false;">+ Save</a>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6" class="kr-empty">No tracked keywords yet — click "+ Add Keywords" to start.</td></tr>
-      {% endfor %}
-    </tbody>
+    <thead><tr>
+      <th style="width:28px;"><input type="checkbox" class="kr-check" onchange="krToggleAll(this,'overview')"></th>
+      <th>Keyword</th><th>Volume</th><th>Intent</th><th>Worth It</th><th>Trend</th>
+      <th style="text-align:right;">Actions</th>
+    </tr></thead>
+    <tbody id="kr-overview-body"></tbody>
   </table>
 </div>
 
-<!-- Suggestions & Questions panel -->
+<!-- Suggestions panel -->
 <div class="kr-panel" id="panel-suggestions">
-  <div style="display:flex;gap:8px;margin-bottom:16px;">
-    <input class="kr-input" id="kr-seed-input" placeholder="Enter a seed keyword…" style="flex:1;">
+  <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center;">
+    <input class="kr-input" id="kr-seed-input" placeholder="Seed keyword, e.g. dentist" style="flex:1;min-width:200px;" onkeydown="if(event.key==='Enter')krLoadSuggestions()">
+    <label style="font-size:12px;color:#374151;font-weight:600;"><input type="checkbox" class="kr-check" id="m-related" checked> Related</label>
+    <label style="font-size:12px;color:#374151;font-weight:600;"><input type="checkbox" class="kr-check" id="m-questions" checked> Questions</label>
+    <label style="font-size:12px;color:#374151;font-weight:600;"><input type="checkbox" class="kr-check" id="m-prepositions" checked> Prepositions</label>
+    <label style="font-size:12px;color:#374151;font-weight:600;"><input type="checkbox" class="kr-check" id="m-comparisons" checked> Comparisons</label>
     <button class="kr-btn" onclick="krLoadSuggestions()">Search</button>
   </div>
   <table class="kr-table">
-    <thead><tr><th>Keyword</th><th>Volume</th><th>Difficulty</th><th>Intent</th><th style="text-align:right;">Actions</th></tr></thead>
+    <thead><tr>
+      <th style="width:28px;"><input type="checkbox" class="kr-check" onchange="krToggleAll(this,'suggestions')"></th>
+      <th>Keyword</th><th>Volume</th><th>Intent</th><th>Worth It</th>
+      <th style="text-align:right;">Actions</th>
+    </tr></thead>
     <tbody id="kr-suggestions-body">
-      <tr><td colspan="5" class="kr-empty">Enter a seed keyword to see suggestions and questions.</td></tr>
+      <tr><td colspan="6" class="kr-empty">Enter a seed keyword and pick what to generate — one click gives related terms, questions, prepositions and comparisons.</td></tr>
     </tbody>
   </table>
 </div>
@@ -189,14 +243,18 @@
 <!-- Bulk Analysis panel -->
 <div class="kr-panel" id="panel-bulk">
   <div style="margin-bottom:12px;">
-    <textarea id="kr-bulk-input" rows="5" class="kr-input" style="width:100%;resize:vertical;" placeholder="Paste up to 100 keywords, one per line…"></textarea>
+    <textarea id="kr-bulk-input" rows="5" class="kr-input" style="width:100%;resize:vertical;box-sizing:border-box;" placeholder="Paste up to 100 keywords, one per line…"></textarea>
     <div id="kr-bulk-notice" style="display:none;margin-top:8px;padding:8px 12px;border-radius:7px;background:#fef3c7;color:#a16207;border:1px solid #fde68a;font-size:12px;font-weight:600;"></div>
   </div>
   <button class="kr-btn" onclick="krRunBulk()">Analyze</button>
   <table class="kr-table" style="margin-top:16px;">
-    <thead><tr><th>Keyword</th><th>Volume</th><th>Difficulty</th><th>Intent</th><th style="text-align:right;">Actions</th></tr></thead>
+    <thead><tr>
+      <th style="width:28px;"><input type="checkbox" class="kr-check" onchange="krToggleAll(this,'bulk')"></th>
+      <th>Keyword</th><th>Volume</th><th>Intent</th><th>Worth It</th>
+      <th style="text-align:right;">Actions</th>
+    </tr></thead>
     <tbody id="kr-bulk-body">
-      <tr><td colspan="5" class="kr-empty">Paste keywords above and click Analyze.</td></tr>
+      <tr><td colspan="6" class="kr-empty">Paste keywords above and click Analyze.</td></tr>
     </tbody>
   </table>
 </div>
@@ -211,28 +269,26 @@
 <div class="kr-panel" id="panel-saved">
   <table class="kr-table">
     <thead><tr><th>Keyword</th><th>Volume</th><th>Difficulty</th><th>Intent</th><th style="text-align:right;">Actions</th></tr></thead>
-    <tbody id="kr-saved-body">
-      <tr><td colspan="5" class="kr-empty">Loading…</td></tr>
-    </tbody>
+    <tbody id="kr-saved-body"><tr><td colspan="5" class="kr-empty">Loading…</td></tr></tbody>
   </table>
 </div>
 
-<!-- SERP results modal (replaces the raw JSON debug alert) -->
-<div id="kr-serp-backdrop" onclick="closeSerpModal()" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.3);z-index:400;"></div>
-<div id="kr-serp-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:640px;max-width:94vw;max-height:80vh;overflow-y:auto;background:#fff;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.25);z-index:401;padding:20px;">
+<!-- Brief modal -->
+<div id="kr-brief-backdrop" class="kr-backdrop" onclick="krCloseBrief()"></div>
+<div id="kr-brief-modal" class="kr-modal" style="width:680px;">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-    <div id="kr-serp-title" style="font-size:14px;font-weight:700;color:#0f172a;">Live SERP</div>
-    <button onclick="closeSerpModal()" style="border:none;background:none;font-size:18px;color:#94a3b8;cursor:pointer;">×</button>
+    <div id="kr-brief-title" style="font-size:14px;font-weight:700;color:#0f172a;">Content Brief</div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="kr-btn kr-btn-secondary" onclick="krCopyBrief()">📋 Copy</button>
+      <button onclick="krCloseBrief()" style="border:none;background:none;font-size:18px;color:#94a3b8;cursor:pointer;">×</button>
+    </div>
   </div>
-  <div id="kr-serp-body"></div>
+  <div id="kr-brief-body" style="font-size:13px;color:#1f2937;line-height:1.55;"></div>
 </div>
-<style>
-  #kr-serp-modal.open, #kr-serp-backdrop.open { display:block; }
-</style>
 
 <!-- Add Keywords modal -->
-<div id="kr-modal-backdrop" onclick="closeAddKeywordsModal()"></div>
-<div id="kr-modal">
+<div id="kr-modal-backdrop" class="kr-backdrop" onclick="closeAddKeywordsModal()"></div>
+<div id="kr-modal" class="kr-modal" style="width:420px;">
   <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:12px;">Add keywords to track</div>
   <textarea id="kr-add-input" rows="5" class="kr-input" style="width:100%;resize:vertical;box-sizing:border-box;" placeholder="One keyword per line…"></textarea>
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
@@ -243,110 +299,479 @@
 
 <script>
   const KR_WORKSPACE_ID = {{ workspace.id }};
+  const FEATURE_ICONS = {
+    ai_overview: '🤖 AI Overview', featured_snippet: '⭐ Snippet', people_also_ask: '❓ PAA',
+    local_pack: '📍 Maps', video: '📹 Video', images: '🖼 Images', shopping: '🛒 Shopping',
+  };
 
-  // Market for all provider lookups -- explicit per search, never a hidden
-  // env-var default (spec Bug 2).
-  function krLocation() {
-    return document.getElementById('kr-location').value;
-  }
+  // ---- state --------------------------------------------------------------
+  const state = {
+    overview: {{ keywords_json|tojson }},   // rows w/ id, worth_it, trend_points
+    suggestions: [],                        // rows w/ _group
+    bulk: [],
+    savedSet: new Set(),                    // keywords currently in Saved List
+    trackedSet: new Set(),
+    selection: { overview: new Set(), suggestions: new Set(), bulk: new Set() },
+    detailCache: {},
+    lastBrief: '',
+  };
+  state.overview.forEach(r => state.trackedSet.add(r.keyword));
 
+  function krLocation() { return document.getElementById('kr-location').value; }
+  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+  // ---- provider banner (compact + dismissible) ----------------------------
   async function krLoadProviderStatus() {
-    const banner = document.getElementById('kr-provider-banner');
     try {
-      const res = await fetch('/keywords/provider-status');
-      const status = await res.json();
-      if (status.semrush_ok && status.dataforseo_ok) return; // all healthy, no banner
-      banner.style.display = 'block';
-      const describe = (name, ok, configured, detail) =>
-        ok ? null : `${name}: ${configured ? (detail || 'not responding') : 'not configured'}`;
-      const problems = [
-        describe('Semrush', status.semrush_ok, status.semrush, status.semrush_detail),
-        describe('DataForSEO', status.dataforseo_ok, status.dataforseo, status.dataforseo_detail),
-      ].filter(Boolean).join(' · ');
-      if (!status.any_working) {
-        banner.style.cssText += 'background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;';
-        banner.textContent = `⚠ No keyword provider is working — all lookups will fail. ${problems}`;
-      } else {
-        banner.style.cssText += 'background:#fef3c7;color:#a16207;border:1px solid #fde68a;';
-        banner.textContent = `ℹ Running on a single provider (no fallback). ${problems}`;
+      const status = await (await fetch('/keywords/provider-status')).json();
+      if (status.semrush_ok && status.dataforseo_ok) return;
+      if (sessionStorage.getItem('kr-banner-dismissed')) return;
+      const banner = document.getElementById('kr-provider-banner');
+      const problems = [];
+      if (!status.semrush_ok) problems.push(`Semrush: ${status.semrush ? (status.semrush_detail || 'not responding') : 'not configured'}`);
+      if (!status.dataforseo_ok) problems.push(`DataForSEO: ${status.dataforseo ? (status.dataforseo_detail || 'not responding') : 'not configured'}`);
+      const style = status.any_working
+        ? 'background:#fef3c7;color:#a16207;border:1px solid #fde68a;'
+        : 'background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;';
+      banner.style.cssText += style;
+      document.getElementById('kr-provider-text').textContent =
+        (status.any_working ? '🟡 ' : '🔴 ') + problems.join(' · ');
+      if ((status.dataforseo_detail || '').toLowerCase().includes('verify')) {
+        const link = document.getElementById('kr-provider-link');
+        link.href = 'https://app.dataforseo.com/';
+        link.style.display = 'inline';
       }
+      banner.classList.add('open');
     } catch (e) { /* status endpoint failing shouldn't break the page */ }
   }
-  krLoadProviderStatus();
+  function krDismissBanner() {
+    sessionStorage.setItem('kr-banner-dismissed', '1');
+    document.getElementById('kr-provider-banner').classList.remove('open');
+  }
 
+  // ---- tabs ---------------------------------------------------------------
   function krShowTab(name) {
     document.querySelectorAll('.kr-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === name));
     document.querySelectorAll('.kr-panel').forEach(el => el.classList.toggle('active', el.id === 'panel-' + name));
     if (name === 'saved') krLoadSaved();
+    krUpdateSelbar();
+  }
+  function krActiveTable() {
+    const active = document.querySelector('.kr-tab.active').dataset.tab;
+    return ['overview', 'suggestions', 'bulk'].includes(active) ? active : null;
   }
 
-  function krIntentBadge(intent) {
+  // ---- row rendering ------------------------------------------------------
+  function intentBadge(intent) {
     if (!intent) return '—';
-    return `<span class="kr-badge kr-intent-${intent}">${intent.charAt(0).toUpperCase() + intent.slice(1)}</span>`;
+    return `<span class="kr-badge kr-intent-${esc(intent)}">${esc(intent[0].toUpperCase() + intent.slice(1))}</span>`;
   }
-
-  function krRowActions(kw) {
-    if (kw.status && kw.status !== 'ok') return '';
-    const kwJson = JSON.stringify(kw.keyword);
-    const vol = kw.volume ?? 'null';
-    const diff = kw.difficulty ?? 'null';
-    const intent = kw.intent ? JSON.stringify(kw.intent) : 'null';
-    return `<a class="kr-link" href="#" onclick="krSaveKeyword(${kwJson}, ${vol}, ${diff}, ${intent});return false;">+ Save</a>`;
-  }
-
-  // A lookup result is one of ok / no_data / error -- render the last two
-  // visibly instead of a blank row (spec Bug 1).
-  function krStatusBadge(kw) {
-    if (kw.status === 'no_data')
-      return ' <span class="kr-badge" style="background:#fef3c7;color:#a16207;">No data</span>';
-    if (kw.status === 'error')
-      return ` <span class="kr-badge" style="background:#fee2e2;color:#dc2626;" title="${(kw.error ?? '').replace(/"/g, '&quot;')}">Lookup failed</span>`;
+  function statusBadge(kw) {
+    if (kw.status === 'no_data') return ' <span class="kr-badge" style="background:#fef3c7;color:#a16207;">No data</span>';
+    if (kw.status === 'error') return ` <span class="kr-badge" style="background:#fee2e2;color:#dc2626;" title="${esc(kw.error)}">Lookup failed</span>`;
     return '';
   }
-
-  async function krSaveKeyword(keyword, volume, difficulty, intent) {
-    await fetch(`/keywords/${KR_WORKSPACE_ID}/saved`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keyword, volume, difficulty, intent }),
-    });
-    krToast(`Saved "${keyword}"`);
+  function worthPill(kw, table, idx) {
+    const w = kw.worth_it;
+    if (!w) return '—';
+    const dot = w.band === 'easy' ? '🟢' : (w.band === 'avoid' ? '🔴' : '🟡');
+    return `<span class="kr-worth kr-worth-${w.band}" title="${esc(w.factors.join('\n'))}"
+      onclick="krToggleDetail('${table}',${idx})">${dot} ${w.score.toFixed(1)}/10</span>`;
+  }
+  function sparkline(points) {
+    if (!points || points.length < 2) return '';
+    const w = 64, h = 16, max = Math.max(...points, 0.01);
+    const step = w / (points.length - 1);
+    const coords = points.map((p, i) => `${(i * step).toFixed(1)},${(h - (p / max) * (h - 2) - 1).toFixed(1)}`).join(' ');
+    return `<svg width="${w}" height="${h}" style="vertical-align:middle;margin-left:8px;opacity:.75;"><polyline points="${coords}" fill="none" stroke="#4f46e5" stroke-width="1.5"/></svg>`;
+  }
+  function trendCell(kw) {
+    if (kw.trend_confidence === 'insufficient_data')
+      return '<span class="kr-badge" style="background:#f1f5f9;color:#94a3b8;" title="Not enough snapshot history yet">Pending</span>';
+    const arrow = kw.trend === 'rising' ? '▲' : (kw.trend === 'falling' ? '▼' : '—');
+    return `<span class="kr-trend-${kw.trend}">${arrow} ${kw.trend[0].toUpperCase() + kw.trend.slice(1)}</span>`;
+  }
+  function actionButtons(kw, table, idx) {
+    const k = esc(kw.keyword);
+    const saved = state.savedSet.has(kw.keyword);
+    const tracked = state.trackedSet.has(kw.keyword);
+    const btns = [
+      `<button class="kr-icon-btn" title="Details &amp; SERP" onclick="krToggleDetail('${table}',${idx})">👁</button>`,
+      `<button class="kr-icon-btn" title="Generate content brief" onclick="krGenerateBrief('${table}',${idx})">⚡</button>`,
+      `<button class="kr-icon-btn" title="Copy keyword" onclick="navigator.clipboard.writeText('${k}');krToast('Copied')">📋</button>`,
+    ];
+    if (table !== 'overview' && !tracked)
+      btns.push(`<button class="kr-icon-btn" title="Track keyword" onclick="krTrackRow('${table}',${idx})">📈</button>`);
+    btns.push(`<button class="kr-icon-btn" title="${saved ? 'Saved' : 'Save'}" onclick="krSaveRow('${table}',${idx})">${saved ? '❤️' : '♡'}</button>`);
+    if (table === 'overview')
+      btns.push(`<button class="kr-icon-btn" title="Untrack" onclick="krUntrackRow(${idx})">✕</button>`);
+    return `<div class="kr-actions">${btns.join('')}</div>`;
+  }
+  function renderRow(kw, table, idx, opts) {
+    const checked = state.selection[table].has(kw.keyword) ? 'checked' : '';
+    return `<tr data-idx="${idx}">
+      <td><input type="checkbox" class="kr-check" ${checked} onchange="krToggleSelect('${table}','${esc(kw.keyword)}',this.checked)"></td>
+      <td style="cursor:pointer;" onclick="krToggleDetail('${table}',${idx})">${esc(kw.keyword)}${statusBadge(kw)}</td>
+      <td>${kw.volume != null ? kw.volume.toLocaleString() : '—'}${sparkline(kw.trend_points)}</td>
+      <td>${intentBadge(kw.intent)}</td>
+      <td>${worthPill(kw, table, idx)}</td>
+      ${opts.trend ? `<td>${trendCell(kw)}</td>` : ''}
+      <td style="text-align:right;">${actionButtons(kw, table, idx)}</td>
+    </tr>`;
   }
 
-  async function krViewSerp(trackedId) {
-    const modal = document.getElementById('kr-serp-modal');
-    const backdrop = document.getElementById('kr-serp-backdrop');
-    const body = document.getElementById('kr-serp-body');
-    modal.classList.add('open');
-    backdrop.classList.add('open');
-    body.innerHTML = '<div class="kr-empty">Loading live SERP…</div>';
-    // Live lookup only -- intentionally not persisted, see keyword_provider.py.
-    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/${trackedId}/serp?location=${krLocation()}`);
-    const data = await res.json();
-    if (data.error) {
-      body.innerHTML = `<div class="kr-empty" style="color:#dc2626;">SERP lookup failed: ${data.error}</div>`;
+  const GROUP_LABELS = { related: 'Related', questions: 'Questions', prepositions: 'Prepositions', comparisons: 'Comparisons' };
+
+  function krRender(table) {
+    const opts = { trend: table === 'overview' };
+    const cols = opts.trend ? 7 : 6;
+    const body = document.getElementById(`kr-${table}-body`);
+    const rows = krFilteredRows(table);
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="${cols}" class="kr-empty">${state[table].length ? 'No keywords match the filters.' : (table === 'overview' ? 'No tracked keywords yet — click "+ Add Keywords" to start.' : 'Nothing here yet.')}</td></tr>`;
+      krRenderCharts();
       return;
     }
-    const items = (data.items || []).filter(i => i.type === 'organic').slice(0, 10);
-    document.getElementById('kr-serp-title').textContent = `Top results — "${data.keyword ?? ''}"`;
-    if (!items.length) {
-      body.innerHTML = '<div class="kr-empty">No organic results returned.</div>';
-      return;
-    }
-    body.innerHTML = items.map(i => `
-      <div style="padding:10px 0;border-bottom:1px solid #f1f5f9;">
-        <div style="display:flex;gap:8px;align-items:baseline;">
-          <span style="font-size:11px;font-weight:800;color:#94a3b8;min-width:20px;">#${i.rank_absolute ?? i.rank_group ?? '?'}</span>
-          <a href="${i.url ?? '#'}" target="_blank" rel="noopener" style="font-size:13px;font-weight:600;color:#4f46e5;text-decoration:none;">${i.title ?? '(no title)'}</a>
-        </div>
-        <div style="font-size:11px;color:#16a34a;margin:2px 0 0 28px;word-break:break-all;">${i.url ?? ''}</div>
-        ${i.description ? `<div style="font-size:12px;color:#64748b;margin:3px 0 0 28px;">${i.description}</div>` : ''}
+    let html = '', lastGroup = null;
+    rows.forEach(kw => {
+      if (kw._group && kw._group !== lastGroup) {
+        html += `<tr class="kr-group-header"><td colspan="${cols}">${GROUP_LABELS[kw._group] || kw._group}</td></tr>`;
+        lastGroup = kw._group;
+      }
+      html += renderRow(kw, table, kw._idx, opts);
+    });
+    body.innerHTML = html;
+    krRenderCharts();
+  }
+
+  // ---- filters (apply to overview/suggestions/bulk alike) -----------------
+  function krFilteredRows(table) {
+    const intent = document.getElementById('f-intent').value;
+    const minVol = parseInt(document.getElementById('f-minvol').value) || 0;
+    const maxKd = parseInt(document.getElementById('f-maxkd').value);
+    const include = document.getElementById('f-include').value.trim().toLowerCase();
+    const exclude = document.getElementById('f-exclude').value.trim().toLowerCase();
+    const easyOnly = document.getElementById('f-easy').checked;
+    return state[table]
+      .map((kw, i) => ({ ...kw, _idx: i }))
+      .filter(kw =>
+        (!intent || kw.intent === intent) &&
+        (!minVol || (kw.volume ?? 0) >= minVol) &&
+        (isNaN(maxKd) || kw.difficulty == null || kw.difficulty <= maxKd) &&
+        (!include || kw.keyword.includes(include)) &&
+        (!exclude || !kw.keyword.includes(exclude)) &&
+        (!easyOnly || (kw.worth_it && kw.worth_it.band === 'easy')));
+  }
+  function krApplyFilters() { ['overview', 'suggestions', 'bulk'].forEach(krRender); }
+  function krClearFilters() {
+    ['f-minvol', 'f-maxkd', 'f-include', 'f-exclude'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-intent').value = '';
+    document.getElementById('f-easy').checked = false;
+    krApplyFilters();
+  }
+
+  // ---- mini charts (from the overview rows) -------------------------------
+  function krBars(el, counts, color) {
+    const max = Math.max(...Object.values(counts), 1);
+    el.innerHTML = Object.entries(counts).map(([label, n]) => `
+      <div class="kr-bar-row">
+        <span class="kr-bar-label">${label}</span>
+        <div class="kr-bar-track"><div class="kr-bar-fill" style="width:${(n / max) * 100}%;background:${color};"></div></div>
+        <span class="kr-bar-count">${n}</span>
       </div>`).join('');
   }
+  function krRenderCharts() {
+    const rows = state.overview;
+    const intents = {};
+    rows.forEach(r => { const i = r.intent || 'unknown'; intents[i] = (intents[i] || 0) + 1; });
+    krBars(document.getElementById('kr-chart-intent'), intents, '#4f46e5');
+    const buckets = { '0-100': 0, '100-1K': 0, '1K-10K': 0, '10K+': 0 };
+    rows.forEach(r => {
+      const v = r.volume ?? 0;
+      if (v >= 10000) buckets['10K+']++; else if (v >= 1000) buckets['1K-10K']++;
+      else if (v >= 100) buckets['100-1K']++; else buckets['0-100']++;
+    });
+    krBars(document.getElementById('kr-chart-volume'), buckets, '#0284c7');
+  }
 
-  function closeSerpModal() {
-    document.getElementById('kr-serp-modal').classList.remove('open');
-    document.getElementById('kr-serp-backdrop').classList.remove('open');
+  // ---- selection + bulk actions -------------------------------------------
+  function krToggleSelect(table, keyword, on) {
+    on ? state.selection[table].add(keyword) : state.selection[table].delete(keyword);
+    krUpdateSelbar();
+  }
+  function krToggleAll(box, table) {
+    const rows = krFilteredRows(table);
+    rows.forEach(kw => box.checked ? state.selection[table].add(kw.keyword) : state.selection[table].delete(kw.keyword));
+    krRender(table); krUpdateSelbar();
+  }
+  function krClearSelection() {
+    Object.values(state.selection).forEach(s => s.clear());
+    ['overview', 'suggestions', 'bulk'].forEach(krRender); krUpdateSelbar();
+  }
+  function krSelectedRows() {
+    const table = krActiveTable();
+    if (!table) return { table, rows: [] };
+    return { table, rows: state[table].filter(kw => state.selection[table].has(kw.keyword)) };
+  }
+  function krUpdateSelbar() {
+    const { table, rows } = krSelectedRows();
+    const bar = document.getElementById('kr-selbar');
+    bar.classList.toggle('open', rows.length > 0);
+    if (rows.length) {
+      document.getElementById('kr-selcount').textContent = `${rows.length} selected`;
+      document.getElementById('kr-bulk-untrack').style.display = table === 'overview' ? '' : 'none';
+    }
+  }
+  async function krBulkSave() {
+    const { rows } = krSelectedRows();
+    for (const kw of rows) await krSaveKeyword(kw, true);
+    krToast(`Saved ${rows.length} keyword(s)`); krClearSelection();
+  }
+  async function krBulkTrack() {
+    const { rows } = krSelectedRows();
+    let ok = 0;
+    for (const kw of rows) { if (await krTrack(kw.keyword, true)) ok++; }
+    krToast(`Tracking ${ok}/${rows.length}`); krClearSelection();
+  }
+  function krBulkExport() {
+    const { rows } = krSelectedRows();
+    const lines = [['Keyword', 'Volume', 'Difficulty', 'Intent', 'Worth It'].join(',')];
+    rows.forEach(kw => lines.push([`"${kw.keyword.replace(/"/g, '""')}"`, kw.volume ?? '', kw.difficulty ?? '', kw.intent ?? '', kw.worth_it ? kw.worth_it.score : ''].join(',')));
+    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'keywords-selected.csv'; a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  async function krBulkUntrack() {
+    const { table, rows } = krSelectedRows();
+    if (table !== 'overview' || !rows.length) return;
+    if (!confirm(`Untrack ${rows.length} keyword(s)? Snapshot history will be deleted.`)) return;
+    for (const kw of rows) {
+      await fetch(`/keywords/${KR_WORKSPACE_ID}/track/${kw.id}`, { method: 'DELETE' });
+      state.trackedSet.delete(kw.keyword);
+    }
+    state.overview = state.overview.filter(r => !state.selection.overview.has(r.keyword));
+    krClearSelection();
+  }
+
+  // ---- per-row actions ----------------------------------------------------
+  async function krSaveKeyword(kw, silent) {
+    await fetch(`/keywords/${KR_WORKSPACE_ID}/saved`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword: kw.keyword, volume: kw.volume, difficulty: kw.difficulty, intent: kw.intent }),
+    });
+    state.savedSet.add(kw.keyword);
+    if (!silent) krToast(`Saved "${kw.keyword}"`);
+  }
+  async function krSaveRow(table, idx) { await krSaveKeyword(state[table][idx]); krRender(table); }
+  async function krTrack(keyword, silent) {
+    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/track`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword, location: krLocation() }),
+    });
+    if (res.ok) state.trackedSet.add(keyword);
+    else if (!silent) {
+      const detail = (await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`;
+      krToast(`Could not track: ${detail}`);
+    }
+    return res.ok;
+  }
+  async function krTrackRow(table, idx) {
+    const kw = state[table][idx];
+    if (await krTrack(kw.keyword)) { krToast(`Tracking "${kw.keyword}"`); krRender(table); }
+  }
+  async function krUntrackRow(idx) {
+    const kw = state.overview[idx];
+    if (!confirm(`Untrack "${kw.keyword}"? Snapshot history will be deleted.`)) return;
+    await fetch(`/keywords/${KR_WORKSPACE_ID}/track/${kw.id}`, { method: 'DELETE' });
+    state.trackedSet.delete(kw.keyword);
+    state.overview.splice(idx, 1);
+    krRender('overview');
+  }
+
+  // ---- expand row: details + SERP -----------------------------------------
+  async function krToggleDetail(table, idx) {
+    const body = document.getElementById(`kr-${table}-body`);
+    const row = body.querySelector(`tr[data-idx="${idx}"]`);
+    if (!row) return;
+    const existing = row.nextElementSibling;
+    if (existing && existing.classList.contains('kr-detail')) { existing.remove(); return; }
+    body.querySelectorAll('.kr-detail').forEach(el => el.remove());
+
+    const kw = state[table][idx];
+    const cols = table === 'overview' ? 7 : 6;
+    const detailRow = document.createElement('tr');
+    detailRow.className = 'kr-detail';
+    detailRow.innerHTML = `<td colspan="${cols}"><div class="kr-empty" style="padding:12px;">Loading details, SERP and questions…</div></td>`;
+    row.after(detailRow);
+
+    const cacheKey = `${kw.keyword}|${krLocation()}`;
+    let d = state.detailCache[cacheKey];
+    if (!d) {
+      try {
+        d = await (await fetch(`/keywords/${KR_WORKSPACE_ID}/detail?keyword=${encodeURIComponent(kw.keyword)}&location=${krLocation()}`)).json();
+        state.detailCache[cacheKey] = d;
+      } catch (e) {
+        detailRow.firstElementChild.innerHTML = `<div class="kr-empty" style="color:#dc2626;">Could not load details: ${esc(e)}</div>`;
+        return;
+      }
+    }
+    const m = d.metrics || {};
+    const w = m.worth_it;
+    const features = d.serp_features
+      ? Object.entries(d.serp_features).filter(([k, v]) => v && FEATURE_ICONS[k] || (k === 'ads' && v > 0))
+          .map(([k, v]) => `<span class="kr-feature-chip">${k === 'ads' ? `📦 Ads ×${v}` : FEATURE_ICONS[k]}</span>`).join('')
+        || '<span style="font-size:12px;color:#16a34a;font-weight:600;">Clean SERP — no features competing for clicks</span>'
+      : `<span style="font-size:12px;color:#94a3b8;">Not available${d.serp_error ? ` (${esc(d.serp_error)})` : ''}</span>`;
+    const serpList = d.serp_results && d.serp_results.length
+      ? `<ol>${d.serp_results.map(r => `<li><a class="kr-link" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.url)}</a></li>`).join('')}</ol>`
+      : `<div style="font-size:12px;color:#94a3b8;">No SERP data${d.serp_error ? ` — ${esc(d.serp_error)}` : ''}</div>`;
+    const questions = d.questions && d.questions.length
+      ? d.questions.map(q => `<span class="kr-feature-chip" style="background:#f0fdf4;color:#15803d;">${esc(q)}</span>`).join('')
+      : '<span style="font-size:12px;color:#94a3b8;">None found</span>';
+
+    detailRow.firstElementChild.innerHTML = `
+      <div class="kr-detail-grid">
+        <div>
+          <h4>Metrics</h4>
+          <ul>
+            <li>Volume: <b>${m.volume != null ? m.volume.toLocaleString() : '—'}</b>${sparkline(m.trend_points)}</li>
+            <li>Difficulty: <b>${m.difficulty ?? '—'}</b> &nbsp; CPC: <b>${m.cpc ?? '—'}</b></li>
+            <li>Intent: ${intentBadge(m.intent)}</li>
+          </ul>
+          ${w ? `<h4 style="margin-top:12px;">Worth It — ${w.score.toFixed(1)}/10</h4><ul>${w.factors.map(f => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+          <div style="margin-top:12px;"><button class="kr-btn" onclick="krGenerateBrief('${table}',${idx})">⚡ Generate Content Brief</button></div>
+        </div>
+        <div>
+          <h4>SERP Features</h4><div style="margin-bottom:10px;">${features}</div>
+          <h4>Top Ranking Results</h4>${serpList}
+          <h4 style="margin-top:10px;">Questions People Ask</h4><div>${questions}</div>
+        </div>
+      </div>`;
+  }
+
+  // ---- Claude content brief ----------------------------------------------
+  async function krGenerateBrief(table, idx) {
+    const kw = state[table][idx];
+    const modal = document.getElementById('kr-brief-modal');
+    document.getElementById('kr-brief-backdrop').classList.add('open');
+    modal.classList.add('open');
+    document.getElementById('kr-brief-title').textContent = `Content Brief — "${kw.keyword}"`;
+    const body = document.getElementById('kr-brief-body');
+    body.innerHTML = '<div class="kr-empty">Generating brief with Claude… (10-20s)</div>';
+    try {
+      const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/brief`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword: kw.keyword, location: krLocation() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      state.lastBrief = data.brief;
+      body.innerHTML = krMarkdown(data.brief);
+    } catch (e) {
+      body.innerHTML = `<div class="kr-empty" style="color:#dc2626;">Brief generation failed: ${esc(e.message || e)}</div>`;
+    }
+  }
+  function krMarkdown(md) {
+    // Minimal renderer for the brief's known shape (##, -, **) -- not a
+    // general markdown engine.
+    return esc(md)
+      .replace(/^## (.+)$/gm, '<h3 style="margin:14px 0 6px;font-size:13px;color:#4f46e5;">$1</h3>')
+      .replace(/^\- (.+)$/gm, '<div style="padding-left:14px;">• $1</div>')
+      .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+      .replace(/\n{2,}/g, '<br>');
+  }
+  function krCloseBrief() {
+    document.getElementById('kr-brief-modal').classList.remove('open');
+    document.getElementById('kr-brief-backdrop').classList.remove('open');
+  }
+  function krCopyBrief() { navigator.clipboard.writeText(state.lastBrief); krToast('Brief copied'); }
+
+  // ---- suggestions --------------------------------------------------------
+  async function krLoadSuggestions() {
+    const seed = document.getElementById('kr-seed-input').value.trim();
+    if (!seed) return;
+    const modes = ['related', 'questions', 'prepositions', 'comparisons']
+      .filter(m => document.getElementById('m-' + m).checked);
+    if (!modes.length) { krToast('Pick at least one suggestion type'); return; }
+    const body = document.getElementById('kr-suggestions-body');
+    body.innerHTML = '<tr><td colspan="6" class="kr-empty">Loading…</td></tr>';
+    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/suggestions?seed=${encodeURIComponent(seed)}&location=${krLocation()}&modes=${modes.join(',')}`);
+    const groups = await res.json();
+    state.suggestions = [];
+    modes.forEach(m => (groups[m] || []).forEach(kw => state.suggestions.push({ ...kw, _group: m })));
+    krRender('suggestions');
+  }
+
+  // ---- bulk analysis ------------------------------------------------------
+  async function krRunBulk() {
+    const all = document.getElementById('kr-bulk-input').value.split('\n').map(k => k.trim()).filter(Boolean);
+    const keywords = all.slice(0, 100);
+    const notice = document.getElementById('kr-bulk-notice');
+    notice.style.display = all.length > 100 ? 'block' : 'none';
+    if (all.length > 100)
+      notice.textContent = `⚠ ${all.length} keywords pasted — only the first 100 were analyzed (provider limit). Run the rest in a second batch.`;
+    if (!keywords.length) return;
+    const body = document.getElementById('kr-bulk-body');
+    body.innerHTML = '<tr><td colspan="6" class="kr-empty">Analyzing…</td></tr>';
+    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/bulk`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords, location: krLocation() }),
+    });
+    state.bulk = await res.json();
+    krRender('bulk');
+  }
+
+  // ---- clustering + saved -------------------------------------------------
+  async function krLoadClusters() {
+    const wrap = document.getElementById('kr-clusters');
+    wrap.innerHTML = '<div class="kr-empty">Loading…</div>';
+    const clusters = await (await fetch(`/keywords/${KR_WORKSPACE_ID}/clusters`)).json();
+    if (!clusters.length) { wrap.innerHTML = '<div class="kr-empty">No tracked or saved keywords to cluster yet.</div>'; return; }
+    wrap.innerHTML = clusters.map(c => `
+      <div class="kr-stat">
+        <div style="font-size:12px;font-weight:700;color:#4f46e5;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;">${esc(c.root)}</div>
+        ${c.keywords.map(k => `<div style="font-size:13px;color:#0f172a;padding:3px 0;">${esc(k)}</div>`).join('')}
+      </div>`).join('');
+  }
+  async function krLoadSaved() {
+    const body = document.getElementById('kr-saved-body');
+    const rows = await (await fetch(`/keywords/${KR_WORKSPACE_ID}/saved`)).json();
+    state.savedSet = new Set(rows.map(r => r.keyword));
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="5" class="kr-empty">Nothing saved yet.</td></tr>'; return; }
+    body.innerHTML = rows.map(kw => `
+      <tr>
+        <td>${esc(kw.keyword)}</td>
+        <td>${kw.volume ?? '—'}</td>
+        <td>${kw.difficulty ?? '—'}</td>
+        <td>${intentBadge(kw.intent)}</td>
+        <td style="text-align:right;"><a class="kr-link" onclick="krDeleteSaved(${kw.id})">Remove</a></td>
+      </tr>`).join('');
+  }
+  async function krDeleteSaved(id) {
+    await fetch(`/keywords/${KR_WORKSPACE_ID}/saved/${id}`, { method: 'DELETE' });
+    krLoadSaved();
+  }
+
+  // ---- add keywords modal -------------------------------------------------
+  function openAddKeywordsModal() {
+    document.getElementById('kr-modal').classList.add('open');
+    document.getElementById('kr-modal-backdrop').classList.add('open');
+  }
+  function closeAddKeywordsModal() {
+    document.getElementById('kr-modal').classList.remove('open');
+    document.getElementById('kr-modal-backdrop').classList.remove('open');
+  }
+  async function krSubmitAddKeywords() {
+    const keywords = document.getElementById('kr-add-input').value.split('\n').map(k => k.trim()).filter(Boolean);
+    const failures = [];
+    for (const keyword of keywords) {
+      if (!await krTrack(keyword, true)) failures.push(keyword);
+    }
+    closeAddKeywordsModal();
+    document.getElementById('kr-add-input').value = '';
+    if (failures.length) alert(`Some keywords could not be tracked:\n\n${failures.join('\n')}`);
+    if (failures.length < keywords.length) location.reload();
   }
 
   function krToast(msg) {
@@ -357,131 +782,10 @@
     setTimeout(() => el.remove(), 2500);
   }
 
-  async function krLoadSuggestions() {
-    const seed = document.getElementById('kr-seed-input').value.trim();
-    const body = document.getElementById('kr-suggestions-body');
-    if (!seed) return;
-    body.innerHTML = '<tr><td colspan="5" class="kr-empty">Loading…</td></tr>';
-    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/suggestions?seed=${encodeURIComponent(seed)}&location=${krLocation()}`);
-    const rows = await res.json();
-    if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="5" class="kr-empty">No suggestions found.</td></tr>';
-      return;
-    }
-    body.innerHTML = rows.map(kw => `
-      <tr>
-        <td>${kw.keyword}${krStatusBadge(kw)}</td>
-        <td>${kw.volume ?? '—'}</td>
-        <td>${kw.difficulty ?? '—'}</td>
-        <td>${krIntentBadge(kw.intent)}</td>
-        <td style="text-align:right;">${krRowActions(kw)}</td>
-      </tr>`).join('');
-  }
-
-  async function krRunBulk() {
-    const raw = document.getElementById('kr-bulk-input').value;
-    const all = raw.split('\n').map(k => k.trim()).filter(Boolean);
-    const keywords = all.slice(0, 100);
-    const notice = document.getElementById('kr-bulk-notice');
-    if (all.length > 100) {
-      notice.textContent = `⚠ ${all.length} keywords pasted — only the first 100 were analyzed (provider limit). Run the rest in a second batch.`;
-      notice.style.display = 'block';
-    } else {
-      notice.style.display = 'none';
-    }
-    const body = document.getElementById('kr-bulk-body');
-    if (!keywords.length) return;
-    body.innerHTML = '<tr><td colspan="5" class="kr-empty">Analyzing…</td></tr>';
-    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/bulk`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keywords, location: krLocation() }),
-    });
-    const rows = await res.json();
-    if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="5" class="kr-empty">No data returned.</td></tr>';
-      return;
-    }
-    body.innerHTML = rows.map(kw => `
-      <tr>
-        <td>${kw.keyword}${krStatusBadge(kw)}</td>
-        <td>${kw.volume ?? '—'}</td>
-        <td>${kw.difficulty ?? '—'}</td>
-        <td>${krIntentBadge(kw.intent)}</td>
-        <td style="text-align:right;">${krRowActions(kw)}</td>
-      </tr>`).join('');
-  }
-
-  async function krLoadClusters() {
-    const wrap = document.getElementById('kr-clusters');
-    wrap.innerHTML = '<div class="kr-empty">Loading…</div>';
-    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/clusters`);
-    const clusters = await res.json();
-    if (!clusters.length) {
-      wrap.innerHTML = '<div class="kr-empty">No tracked or saved keywords to cluster yet.</div>';
-      return;
-    }
-    wrap.innerHTML = clusters.map(c => `
-      <div class="kr-stat">
-        <div style="font-size:12px;font-weight:700;color:#4f46e5;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;">${c.root}</div>
-        ${c.keywords.map(k => `<div style="font-size:13px;color:#0f172a;padding:3px 0;">${k}</div>`).join('')}
-      </div>`).join('');
-  }
-
-  async function krLoadSaved() {
-    const body = document.getElementById('kr-saved-body');
-    body.innerHTML = '<tr><td colspan="5" class="kr-empty">Loading…</td></tr>';
-    const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/saved`);
-    const rows = await res.json();
-    if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="5" class="kr-empty">Nothing saved yet.</td></tr>';
-      return;
-    }
-    body.innerHTML = rows.map(kw => `
-      <tr>
-        <td>${kw.keyword}</td>
-        <td>${kw.volume ?? '—'}</td>
-        <td>${kw.difficulty ?? '—'}</td>
-        <td>${krIntentBadge(kw.intent)}</td>
-        <td style="text-align:right;"><a class="kr-link" href="#" onclick="krDeleteSaved(${kw.id});return false;">Remove</a></td>
-      </tr>`).join('');
-  }
-
-  async function krDeleteSaved(id) {
-    await fetch(`/keywords/${KR_WORKSPACE_ID}/saved/${id}`, { method: 'DELETE' });
-    krLoadSaved();
-  }
-
-  function openAddKeywordsModal() {
-    document.getElementById('kr-modal').classList.add('open');
-    document.getElementById('kr-modal-backdrop').classList.add('open');
-  }
-  function closeAddKeywordsModal() {
-    document.getElementById('kr-modal').classList.remove('open');
-    document.getElementById('kr-modal-backdrop').classList.remove('open');
-  }
-
-  async function krSubmitAddKeywords() {
-    const raw = document.getElementById('kr-add-input').value;
-    const keywords = raw.split('\n').map(k => k.trim()).filter(Boolean);
-    const failures = [];
-    for (const keyword of keywords) {
-      const res = await fetch(`/keywords/${KR_WORKSPACE_ID}/track`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword, location: krLocation() }),
-      });
-      if (!res.ok) {
-        const detail = (await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`;
-        failures.push(`${keyword}: ${detail}`);
-      }
-    }
-    closeAddKeywordsModal();
-    document.getElementById('kr-add-input').value = '';
-    if (failures.length) {
-      alert(`Some keywords could not be tracked:\n\n${failures.join('\n')}`);
-    }
-    if (failures.length < keywords.length) location.reload();
-  }
+  // ---- init ---------------------------------------------------------------
+  krLoadProviderStatus();
+  fetch(`/keywords/${KR_WORKSPACE_ID}/saved`).then(r => r.json())
+    .then(rows => { state.savedSet = new Set(rows.map(r => r.keyword)); krRender('overview'); });
+  krRender('overview');
 </script>
 {% endblock %}
