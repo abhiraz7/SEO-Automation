@@ -8,6 +8,43 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class CrawlSettingsIn(BaseModel):
+    """Crawler Settings drawer payload. Automation fields (enabled/interval/
+    timezone/cron) map onto Schedule's own columns; everything else (crawler
+    behavior, worker tuning, verification) is crawl-specific and has no home
+    on the generic Schedule table, so it's carried in payload instead --
+    other job_types will have their own unrelated payload shapes."""
+    # Automation -> Schedule columns
+    enabled: bool = False
+    interval: str = "24h"  # "24h" | "12h" | "6h" | "weekly" | "cron"
+    timezone: str = "Asia/Kolkata"
+    cron_expression: str | None = None
+
+    # Crawler behavior -> Schedule.payload
+    user_agent: str = "VTechysSEOBot/1.0"
+    max_depth: int = 3
+    crawl_delay_ms: int = 500
+    timeout_s: int = 30
+    respect_robots: bool = True
+    exclude_patterns: str = "/admin/*"  # newline-separated, kept as raw text (matches the textarea)
+
+    # Workers -> Schedule.payload
+    worker_count: int = 3
+    concurrency: int = 5
+    retry_attempts: int = 2
+    worker_timeout_s: int = 30
+
+    # Verification -> Schedule.payload
+    firecrawl_validation: bool = False
+    coverage_target: int = 98
+
+
+class CrawlSettingsOut(CrawlSettingsIn):
+    id: int
+    last_run_at: datetime | None = None
+    next_run_at: datetime | None = None
+
+
 class BusinessProfileIn(BaseModel):
     """Request body for creating/updating a project's business profile."""
     brand: str | None = None

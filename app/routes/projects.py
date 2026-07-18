@@ -20,6 +20,33 @@ templates.env.globals["RULE_REQUIREMENTS"] = audit.RULE_REQUIREMENTS
 ISSUES_PAGE_SIZE = 10
 
 
+CRAWL_SETTINGS_PAYLOAD_FIELDS = [
+    "user_agent", "max_depth", "crawl_delay_ms", "timeout_s", "respect_robots", "exclude_patterns",
+    "worker_count", "concurrency", "retry_attempts", "worker_timeout_s",
+    "firecrawl_validation", "coverage_target",
+]
+
+
+def _crawl_settings_out(schedule: models.Schedule | None) -> schemas.CrawlSettingsOut:
+    """Schedule row (or None, before a project has ever saved settings) ->
+    the flat shape the drawer's form fields expect. Defaults here match the
+    drawer's original hardcoded HTML values, so an unconfigured project looks
+    identical to today until someone actually saves."""
+    payload = (schedule.payload if schedule else None) or {}
+    defaults = schemas.CrawlSettingsIn().model_dump()
+    fields = {k: payload.get(k, defaults[k]) for k in CRAWL_SETTINGS_PAYLOAD_FIELDS}
+    return schemas.CrawlSettingsOut(
+        id=schedule.id if schedule else 0,
+        enabled=schedule.enabled if schedule else defaults["enabled"],
+        interval=schedule.interval if schedule else defaults["interval"],
+        timezone=schedule.timezone if schedule else defaults["timezone"],
+        cron_expression=schedule.cron_expression if schedule else defaults["cron_expression"],
+        last_run_at=schedule.last_run_at if schedule else None,
+        next_run_at=schedule.next_run_at if schedule else None,
+        **fields,
+    )
+
+
 def _time_ago(dt: datetime) -> str:
     seconds = (datetime.utcnow() - dt).total_seconds()
     if seconds < 60:
@@ -185,6 +212,12 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
         .first()
     )
 
+    crawl_schedule = (
+        db.query(models.Schedule)
+        .filter(models.Schedule.project_id == project_id, models.Schedule.job_type == "crawl")
+        .first()
+    )
+
     return templates.TemplateResponse(
         request, "project_detail.html", {
             "project": project,
@@ -195,8 +228,39 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
             "semrush_data": semrush_data,
             "last_crawled_ago": last_crawled_ago,
             "profile": profile,
+            "crawl_settings": _crawl_settings_out(crawl_schedule),
         }
     )
+
+
+@router.post("/projects/{project_id}/crawl-settings", response_model=schemas.CrawlSettingsOut)
+def save_crawl_settings(project_id: int, payload: schemas.CrawlSettingsIn, db: Session = Depends(get_db)):
+    """Upserts the project's crawl Schedule row. Automation fields land on
+    Schedule's own columns; everything else goes into payload (see
+    CrawlSettingsIn's docstring). Does not compute next_run_at -- that's the
+    scheduler's job (Task 2.4), not the save endpoint's."""
+    project = db.get(models.Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    schedule = (
+        db.query(models.Schedule)
+        .filter(models.Schedule.project_id == project_id, models.Schedule.job_type == "crawl")
+        .first()
+    )
+    if not schedule:
+        schedule = models.Schedule(project_id=project_id, job_type="crawl")
+        db.add(schedule)
+
+    schedule.enabled = payload.enabled
+    schedule.interval = payload.interval
+    schedule.timezone = payload.timezone
+    schedule.cron_expression = payload.cron_expression
+    schedule.payload = {field: getattr(payload, field) for field in CRAWL_SETTINGS_PAYLOAD_FIELDS}
+
+    db.commit()
+    db.refresh(schedule)
+    return _crawl_settings_out(schedule)
 
 
 @router.get("/projects/{project_id}/pages/{page_id}")

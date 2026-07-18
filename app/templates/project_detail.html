@@ -702,17 +702,17 @@
     <!-- 🕷️ Crawler -->
     <details class="dsec" open>
       <summary>🕷️ Crawler<svg class="dc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg></summary>
-      <div class="drow"><label>User Agent</label><input class="dinput" style="width:200px;" value="VTechysSEOBot/1.0" placeholder="Bot user agent"/></div>
-      <div class="drow"><label>Max Depth</label><input class="dinput" style="width:80px;" type="number" value="3" min="1" max="10"/></div>
-      <div class="drow"><label>Crawl Delay (ms)</label><input class="dinput" style="width:80px;" type="number" value="500" min="0" step="100"/></div>
-      <div class="drow"><label>Timeout (s)</label><input class="dinput" style="width:80px;" type="number" value="30"/></div>
+      <div class="drow"><label>User Agent</label><input id="cs-user-agent" class="dinput" style="width:200px;" value="{{ crawl_settings.user_agent }}" placeholder="Bot user agent"/></div>
+      <div class="drow"><label>Max Depth</label><input id="cs-max-depth" class="dinput" style="width:80px;" type="number" value="{{ crawl_settings.max_depth }}" min="1" max="10"/></div>
+      <div class="drow"><label>Crawl Delay (ms)</label><input id="cs-crawl-delay" class="dinput" style="width:80px;" type="number" value="{{ crawl_settings.crawl_delay_ms }}" min="0" step="100"/></div>
+      <div class="drow"><label>Timeout (s)</label><input id="cs-timeout" class="dinput" style="width:80px;" type="number" value="{{ crawl_settings.timeout_s }}"/></div>
       <div class="drow">
         <label>Respect robots.txt</label>
-        <label class="tog"><input type="checkbox" checked><span class="tog-s"></span></label>
+        <label class="tog"><input id="cs-respect-robots" type="checkbox" {% if crawl_settings.respect_robots %}checked{% endif %}><span class="tog-s"></span></label>
       </div>
       <div style="margin-bottom:12px;">
         <label style="font-size:12px;color:#475569;font-weight:500;display:block;margin-bottom:5px;">Exclude patterns</label>
-        <textarea class="dinput" style="width:100%;height:60px;resize:vertical;font-family:monospace;font-size:11px;" placeholder="/admin/*&#10;/wp-json/*">/admin/*</textarea>
+        <textarea id="cs-exclude-patterns" class="dinput" style="width:100%;height:60px;resize:vertical;font-family:monospace;font-size:11px;" placeholder="/admin/*&#10;/wp-json/*">{{ crawl_settings.exclude_patterns }}</textarea>
       </div>
     </details>
 
@@ -721,28 +721,35 @@
       <summary>⚡ Automation<svg class="dc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg></summary>
       <div class="drow">
         <label>Automatic Crawling</label>
-        <label class="tog"><input type="checkbox"><span class="tog-s"></span></label>
+        <label class="tog"><input id="cs-enabled" type="checkbox" {% if crawl_settings.enabled %}checked{% endif %}><span class="tog-s"></span></label>
       </div>
       <div class="drow">
         <label>Schedule</label>
-        <select class="dselect">
-          <option>Every 24 Hours</option>
-          <option>Every 12 Hours</option>
-          <option>Every 6 Hours</option>
-          <option>Weekly</option>
-          <option>Custom Cron</option>
+        <select id="cs-interval" class="dselect">
+          <option value="24h" {% if crawl_settings.interval == "24h" %}selected{% endif %}>Every 24 Hours</option>
+          <option value="12h" {% if crawl_settings.interval == "12h" %}selected{% endif %}>Every 12 Hours</option>
+          <option value="6h" {% if crawl_settings.interval == "6h" %}selected{% endif %}>Every 6 Hours</option>
+          <option value="weekly" {% if crawl_settings.interval == "weekly" %}selected{% endif %}>Weekly</option>
+          <option value="cron" {% if crawl_settings.interval == "cron" %}selected{% endif %}>Custom Cron</option>
         </select>
       </div>
       <div class="drow"><label>Timezone</label>
-        <select class="dselect">
-          <option>UTC</option><option>Asia/Kolkata</option><option>America/New_York</option><option>Europe/London</option>
+        <select id="cs-timezone" class="dselect">
+          <option value="UTC" {% if crawl_settings.timezone == "UTC" %}selected{% endif %}>UTC</option>
+          <option value="Asia/Kolkata" {% if crawl_settings.timezone == "Asia/Kolkata" %}selected{% endif %}>Asia/Kolkata</option>
+          <option value="America/New_York" {% if crawl_settings.timezone == "America/New_York" %}selected{% endif %}>America/New_York</option>
+          <option value="Europe/London" {% if crawl_settings.timezone == "Europe/London" %}selected{% endif %}>Europe/London</option>
         </select>
       </div>
-      <div class="drow"><label>Custom Cron</label><input class="dinput" style="width:140px;font-family:monospace;" placeholder="0 2 * * *" value="0 2 * * *"/></div>
+      <div class="drow"><label>Custom Cron</label><input id="cs-cron" class="dinput" style="width:140px;font-family:monospace;" placeholder="0 2 * * *" value="{{ crawl_settings.cron_expression or '' }}"/></div>
       <div style="padding:10px 12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:12px;">
         <div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Preview</div>
-        <div style="font-size:12px;color:#4f46e5;font-weight:600;">Next: Tomorrow at 02:00 UTC</div>
-        <div style="font-size:11px;color:#64748b;margin-top:2px;">Then: Daily at 02:00 UTC</div>
+        {% if crawl_settings.next_run_at %}
+        <div style="font-size:12px;color:#4f46e5;font-weight:600;">Next: {{ crawl_settings.next_run_at }}</div>
+        {% else %}
+        <div style="font-size:12px;color:#94a3b8;font-weight:600;">Save with Automatic Crawling on to schedule a run.</div>
+        {% endif %}
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">The scheduler that acts on this isn't wired up yet (coming in a later task) -- saving persists your settings but won't trigger crawls on its own until then.</div>
       </div>
       <div style="display:flex;gap:10px;">
         <div style="flex:1;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
@@ -751,7 +758,7 @@
         </div>
         <div style="flex:1;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
           <div style="font-size:10px;font-weight:600;color:#94a3b8;margin-bottom:2px;">Next Crawl</div>
-          <div style="font-size:12px;font-weight:600;color:#4f46e5;">Not scheduled</div>
+          <div style="font-size:12px;font-weight:600;color:#4f46e5;">{{ crawl_settings.next_run_at or "Not scheduled" }}</div>
         </div>
       </div>
     </details>
@@ -760,10 +767,10 @@
     <details class="dsec">
       <summary>⚙️ Workers<svg class="dc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg></summary>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
-        <div><label style="font-size:11px;color:#64748b;font-weight:500;display:block;margin-bottom:4px;">Worker Count</label><input class="dinput" style="width:100%;" type="number" value="3" min="1" max="20"/></div>
-        <div><label style="font-size:11px;color:#64748b;font-weight:500;display:block;margin-bottom:4px;">Concurrency</label><input class="dinput" style="width:100%;" type="number" value="5" min="1" max="50"/></div>
-        <div><label style="font-size:11px;color:#64748b;font-weight:500;display:block;margin-bottom:4px;">Retry Attempts</label><input class="dinput" style="width:100%;" type="number" value="2" min="0" max="10"/></div>
-        <div><label style="font-size:11px;color:#64748b;font-weight:500;display:block;margin-bottom:4px;">Timeout (s)</label><input class="dinput" style="width:100%;" type="number" value="30"/></div>
+        <div><label style="font-size:11px;color:#64748b;font-weight:500;display:block;margin-bottom:4px;">Worker Count</label><input id="cs-worker-count" class="dinput" style="width:100%;" type="number" value="{{ crawl_settings.worker_count }}" min="1" max="20"/></div>
+        <div><label style="font-size:11px;color:#64748b;font-weight:500;display:block;margin-bottom:4px;">Concurrency</label><input id="cs-concurrency" class="dinput" style="width:100%;" type="number" value="{{ crawl_settings.concurrency }}" min="1" max="50"/></div>
+        <div><label style="font-size:11px;color:#64748b;font-weight:500;display:block;margin-bottom:4px;">Retry Attempts</label><input id="cs-retry-attempts" class="dinput" style="width:100%;" type="number" value="{{ crawl_settings.retry_attempts }}" min="0" max="10"/></div>
+        <div><label style="font-size:11px;color:#64748b;font-weight:500;display:block;margin-bottom:4px;">Timeout (s)</label><input id="cs-worker-timeout" class="dinput" style="width:100%;" type="number" value="{{ crawl_settings.worker_timeout_s }}"/></div>
       </div>
       <div style="margin-bottom:4px;font-size:11px;font-weight:600;color:#64748b;">Worker Health</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -778,14 +785,14 @@
       <summary>🛡️ Verification<svg class="dc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg></summary>
       <div class="drow">
         <label>Firecrawl Validation</label>
-        <label class="tog"><input type="checkbox"><span class="tog-s"></span></label>
+        <label class="tog"><input id="cs-firecrawl-validation" type="checkbox" {% if crawl_settings.firecrawl_validation %}checked{% endif %}><span class="tog-s"></span></label>
       </div>
       <div style="margin-bottom:12px;">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
           <label style="font-size:12px;color:#475569;font-weight:500;">Coverage Target</label>
-          <span style="font-size:12px;font-weight:700;color:#0d9488;" id="cov-val">98%</span>
+          <span style="font-size:12px;font-weight:700;color:#0d9488;" id="cov-val">{{ crawl_settings.coverage_target }}%</span>
         </div>
-        <input type="range" class="vtx-range" min="50" max="100" value="98" oninput="document.getElementById('cov-val').textContent=this.value+'%'"/>
+        <input id="cs-coverage-target" type="range" class="vtx-range" min="50" max="100" value="{{ crawl_settings.coverage_target }}" oninput="document.getElementById('cov-val').textContent=this.value+'%'"/>
       </div>
       <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;">
         <span style="font-size:18px;">🛡️</span>
@@ -968,10 +975,37 @@ document.getElementById('audit-form').addEventListener('submit', function() {
   showToast('🔍 Audit started…', 'info');
 });
 
-// ── Save settings (shell) ──────────────────────────
+// ── Save settings ───────────────────────────────────
 function saveSettings() {
-  closeDrawer('settings-drawer');
-  showToast('✅ Settings saved', 'success');
+  var body = {
+    enabled: document.getElementById('cs-enabled').checked,
+    interval: document.getElementById('cs-interval').value,
+    timezone: document.getElementById('cs-timezone').value,
+    cron_expression: document.getElementById('cs-cron').value || null,
+    user_agent: document.getElementById('cs-user-agent').value,
+    max_depth: parseInt(document.getElementById('cs-max-depth').value, 10),
+    crawl_delay_ms: parseInt(document.getElementById('cs-crawl-delay').value, 10),
+    timeout_s: parseInt(document.getElementById('cs-timeout').value, 10),
+    respect_robots: document.getElementById('cs-respect-robots').checked,
+    exclude_patterns: document.getElementById('cs-exclude-patterns').value,
+    worker_count: parseInt(document.getElementById('cs-worker-count').value, 10),
+    concurrency: parseInt(document.getElementById('cs-concurrency').value, 10),
+    retry_attempts: parseInt(document.getElementById('cs-retry-attempts').value, 10),
+    worker_timeout_s: parseInt(document.getElementById('cs-worker-timeout').value, 10),
+    firecrawl_validation: document.getElementById('cs-firecrawl-validation').checked,
+    coverage_target: parseInt(document.getElementById('cs-coverage-target').value, 10),
+  };
+  fetch('/projects/{{ project.id }}/crawl-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(function(res) {
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    closeDrawer('settings-drawer');
+    showToast('✅ Settings saved', 'success');
+  }).catch(function(err) {
+    showToast('❌ Could not save settings: ' + err.message, 'error');
+  });
 }
 
 // ── Current-card content expand (markdown excerpt) ──
