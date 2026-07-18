@@ -333,3 +333,21 @@ Track `dentist near me` (IN) → 90.5K, KD 56, transactional, 12 trend points, W
 ### Notes
 - SERP feature chips show "Not available" until the DataForSEO account is verified (Semrush fallback carries no features); scoring then says "SERP features not checked yet" instead of pretending.
 - Old `/keywords/{ws}/{id}/serp` endpoint kept (API compat); UI now uses /detail.
+
+---
+
+## 2026-07-18 (later still) — Keyword Research: worker-facing user guide
+
+Wrote `docs/keyword-research-user-guide.md` — a plain-language guide for
+VTechys marketing workers with no SEO/technical background, covering every
+control on the page: top bar (market selector, export, add keywords, status
+banner), the 4 stat cards, all 5 tabs, how to read a keyword row, the Worth
+It score in depth (what it means, how to read the factor breakdown, when it
+honestly says "not checked yet"), the expand row / SERP feature icons, the
+⚡ Generate Content Brief flow, hover row actions, filters, the two mini
+charts, bulk selection actions, and a "quick reference — what to do when"
+table at the end.
+
+No new code — documentation only, written against the UI shipped in
+commits `ee670e3` and `3b48c88` today. Intended to be the thing a worker
+opens instead of asking someone how a button works.
