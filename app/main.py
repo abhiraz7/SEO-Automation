@@ -4,7 +4,7 @@ load_dotenv()
 from fastapi import FastAPI
 
 from .database import Base, engine
-from .routes import audit, crawl, keywords, projects, suggestions
+from .routes import audit, crawl, jobs, keywords, projects, suggestions
 
 Base.metadata.create_all(bind=engine)
 
@@ -19,3 +19,4 @@ app.include_router(crawl.router)
 app.include_router(audit.router)
 app.include_router(suggestions.router)
 app.include_router(keywords.router)
+app.include_router(jobs.router)
