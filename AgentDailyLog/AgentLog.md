@@ -351,3 +351,26 @@ table at the end.
 No new code — documentation only, written against the UI shipped in
 commits `ee670e3` and `3b48c88` today. Intended to be the thing a worker
 opens instead of asking someone how a button works.
+
+---
+
+## 2026-07-19 — VTechys Master Task List: Phase 1 confirmed done, Phase 2 started
+
+Confirmed `prompts/vtechys-claude-code-task-list.md` Phase 1 (Tasks 1.1-1.4,
+Keyword Research honesty/location/status/priority fixes) was already fully
+covered by the `ee670e3`/`3b48c88` work from earlier this week — no rework
+needed. Adopted the doc's own execution rule as a standing workflow: one
+task at a time, user verifies, then commit+push before starting the next
+(saved as memory `feedback_task_list_workflow`).
+
+**Task 2.1 — Job + Schedule tables (`dc40829`)**: added `Job` and
+`Schedule` models (app/models.py) + additive migration
+`005_job_schedule_tables.py`. Verified: migration runs clean, fresh app
+process starts with no errors, live schema matches models exactly via
+PRAGMA table_info, 39/39 tests still pass. User verified, pushed to
+origin/main successfully — `bugignore` collaborator access is now working
+(earlier 403 is resolved).
+
+Next: Task 2.2 (make Crawler Settings Save real — currently
+`saveSettings()` only closes the drawer with a fake success toast, per the
+Sprint 3 Track A audit earlier this session).
