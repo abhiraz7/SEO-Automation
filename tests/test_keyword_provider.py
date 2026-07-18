@@ -109,6 +109,41 @@ def test_bulk_returns_row_for_every_keyword():
     assert dfs.call_args[0][0] == ["a", "c"]
 
 
+def test_semrush_no_data_plus_dataforseo_error_is_no_data():
+    """Semrush answered (empty index for this keyword+location); a dead
+    fallback provider must not upgrade that to 'lookup failed'."""
+    with patch.object(keyword_provider.semrush, "fetch_keyword_overview", return_value={"no_data": True}), \
+         patch.object(keyword_provider.dataforseo, "fetch_keyword_overview", return_value={"error": "403 unverified"}):
+        result = keyword_provider.get_keyword_overview("obscure phrase")
+    assert result.status == "no_data"
+    assert result.error is None
+
+
+def test_bulk_semrush_no_data_plus_dataforseo_error_is_no_data():
+    semrush_rows = {"a": {"no_data": True}, "b": {"error": "boom"}}
+    dfs_rows = {"a": {"error": "403 unverified"}, "b": {"error": "403 unverified"}}
+    with patch.object(keyword_provider.semrush, "fetch_keywords_bulk", return_value=semrush_rows), \
+         patch.object(keyword_provider.dataforseo, "fetch_keywords_bulk", return_value=dfs_rows):
+        results = keyword_provider.get_keywords_bulk(["a", "b"])
+    assert [r.status for r in results] == ["no_data", "error"]
+
+
+def test_serp_falls_back_to_semrush():
+    sem_serp = {"keyword": "coffee", "items": [{"type": "organic", "rank_absolute": 1, "url": "https://x.com"}]}
+    with patch.object(keyword_provider.dataforseo, "fetch_serp", return_value={"error": "403"}), \
+         patch.object(keyword_provider.semrush, "fetch_serp", return_value=sem_serp):
+        result = keyword_provider.get_serp("coffee")
+    assert result == sem_serp
+
+
+def test_serp_both_providers_down_reports_both_errors():
+    with patch.object(keyword_provider.dataforseo, "fetch_serp", return_value={"error": "403"}), \
+         patch.object(keyword_provider.semrush, "fetch_serp", return_value={"error": "no key"}):
+        result = keyword_provider.get_serp("coffee")
+    assert "dataforseo: 403" in result["error"]
+    assert "semrush: no key" in result["error"]
+
+
 def test_unsupported_location_is_an_error():
     result = keyword_provider.get_keyword_overview("dentist", "XX")
     assert result.status == "error"

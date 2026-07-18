@@ -66,6 +66,7 @@
   .kr-intent-local { background:#dcfce7; color:#15803d; }
   .kr-intent-commercial { background:#ede9fe; color:#6d28d9; }
   .kr-intent-navigational { background:#fef3c7; color:#a16207; }
+  .kr-intent-transactional { background:#dcfce7; color:#15803d; }
 
   .kr-trend-rising { color:#16a34a; font-weight:700; }
   .kr-trend-falling { color:#dc2626; font-weight:700; }
@@ -254,15 +255,20 @@
     try {
       const res = await fetch('/keywords/provider-status');
       const status = await res.json();
-      if (status.any_configured && status.semrush && status.dataforseo) return; // all good, no banner
+      if (status.semrush_ok && status.dataforseo_ok) return; // all healthy, no banner
       banner.style.display = 'block';
-      if (!status.any_configured) {
+      const describe = (name, ok, configured, detail) =>
+        ok ? null : `${name}: ${configured ? (detail || 'not responding') : 'not configured'}`;
+      const problems = [
+        describe('Semrush', status.semrush_ok, status.semrush, status.semrush_detail),
+        describe('DataForSEO', status.dataforseo_ok, status.dataforseo, status.dataforseo_detail),
+      ].filter(Boolean).join(' · ');
+      if (!status.any_working) {
         banner.style.cssText += 'background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;';
-        banner.textContent = '⚠ No keyword providers configured — set SEMRUSH_API_KEY and/or DATAFORSEO_LOGIN + DATAFORSEO_PASSWORD in .env and restart. All lookups will fail until then.';
+        banner.textContent = `⚠ No keyword provider is working — all lookups will fail. ${problems}`;
       } else {
-        const missing = !status.semrush ? 'Semrush' : 'DataForSEO';
         banner.style.cssText += 'background:#fef3c7;color:#a16207;border:1px solid #fde68a;';
-        banner.textContent = `ℹ ${missing} is not configured — running on a single provider, no fallback available.`;
+        banner.textContent = `ℹ Running on a single provider (no fallback). ${problems}`;
       }
     } catch (e) { /* status endpoint failing shouldn't break the page */ }
   }

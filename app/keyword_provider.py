@@ -56,6 +56,7 @@ def get_keyword_overview(keyword: str, location: str = DEFAULT_LOCATION) -> Norm
     DataForSEO on error, no-data, or while Semrush is in a rate-limit cooldown.
     Always returns a NormalizedKeyword; check .status before persisting."""
     errors: list[str] = []
+    semrush_answered_no_data = False
 
     if _semrush_available():
         row = semrush.fetch_keyword_overview(keyword, location)
@@ -66,10 +67,17 @@ def get_keyword_overview(keyword: str, location: str = DEFAULT_LOCATION) -> Norm
             errors.append(f"semrush: {row['error']}")
         elif not row.get("no_data"):
             return semrush.normalize_keyword_row(row, keyword)
-        # Semrush no_data still falls through -- DataForSEO may have it.
+        else:
+            # Semrush no_data still falls through -- DataForSEO may have it.
+            semrush_answered_no_data = True
 
     row = dataforseo.fetch_keyword_overview(keyword, location)
     if row.get("error"):
+        if semrush_answered_no_data:
+            # Semrush DID answer (just has nothing for this keyword+location);
+            # a broken fallback provider shouldn't turn that into "lookup
+            # failed" -- the honest state is no_data.
+            return _no_data(keyword)
         errors.append(f"dataforseo: {row['error']}")
         return _failed(keyword, errors)
     if row.get("no_data"):
@@ -86,6 +94,7 @@ def get_keywords_bulk(keywords: list[str], location: str = DEFAULT_LOCATION) -> 
     no_data/error instead of being silently dropped.
     """
     results: dict[str, NormalizedKeyword] = {}
+    semrush_answered_no_data: set[str] = set()
 
     if _semrush_available():
         rows = semrush.fetch_keywords_bulk(keywords, location)
@@ -94,13 +103,20 @@ def get_keywords_bulk(keywords: list[str], location: str = DEFAULT_LOCATION) -> 
                 _mark_semrush_cooldown()
             elif not row.get("error") and not row.get("no_data"):
                 results[kw] = semrush.normalize_keyword_row(row, kw)
+            elif row.get("no_data"):
+                semrush_answered_no_data.add(kw)
 
     missing = [kw for kw in keywords if kw not in results]
     if missing:
         rows = dataforseo.fetch_keywords_bulk(missing, location)
         for kw, row in rows.items():
             if row.get("error"):
-                results[kw] = _failed(kw, [f"dataforseo: {row['error']}"])
+                # Same rule as get_keyword_overview: a keyword Semrush already
+                # answered no_data for stays no_data even if the fallback fails.
+                if kw in semrush_answered_no_data:
+                    results[kw] = _no_data(kw)
+                else:
+                    results[kw] = _failed(kw, [f"dataforseo: {row['error']}"])
             elif row.get("no_data"):
                 results[kw] = _no_data(kw)
             else:
@@ -121,6 +137,51 @@ def get_suggestions(seed: str, location: str = DEFAULT_LOCATION) -> list[Normali
 
     rows = semrush.fetch_related_keywords(seed, location) + semrush.fetch_keyword_questions(seed, location)
     return [semrush.normalize_keyword_row(r, r.get("Ph", seed)) for r in rows]
+
+
+def get_serp(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
+    """'View SERP'. DataForSEO first (full titles/descriptions); Semrush's
+    phrase_organic as fallback (domain+URL only) so a dead DataForSEO account
+    degrades the SERP view instead of breaking it."""
+    result = dataforseo.fetch_serp(keyword, location)
+    if not result.get("error"):
+        return result
+    dfs_error = result["error"]
+
+    result = semrush.fetch_serp(keyword, location)
+    if not result.get("error"):
+        return result
+    return {"error": f"dataforseo: {dfs_error}; semrush: {result['error']}"}
+
+
+def provider_status() -> dict:
+    """Live health of both providers, for /keywords/provider-status. Cached
+    for 5 minutes so page loads don't burn two extra HTTP calls each."""
+    global _STATUS_CACHE, _STATUS_CACHE_AT
+    if _STATUS_CACHE is not None and time.monotonic() - _STATUS_CACHE_AT < _STATUS_CACHE_SECONDS:
+        return _STATUS_CACHE
+
+    sem = semrush.health_check()
+    dfs = dataforseo.health_check()
+    _STATUS_CACHE = {
+        # Original booleans kept as "credentials present" for compatibility.
+        "semrush": sem["configured"],
+        "dataforseo": dfs["configured"],
+        "any_configured": sem["configured"] or dfs["configured"],
+        # Live state: credentials actually work right now.
+        "semrush_ok": sem["ok"],
+        "dataforseo_ok": dfs["ok"],
+        "semrush_detail": sem["detail"],
+        "dataforseo_detail": dfs["detail"],
+        "any_working": sem["ok"] or dfs["ok"],
+    }
+    _STATUS_CACHE_AT = time.monotonic()
+    return _STATUS_CACHE
+
+
+_STATUS_CACHE: dict | None = None
+_STATUS_CACHE_AT = 0.0
+_STATUS_CACHE_SECONDS = 300
 
 
 def compute_trend(snapshots: list) -> tuple[str, str]:

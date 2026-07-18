@@ -11,6 +11,36 @@ from .schemas import NormalizedKeyword
 SEMRUSH_BASE = "https://api.semrush.com"
 SEMRUSH_ANALYTICS = "https://api.semrush.com/analytics/v1/"
 
+# Semrush accepts short column codes in export_columns (Ph, Nq, ...) but the
+# CSV it returns uses human-readable header names ("Keyword", "Search Volume").
+# Every parser here translates headers back to the request codes so the rest of
+# the file speaks one vocabulary. Without this, data.get("Nq") is always None
+# and every successful lookup is misread as "no data".
+_HEADER_TO_CODE = {
+    "Keyword": "Ph",
+    "Search Volume": "Nq",
+    "CPC": "Cp",
+    "Competition": "Co",
+    "Keyword Difficulty Index": "Kd",
+    "Intent": "In",
+    "Number of Results": "Nr",
+    "Domain": "Dn",
+    "Url": "Ur",
+    "Rank": "Rk",
+    "Organic Keywords": "Or",
+    "Organic Traffic": "Ot",
+    "Organic Cost": "Oc",
+}
+
+# Semrush encodes intent as a digit; DataForSEO uses these labels natively, so
+# normalize to the label vocabulary the UI already renders badges for.
+_INTENT_CODES = {
+    "0": "commercial",
+    "1": "informational",
+    "2": "navigational",
+    "3": "transactional",
+}
+
 
 def is_configured() -> bool:
     """Whether credentials exist -- says nothing about whether they're valid.
@@ -24,11 +54,15 @@ def _get(url: str) -> str:
         return r.read().decode("utf-8")
 
 
+def _map_headers(headers: list[str]) -> list[str]:
+    return [_HEADER_TO_CODE.get(h, h) for h in headers]
+
+
 def _parse_csv(text: str) -> dict:
     lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
     if len(lines) < 2:
         return {}
-    headers = lines[0].split(";")
+    headers = _map_headers(lines[0].split(";"))
     values = lines[1].split(";")
     return dict(zip(headers, values))
 
@@ -82,7 +116,7 @@ def _parse_csv_rows(text: str) -> list[dict]:
     lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
     if len(lines) < 2:
         return []
-    headers = lines[0].split(";")
+    headers = _map_headers(lines[0].split(";"))
     return [dict(zip(headers, line.split(";"))) for line in lines[1:]]
 
 
@@ -103,17 +137,18 @@ def fetch_keyword_overview(keyword: str, location: str = DEFAULT_LOCATION) -> di
     if database is None:
         return {"error": f"Unsupported location: {location}"}
 
-    result = {"Ph": keyword, "Nq": None, "Cp": None, "Co": None, "Kd": None, "error": None}
+    result = {"Ph": keyword, "Nq": None, "Cp": None, "Co": None, "Kd": None, "In": None, "error": None}
 
     try:
         url = (
             f"{SEMRUSH_BASE}/?type=phrase_all&key={api_key}"
-            f"&export_columns=Ph,Nq,Cp,Co&phrase={urllib.parse.quote(keyword)}&database={database}"
+            f"&export_columns=Ph,Nq,Cp,Co,In&phrase={urllib.parse.quote(keyword)}&database={database}"
         )
         data = _parse_csv(_get(url))
         result["Nq"] = data.get("Nq")
         result["Cp"] = data.get("Cp")
         result["Co"] = data.get("Co")
+        result["In"] = data.get("In")
     except urllib.error.HTTPError as e:
         if e.code == 429:
             result["rate_limited"] = True
@@ -158,7 +193,7 @@ def fetch_related_keywords(seed: str, location: str = DEFAULT_LOCATION) -> list[
     try:
         url = (
             f"{SEMRUSH_BASE}/?type=phrase_related&key={api_key}"
-            f"&export_columns=Ph,Nq,Cp,Co&phrase={urllib.parse.quote(seed)}"
+            f"&export_columns=Ph,Nq,Cp,Co,In&phrase={urllib.parse.quote(seed)}"
             f"&database={database}&display_limit=20"
         )
         return _parse_csv_rows(_get(url))
@@ -202,8 +237,63 @@ def normalize_keyword_row(row: dict, keyword: str) -> NormalizedKeyword:
         keyword=row.get("Ph") or keyword,
         volume=_int(row.get("Nq")),
         difficulty=_int(row.get("Kd")),
-        intent=None,  # Semrush's classic phrase_all/phrase_related reports don't return intent
+        intent=_INTENT_CODES.get(str(row.get("In"))),
         cpc=_float(row.get("Cp")),
         source="semrush",
         fetched_at=datetime.now(timezone.utc),
     )
+
+
+def fetch_serp(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
+    """
+    'View SERP' fallback when DataForSEO is down. phrase_organic only returns
+    domain+URL (no titles/descriptions), so items carry the domain as title --
+    a thinner SERP than DataForSEO's, but a real one instead of an error.
+    Shaped like DataForSEO's serp result so the modal renders either source.
+    """
+    api_key = os.environ.get("SEMRUSH_API_KEY", "").strip()
+    if not api_key:
+        return {"error": "No API key"}
+    database = semrush_database(location)
+    if database is None:
+        return {"error": f"Unsupported location: {location}"}
+    try:
+        url = (
+            f"{SEMRUSH_BASE}/?type=phrase_organic&key={api_key}"
+            f"&export_columns=Dn,Ur&phrase={urllib.parse.quote(keyword)}"
+            f"&database={database}&display_limit=10"
+        )
+        rows = _parse_csv_rows(_get(url))
+        if not rows:
+            return {"keyword": keyword, "items": []}
+        return {
+            "keyword": keyword,
+            "items": [
+                {
+                    "type": "organic",
+                    "rank_absolute": i,
+                    "title": row.get("Dn"),
+                    "url": row.get("Ur"),
+                    "description": None,
+                }
+                for i, row in enumerate(rows, start=1)
+            ],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def health_check() -> dict:
+    """Live credential probe for /keywords/provider-status. countapiunits is a
+    free call; a numeric body means the key is valid and shows remaining units."""
+    if not is_configured():
+        return {"configured": False, "ok": False, "detail": "SEMRUSH_API_KEY not set"}
+    api_key = os.environ.get("SEMRUSH_API_KEY", "").strip()
+    try:
+        body = _get(f"https://www.semrush.com/users/countapiunits.html?key={api_key}").strip()
+        units = int(body)
+        return {"configured": True, "ok": True, "detail": f"{units} API units remaining"}
+    except ValueError:
+        return {"configured": True, "ok": False, "detail": f"Unexpected response: {body[:120]}"}
+    except Exception as e:
+        return {"configured": True, "ok": False, "detail": str(e)}

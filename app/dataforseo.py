@@ -40,6 +40,36 @@ def is_configured() -> bool:
     return _auth() is not None
 
 
+def health_check() -> dict:
+    """Live credential probe for /keywords/provider-status. /appendix/user_data
+    is a zero-cost call; it surfaces account-level failures (bad password,
+    unverified account, exhausted balance) that mere env-var presence can't --
+    an unverified DataForSEO account 403s every real call while looking
+    perfectly 'configured'."""
+    auth = _auth()
+    if not auth:
+        return {"configured": False, "ok": False, "detail": "DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD not set"}
+    try:
+        # user_data alone is NOT enough: it answers 20000 even for accounts
+        # blocked from the real API (e.g. unverified email -> 40104 on every
+        # Labs/SERP call). Probe a free Labs metadata endpoint too, which sits
+        # behind the same entitlement wall as the paid calls.
+        resp = httpx.get(f"{DATAFORSEO_BASE}/dataforseo_labs/locations_and_languages", auth=auth, timeout=15)
+        data = resp.json()
+        if data.get("status_code") != 20000:
+            return {"configured": True, "ok": False, "detail": data.get("status_message") or f"HTTP {resp.status_code}"}
+
+        resp = httpx.get(f"{DATAFORSEO_BASE}/appendix/user_data", auth=auth, timeout=10)
+        data = resp.json()
+        task = (data.get("tasks") or [{}])[0]
+        money = ((task.get("result") or [{}])[0].get("money") or {}) if task.get("status_code") == 20000 else {}
+        balance = money.get("balance")
+        detail = f"${balance} balance remaining" if balance is not None else "OK"
+        return {"configured": True, "ok": True, "detail": detail}
+    except Exception as e:
+        return {"configured": True, "ok": False, "detail": str(e)}
+
+
 def _post(path: str, payload: list[dict]) -> dict:
     auth = _auth()
     if not auth:

@@ -289,3 +289,24 @@ Bulk >100 paste shows truncation notice; View SERP renders top-10 organic result
 - All MVP checklist items pass except live provider verification with real credentials (DataForSEO creds not set in this env) and a real ≥7-day trend diff (needs calendar time).
 - Rank Tracking still a stub (`position` always NULL) — Avg. Position / Easy Wins stay "Coming soon" by design.
 - Provider priority order still the flagged assumption; revisit with billing data.
+
+---
+
+## 2026-07-18 — Keyword Research: found and fixed the real reason lookups returned nothing
+
+### Diagnosis (live, with real credentials this time)
+1. **DataForSEO account is unverified** — every real API call returns HTTP 403 / status 40104 ("Please verify your account"). Action item for VTechys: complete verification at https://app.dataforseo.com/. Until then the tool runs Semrush-only (which works: ~40k API units on the key).
+2. **Semrush adapter misread every successful response.** Semrush accepts short column codes in `export_columns` (`Ph,Nq,Cp,Co,Kd`) but answers with human-readable CSV headers (`Keyword;Search Volume;CPC;...`). `_parse_csv()` kept the raw headers, so `data.get("Nq")` was always `None` → every real answer was classified `no_data` → router fell through to the dead DataForSEO account → user saw "lookup failed" even though Semrush had returned real volume. Same bug silently broke `fetch_domain_metrics` (`Or`/`Ot` keys).
+
+### Fixes
+- `semrush.py`: `_HEADER_TO_CODE` translation in both CSV parsers (+ tests pinning the real header names). Also: request Semrush's `In` intent column and map its digit codes → informational/commercial/navigational/transactional, so intent now populates from Semrush too, not only DataForSEO.
+- `keyword_provider.py`: if Semrush answered `no_data` and the DataForSEO fallback then *errors*, the result is `no_data` (Semrush did answer) — not "lookup failed". Applied to single + bulk paths.
+- View SERP: new `semrush.fetch_serp()` (phrase_organic, domain+URL only) as fallback; `keyword_provider.get_serp()` routes DataForSEO-first. SERP modal now works with DataForSEO down.
+- `/keywords/provider-status` upgraded from "are env vars set" to a **live health check** (cached 5 min): Semrush `countapiunits` (shows units remaining), DataForSEO `dataforseo_labs/locations_and_languages` (free, sits behind the same entitlement wall that 403s unverified accounts — `appendix/user_data` alone lies, it returns 20000 even when the real API is blocked) + `user_data` for balance. Banner now prints the exact provider error, e.g. the verify-your-account message.
+
+### Verified end-to-end (live app, port 8123)
+Track `dentist in new delhi` (IN) → volume 50, KD 0 via Semrush. Track `best coffee maker` (US) → 22200 / KD 50 / commercial. Bulk: real metrics + honest `no_data` for a nonsense phrase. Suggestions (Semrush fallback) return real volumes+intent. SERP modal shows top-10 via Semrush fallback. CSV export with BOM intact. 29/29 tests pass (11 new).
+
+### Open items
+- **DataForSEO verification** — the one thing code can't fix; once verified, intent-rich suggestions, full SERP descriptions, and the second provider light up with zero code change (banner will go away by itself).
+- Trend arrows still need ≥7 days of snapshot history to leave "Pending".

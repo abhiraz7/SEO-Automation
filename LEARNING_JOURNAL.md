@@ -603,3 +603,17 @@ Detaching the tool from projects meant moving `tracked_keywords.project_id` → 
 2. *Why are fabricated/zero rows dangerous in time-series data?* — They corrupt every future diff (trend computation) against them.
 3. *How do you rename/move a NOT NULL column in SQLite?* — Table rebuild in a transaction with row-count verification; SQLite has no ALTER COLUMN.
 4. *How do you test provider fallback logic without hitting APIs?* — Mock the adapter boundary (the raw-dict contract), assert on routing decisions: 18 tests, zero network.
+
+## 2026-07-18 — The API answered fine; our parser was reading the wrong keys
+
+### Request vocabulary ≠ response vocabulary
+Semrush's API takes short column codes in the request (`export_columns=Ph,Nq,Cp`) but responds with display headers (`Keyword;Search Volume;CPC`). The adapter zipped the response headers directly into a dict and looked up `data.get("Nq")` — always `None`. Testing analogy: your assertion read `response["Nq"]` while the service returned `response["Search Volume"]` — the test doesn't fail loudly, it just always sees "empty", which the pipeline then dutifully reported as "no data". Lesson: never assume request field names round-trip into the response; pin the *actual* response shape in a fixture-based test (we now have `tests/test_semrush_parsing.py` with the real CSV bodies).
+
+### Why the wrong provider got blamed
+The misparse made healthy Semrush look like "no data", so the router fell through to DataForSEO — which is genuinely broken (unverified account, 403). The user-visible error said "dataforseo: 403", pointing at the wrong root cause. Lesson: in a fallback chain, the error you see is from the *last* provider tried, not necessarily the one that's actually misbehaving. Log/keep the earlier outcomes too.
+
+### Health checks must sit behind the same wall as real traffic
+DataForSEO's `appendix/user_data` returns success even for accounts blocked from the real API. Probing it says "healthy" while every paid call 403s. We probe a free endpoint that lives behind the same entitlement wall (`dataforseo_labs/locations_and_languages`) instead. Testing analogy: a smoke test that only pings `/login` can pass while the whole authenticated app is down — probe through the same auth/entitlement path your real traffic uses.
+
+### Degrade, don't die
+"View SERP" depended on one provider. Now the router tries DataForSEO (rich results) and falls back to Semrush `phrase_organic` (domain+URL only): a thinner answer beats an error dialog. Same principle as graceful test-environment degradation: partial signal > red X with no information.

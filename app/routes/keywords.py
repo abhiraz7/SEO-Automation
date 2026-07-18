@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import dataforseo, keyword_locations, keyword_provider, models, schemas, semrush
+from .. import keyword_locations, keyword_provider, models, schemas
 from ..database import get_db
 
 router = APIRouter()
@@ -152,16 +152,11 @@ def create_workspace(payload: schemas.WorkspaceIn, db: Session = Depends(get_db)
 
 @router.get("/keywords/provider-status")
 def provider_status():
-    """Which keyword providers have credentials configured. Not workspace-
+    """Live health of both keyword providers (cached 5 min). Not workspace-
     scoped -- provider config is process-wide env state. Lets the UI tell 'you
-    forgot to set an API key' apart from 'the API has no data' (spec Bug 3)."""
-    semrush_ok = semrush.is_configured()
-    dataforseo_ok = dataforseo.is_configured()
-    return {
-        "semrush": semrush_ok,
-        "dataforseo": dataforseo_ok,
-        "any_configured": semrush_ok or dataforseo_ok,
-    }
+    forgot to set an API key' AND 'your key/account is broken' apart from 'the
+    API has no data' (spec Bug 3 + the unverified-DataForSEO-account case)."""
+    return keyword_provider.provider_status()
 
 
 @router.get("/projects/{project_id}/keywords")
@@ -376,4 +371,4 @@ def view_serp(workspace_id: int, keyword_id: int, location: str = "IN", db: Sess
         raise HTTPException(status_code=404, detail="Tracked keyword not found")
     # Live lookup, intentionally not persisted -- SERP results are a point-in-time
     # check, not something we snapshot for trend history (see keyword_provider.py).
-    return dataforseo.fetch_serp(tracked.keyword, _require_location(location))
+    return keyword_provider.get_serp(tracked.keyword, _require_location(location))
