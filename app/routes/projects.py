@@ -217,6 +217,11 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
         .filter(models.Schedule.project_id == project_id, models.Schedule.job_type == "crawl")
         .first()
     )
+    wordpress_connection = (
+        db.query(models.WordPressConnection)
+        .filter(models.WordPressConnection.project_id == project_id)
+        .first()
+    )
 
     return templates.TemplateResponse(
         request, "project_detail.html", {
@@ -229,6 +234,7 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
             "last_crawled_ago": last_crawled_ago,
             "profile": profile,
             "crawl_settings": _crawl_settings_out(crawl_schedule),
+            "wordpress_connection": wordpress_connection,
         }
     )
 

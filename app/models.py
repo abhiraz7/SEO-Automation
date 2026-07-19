@@ -233,6 +233,24 @@ class SavedKeyword(Base):
     workspace = relationship("KeywordWorkspace", back_populates="saved_keywords")
 
 
+class WordPressConnection(Base):
+    """Connection to a project's WordPress site via the claude-wp-mcp plugin
+    (POST {site_url}/wp-json/cwpm/v1/tool, Bearer auth). api_token is Fernet-
+    encrypted at rest (app/wordpress.py owns encrypt/decrypt; nothing else
+    should touch the raw token). is_staging defaults True on purpose: deploys
+    go to staging until someone deliberately flips a connection to live."""
+    __tablename__ = "wordpress_connections"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, unique=True)
+    site_url = Column(String, nullable=False)
+    api_token = Column(Text, nullable=False)  # Fernet-encrypted, never plaintext
+    is_staging = Column(Boolean, default=True)
+    last_verified_at = Column(DateTime)
+    last_verify_ok = Column(Boolean)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class Job(Base):
     """A unit of scheduled or on-demand background work (crawl, rank_check,
     keyword_refresh, ...). Handlers are looked up by job_type in

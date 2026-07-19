@@ -809,6 +809,29 @@
       </div>
     </details>
 
+    <!-- 🔌 WordPress -->
+    <details class="dsec">
+      <summary>🔌 WordPress<svg class="dc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg></summary>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">Connects via the Claude WP Developer plugin (claude-wp-mcp) so accepted suggestions can be deployed straight to the site.</div>
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px;color:#475569;font-weight:500;display:block;margin-bottom:5px;">Site URL</label>
+        <input id="wp-site-url" class="dinput" style="width:100%;box-sizing:border-box;" placeholder="https://client-site.com" value="{{ wordpress_connection.site_url if wordpress_connection else '' }}"/>
+      </div>
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px;color:#475569;font-weight:500;display:block;margin-bottom:5px;">API Token</label>
+        <input id="wp-api-token" type="password" class="dinput" style="width:100%;box-sizing:border-box;" placeholder="{% if wordpress_connection %}•••••••••••••• (saved — leave blank to keep){% else %}Bearer token from the plugin dashboard{% endif %}"/>
+      </div>
+      <div class="drow">
+        <label>Staging site</label>
+        <label class="tog"><input id="wp-is-staging" type="checkbox" {% if not wordpress_connection or wordpress_connection.is_staging %}checked{% endif %}><span class="tog-s"></span></label>
+      </div>
+      <div style="display:flex;gap:8px;margin:10px 0;">
+        <button type="button" onclick="saveWordPressConnection()" style="flex:1;padding:7px 10px;border-radius:7px;border:none;background:#4f46e5;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">Save</button>
+        <button type="button" onclick="testWordPressConnection()" style="flex:1;padding:7px 10px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:12px;font-weight:700;cursor:pointer;">Test Connection</button>
+      </div>
+      <div id="wp-test-result" style="font-size:12px;font-weight:600;"></div>
+    </details>
+
   </div>
   <div class="drawer-foot">
     <button onclick="closeDrawer('settings-drawer')" style="padding:7px 16px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#64748b;font-size:13px;font-weight:600;cursor:pointer;">Cancel</button>
@@ -1206,6 +1229,46 @@ function openRulesDrawer(category, label) {
   }
   document.getElementById('rules-drawer-body').innerHTML = html;
   openDrawer('rules-drawer');
+}
+
+// ── WordPress connection (Task 3.2) ─────────────────
+function saveWordPressConnection() {
+  var siteUrl = document.getElementById('wp-site-url').value.trim();
+  var token = document.getElementById('wp-api-token').value.trim();
+  var isStaging = document.getElementById('wp-is-staging').checked;
+  var result = document.getElementById('wp-test-result');
+  if (!siteUrl) { result.style.color = '#dc2626'; result.textContent = 'Site URL is required.'; return; }
+  if (!token) { result.style.color = '#dc2626'; result.textContent = 'API Token is required to save (paste it again even if reconnecting).'; return; }
+  fetch('/projects/{{ project.id }}/wordpress', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ site_url: siteUrl, api_token: token, is_staging: isStaging }),
+  }).then(function(res) {
+    if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); });
+    result.style.color = '#16a34a';
+    result.textContent = '✅ Connection saved. Click Test Connection to verify.';
+    document.getElementById('wp-api-token').value = '';
+  }).catch(function(err) {
+    result.style.color = '#dc2626';
+    result.textContent = '❌ ' + err.message;
+  });
+}
+function testWordPressConnection() {
+  var result = document.getElementById('wp-test-result');
+  result.style.color = '#64748b';
+  result.textContent = 'Testing…';
+  fetch('/projects/{{ project.id }}/wordpress/test', { method: 'POST' })
+    .then(function(res) { return res.json().then(function(d){ return { ok: res.ok, body: d }; }); })
+    .then(function(r) {
+      if (r.ok) {
+        result.style.color = '#16a34a';
+        result.textContent = '✅ Connected — ' + (r.body.site && r.body.site.plugin ? r.body.site.plugin + ' v' + r.body.site.version : 'plugin responded');
+      } else {
+        result.style.color = '#dc2626';
+        result.textContent = '❌ ' + (r.body.detail || 'Connection test failed');
+      }
+    })
+    .catch(function(err) { result.style.color = '#dc2626'; result.textContent = '❌ ' + err.message; });
 }
 
 // ── Job queue polling (Queue drawer + 📦 badge) ─────

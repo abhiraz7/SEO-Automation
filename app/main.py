@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from . import scheduler as job_scheduler
 from .database import Base, engine
-from .routes import audit, crawl, jobs, keywords, projects, suggestions
+from .routes import audit, crawl, jobs, keywords, projects, suggestions, wordpress
 
 Base.metadata.create_all(bind=engine)
 
@@ -32,3 +32,4 @@ app.include_router(audit.router)
 app.include_router(suggestions.router)
 app.include_router(keywords.router)
 app.include_router(jobs.router)
+app.include_router(wordpress.router)
