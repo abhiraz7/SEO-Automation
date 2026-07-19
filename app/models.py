@@ -141,6 +141,13 @@ class Suggestion(Base):
     understanding_id = Column(Integer, ForeignKey("page_understanding.id"), nullable=True)
     content = Column(Text, nullable=False)
     rank = Column(Integer, default=0)
+    # Acceptance tracking (V6): what the user decided about this suggestion.
+    # This status trail is the raw material for the future learning dataset --
+    # regeneration must never delete accepted/edited/deployed rows.
+    status = Column(String, nullable=False, default="pending")  # pending|accepted|rejected|edited|deployed
+    edited_content = Column(Text)          # user's modified version, when status == "edited"
+    accepted_at = Column(DateTime)
+    deployed_at = Column(DateTime)
     created_at = Column(DateTime, default=_utcnow)
 
     issue = relationship("Issue", back_populates="suggestions")
@@ -156,7 +163,7 @@ class KeywordWorkspace(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)                # e.g. "VTechys India", "Client X"
-    default_location = Column(String, default="IN")      # ISO code, see app/keyword_locations.py
+    default_location = Column(String, default="US")      # ISO code, see app/keyword_locations.py (DEFAULT_LOCATION)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
@@ -178,6 +185,10 @@ class TrackedKeyword(Base):
     id = Column(Integer, primary_key=True)
     workspace_id = Column(Integer, ForeignKey("keyword_workspaces.id"), nullable=False)
     keyword = Column(String, nullable=False)
+    # Market this keyword was tracked against, persisted so refresh jobs
+    # (keyword_refresh/rank_check) re-query the SAME market the user chose
+    # instead of whatever the app-wide default happens to be at refresh time.
+    location = Column(String, nullable=False, default="US")
     created_at = Column(DateTime, default=_utcnow)
 
     workspace = relationship("KeywordWorkspace", back_populates="tracked_keywords")
