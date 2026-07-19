@@ -251,6 +251,30 @@ class WordPressConnection(Base):
     created_at = Column(DateTime, default=_utcnow)
 
 
+class SuggestionRevision(Base):
+    """One deploy (or rollback) of a suggestion to WordPress. before_value is
+    fetched live from WordPress right before writing -- not assumed from our
+    own Page row, since the live site is the source of truth and may have
+    drifted since our last crawl. A revision is only written on a
+    successful deploy; failed deploys leave no row (see routes.wordpress
+    docstrings) so 'has a revision' always means 'really happened'."""
+    __tablename__ = "suggestion_revisions"
+
+    id = Column(Integer, primary_key=True)
+    suggestion_id = Column(Integer, ForeignKey("suggestions.id"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    field_name = Column(String, nullable=False)  # "meta_description" | "meta_title" | "content" | "image_alt"
+    before_value = Column(Text)
+    after_value = Column(Text)
+    wp_post_id = Column(Integer, nullable=False)
+    deployed_via = Column(String, nullable=False)  # tool name called on the plugin, e.g. "yoast_set_meta"
+    deployed_at = Column(DateTime, default=_utcnow)
+    rolled_back_at = Column(DateTime)
+    deploy_result_raw = Column(JSON)
+
+    suggestion = relationship("Suggestion")
+
+
 class Job(Base):
     """A unit of scheduled or on-demand background work (crawl, rank_check,
     keyword_refresh, ...). Handlers are looked up by job_type in

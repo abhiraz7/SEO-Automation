@@ -49,6 +49,11 @@
           Crawl
         </button>
       </form>
+      <button onclick="openDrawer('history-drawer');loadRevisionHistory();" title="Revision history"
+        style="display:flex;align-items:center;justify-content:center;width:30px;height:31px;border:1px solid #e2e8f0;border-right:none;background:#fff;color:#64748b;cursor:pointer;transition:background 0.15s;"
+        onmouseover="this.style.background='#f8fafc';this.style.color='#4f46e5'" onmouseout="this.style.background='#fff';this.style.color='#64748b'">
+        <span style="font-size:13px;">📜</span>
+      </button>
       <button onclick="openDrawer('queue-drawer')" title="Job queue" id="queue-btn"
         style="position:relative;display:flex;align-items:center;justify-content:center;width:30px;height:31px;border:1px solid #e2e8f0;border-right:none;background:#fff;color:#64748b;cursor:pointer;transition:background 0.15s;"
         onmouseover="this.style.background='#f8fafc';this.style.color='#4f46e5'" onmouseout="this.style.background='#fff';this.style.color='#64748b'">
@@ -965,6 +970,25 @@
   </div>
 </div>
 
+{# ── Revision History Drawer (Task 3.4) ───────────── #}
+<div id="history-drawer" class="vtx-drawer">
+  <div class="drawer-head">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-size:16px;">📜</div>
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#0f172a;">Revision History</div>
+        <div style="font-size:11px;color:#94a3b8;">Every fix deployed to WordPress</div>
+      </div>
+    </div>
+    <button onclick="closeDrawer('history-drawer')" style="width:28px;height:28px;border-radius:6px;border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#64748b;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body">
+    <div id="history-body"><div style="text-align:center;padding:32px 0;color:#94a3b8;font-size:13px;">Loading…</div></div>
+  </div>
+</div>
+
 <!-- Backdrop -->
 <div id="drawer-backdrop" onclick="closeAllDrawers()"></div>
 
@@ -1229,6 +1253,42 @@ function openRulesDrawer(category, label) {
   }
   document.getElementById('rules-drawer-body').innerHTML = html;
   openDrawer('rules-drawer');
+}
+
+// ── Revision History (Task 3.4) ─────────────────────
+function loadRevisionHistory() {
+  var body = document.getElementById('history-body');
+  fetch('/projects/{{ project.id }}/revisions').then(function(r){ return r.json(); }).then(function(rows) {
+    if (!rows.length) {
+      body.innerHTML = '<div style="text-align:center;padding:32px 0;color:#94a3b8;font-size:13px;">No deploys yet.</div>';
+      return;
+    }
+    body.innerHTML = rows.map(function(r) {
+      var when = (r.deployed_at || '').replace('T', ' ').slice(0, 19);
+      var statusChip = r.rolled_back_at
+        ? '<span style="font-size:10px;font-weight:700;background:#fef3c7;color:#a16207;padding:2px 8px;border-radius:8px;">Rolled back</span>'
+        : '<span style="font-size:10px;font-weight:700;background:#f3e8ff;color:#7e22ce;padding:2px 8px;border-radius:8px;">Deployed</span>';
+      var rollbackBtn = r.rolled_back_at ? '' :
+        '<button onclick="rollbackRevisionFromHistory(' + r.id + ')" style="font-size:11px;color:#ea580c;font-weight:600;background:none;border:none;cursor:pointer;">↩ Roll back</button>';
+      return '<div style="padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;background:#fff;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
+          '<div style="font-size:12px;font-weight:700;color:#0f172a;">' + r.field_name + ' <span style="color:#94a3b8;font-weight:600;">· post #' + r.wp_post_id + '</span></div>' +
+          statusChip +
+        '</div>' +
+        '<div style="font-size:11px;color:#64748b;margin-top:6px;"><s style="color:#dc2626;">' + (r.before_value || '(empty)') + '</s> → <span style="color:#16a34a;">' + (r.after_value || '') + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">' +
+          '<span style="font-size:10px;color:#94a3b8;">' + when + '</span>' + rollbackBtn +
+        '</div></div>';
+    }).join('');
+  }).catch(function(){ body.innerHTML = '<div style="text-align:center;padding:32px 0;color:#dc2626;font-size:13px;">Could not load revision history.</div>'; });
+}
+function rollbackRevisionFromHistory(id) {
+  fetch('/revisions/' + id + '/rollback', { method: 'POST' })
+    .then(function(res) {
+      if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); });
+      loadRevisionHistory();
+    })
+    .catch(function(err) { alert('Rollback failed: ' + err.message); });
 }
 
 // ── WordPress connection (Task 3.2) ─────────────────

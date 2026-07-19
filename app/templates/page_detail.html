@@ -93,9 +93,16 @@
               {% elif s.status == 'edited' %}bg-blue-100 text-blue-700
               {% elif s.status == 'deployed' %}bg-purple-100 text-purple-700
               {% else %}bg-gray-100 text-gray-500{% endif %}">{{ s.status }}</span>
+            {% if s.status == 'deployed' %}
+            <button onclick="suggRollback({{ s.id }})" class="text-xs text-orange-600 font-semibold hover:underline">↩ Roll back</button>
+            {% else %}
             <button onclick="suggDecide({{ s.id }}, 'accept')" class="text-xs text-green-700 hover:underline">Accept</button>
             <button onclick="suggDecide({{ s.id }}, 'reject')" class="text-xs text-red-600 hover:underline">Reject</button>
             <button onclick="suggEdit({{ s.id }}, {{ (s.edited_content or s.content)|tojson }})" class="text-xs text-indigo-600 hover:underline">Edit</button>
+            {% if s.status in ('accepted', 'edited') and issue.category in ['meta_description'] %}
+            <button onclick="suggDeploy({{ s.id }})" class="text-xs text-purple-700 font-semibold hover:underline">🚀 Deploy to WordPress</button>
+            {% endif %}
+            {% endif %}
           </div>
         </div>
       </div>
@@ -190,6 +197,39 @@ function suggEdit(id, current) {
       location.reload();
     })
     .catch(function(err) { alert('Could not save edit: ' + err.message); });
+}
+
+// Deploy / rollback (Tasks 3.3-3.4). wp_post_id has no auto-resolution yet
+// (the plugin exposes no "find post by URL" tool) -- prompted for now.
+function suggDeploy(id) {
+  var postId = prompt('WordPress post ID to deploy this to (numeric):');
+  if (!postId || !postId.trim() || isNaN(parseInt(postId, 10))) { if (postId !== null) alert('Enter a numeric post ID.'); return; }
+  fetch('/suggestions/' + id + '/deploy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wp_post_id: parseInt(postId, 10) }),
+  })
+    .then(function(res) {
+      if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); });
+      location.reload();
+    })
+    .catch(function(err) { alert('Deploy failed: ' + err.message); });
+}
+function suggRollback(id) {
+  // Suggestion cards don't carry their revision id -- look it up via the
+  // project's revision list rather than plumbing it through every card.
+  fetch('/projects/{{ page.project_id }}/revisions')
+    .then(function(res) { return res.json(); })
+    .then(function(revisions) {
+      var match = revisions.find(function(r){ return r.suggestion_id === id && !r.rolled_back_at; });
+      if (!match) throw new Error('No active deployment found for this suggestion.');
+      return fetch('/revisions/' + match.id + '/rollback', { method: 'POST' });
+    })
+    .then(function(res) {
+      if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); });
+      location.reload();
+    })
+    .catch(function(err) { alert('Rollback failed: ' + err.message); });
 }
 </script>
 {% endblock %}
