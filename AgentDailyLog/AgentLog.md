@@ -374,3 +374,48 @@ origin/main successfully — `bugignore` collaborator access is now working
 Next: Task 2.2 (make Crawler Settings Save real — currently
 `saveSettings()` only closes the drawer with a fake success toast, per the
 Sprint 3 Track A audit earlier this session).
+
+---
+
+## 2026-07-19 (overnight run) — Master Task List execution, progress tracker
+
+User instruction: implement all remaining tasks autonomously overnight,
+self-verify each (user asleep), push progressively. Hard blockers to flag
+in the morning, NOT fake: WordPress live deploy needs site URL + plugin
+token; Postgres migration needs a real connection string; VPS deploy needs
+server access. Build code-side up to the wall, scaffold the rest.
+
+### Status board (updated as tasks complete — TOMORROW: PICK UP FROM HERE)
+
+| Task | Status | Commit |
+|---|---|---|
+| 2.1 Job + Schedule tables | ✅ done, verified, pushed | `dc40829` |
+| 2.2 Crawler Settings save real | ✅ done, verified live, pushed | `b64b69d` |
+| 2.3 Job registry + crawl handler | ✅ done, verified vs live site (14/25 pages, job row completed), pushed | `f7d8576` |
+| 2.4 APScheduler runner | 🔨 in progress — apscheduler installed + in requirements; WAL+busy_timeout pragma in database.py; app/scheduler.py (60s dispatch tick, 10s single-worker tick, cron via CronTrigger, next_run_at backfill); main.py lifespan wired; run-now dev endpoint added. NOT yet verified end-to-end | — |
+| 2.5 Queue drawer real data | ⬜ | |
+| 3.1 Acceptance tracking | ⬜ | |
+| 3.2 WP connection storage | ⬜ (scaffold — no real site creds) | |
+| 3.3 Deploy one field | ⬜ (blocked: needs WP site + token) | |
+| 3.4 Rollback | ⬜ (blocked: same) | |
+| 3.5 Expand deploy fields | ⬜ (blocked: same) | |
+| 4.1 Rank check job | ⬜ | |
+| 4.2 Keyword refresh job | ⬜ | |
+| 4.3 Easy Wins card | ⬜ | |
+| 5.1 Backlink models + pull | ⬜ | |
+| 5.2 Backlink diffing job | ⬜ | |
+| 5.3 Auto-audit after crawl | ⬜ | |
+| 6.1 Postgres migration | ⬜ (blocked: no connection string) | |
+| 6.2 Production deploy | ⬜ (blocked: no VPS access) | |
+| 6.3 Security audit rules | ⬜ | |
+| 6.4 Full QA pass | ⬜ | |
+
+### Session notes so far
+- Phase 1 (1.1–1.4) confirmed already done by earlier keyword-research work.
+- Recurring shell hazard this session: a corrupted copy of the repo path
+  (a garbled non-ASCII char in "private limited") kept creating a stray
+  directory tree under OneDrive. Cleaned up twice; mitigation: don't cd,
+  run commands from the session's default cwd, use relative paths.
+- Standing rule (memory feedback_task_list_workflow): normally one task at
+  a time with user verify between — suspended for tonight by explicit user
+  instruction; resume that workflow after this overnight run.
