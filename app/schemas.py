@@ -119,6 +119,7 @@ class KeywordWithTrend(NormalizedKeyword):
     'stable' apart from the default shown when there's no snapshot history yet."""
     trend: str  # "rising" | "stable" | "falling"
     trend_confidence: str  # "insufficient_data" | "computed"
+    position: int | None = None  # SERP rank from the rank_check job (Task 4.1); None until that job has run
 
 
 class WorkspaceIn(BaseModel):

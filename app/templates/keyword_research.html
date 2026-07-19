@@ -183,10 +183,15 @@
     <div class="kr-stat-value">{{ "{:,}".format(overview.search_volume) }}</div>
     <div class="kr-stat-sub">monthly, all tracked</div>
   </div>
-  <div class="kr-stat" style="border-left:4px solid #16a34a;">
+  <div class="kr-stat" style="border-left:4px solid #16a34a;{% if overview.data_quality == 'live' %}cursor:pointer;{% endif %}" {% if overview.data_quality == 'live' %}onclick="krToggleEasyWinFilter()" id="kr-easy-wins-card" title="Position 4-20, difficulty < 50 -- click to filter the Overview table"{% endif %}>
     <div class="kr-stat-label" style="color:#16a34a;">✨ Easy Wins</div>
+    {% if overview.data_quality == "live" %}
     <div class="kr-stat-value">{{ overview.easy_wins }}</div>
-    <div class="kr-stat-sub">Worth It score ≥ 7.5</div>
+    <div class="kr-stat-sub">position 4-20, KD &lt; 50 -- click to filter</div>
+    {% else %}
+    <div class="kr-stat-value pending">—</div>
+    <div class="kr-stat-sub">Enable Rank Tracking to see this</div>
+    {% endif %}
   </div>
   <div class="kr-stat" style="border-left:4px solid #d97706;">
     <div class="kr-stat-label" style="color:#d97706;">⚖️ Avg. Difficulty</div>
@@ -240,7 +245,7 @@
   <table class="kr-table">
     <thead><tr>
       <th style="width:28px;"><input type="checkbox" class="kr-check" onchange="krToggleAll(this,'overview')"></th>
-      <th>Keyword</th><th>Volume</th><th>Intent</th><th>Worth It</th><th>Trend</th>
+      <th>Keyword</th><th>Volume</th><th>Intent</th><th>Worth It</th><th>Position</th><th>Trend</th>
       <th style="text-align:right;">Actions</th>
     </tr></thead>
     <tbody id="kr-overview-body"></tbody>
@@ -458,6 +463,11 @@
       btns.push(`<button class="kr-icon-btn" title="Untrack" onclick="krUntrackRow(${idx})">✕</button>`);
     return `<div class="kr-actions">${btns.join('')}</div>`;
   }
+  function positionCell(kw) {
+    if (kw.position == null) return '<span style="color:#94a3b8;">—</span>';
+    const isEasyWin = krIsPositionEasyWin(kw);
+    return `<span style="font-weight:700;${isEasyWin ? 'color:#16a34a;' : 'color:#0f172a;'}">#${kw.position}</span>${isEasyWin ? ' 🟢' : ''}`;
+  }
   function renderRow(kw, table, idx, opts) {
     const checked = state.selection[table].has(kw.keyword) ? 'checked' : '';
     return `<tr data-idx="${idx}">
@@ -466,6 +476,7 @@
       <td>${kw.volume != null ? kw.volume.toLocaleString() : '—'}${sparkline(kw.trend_points)}</td>
       <td>${intentBadge(kw.intent)}</td>
       <td>${worthPill(kw, table, idx)}</td>
+      ${opts.trend ? `<td>${positionCell(kw)}</td>` : ''}
       ${opts.trend ? `<td>${trendCell(kw)}</td>` : ''}
       <td style="text-align:right;">${actionButtons(kw, table, idx)}</td>
     </tr>`;
@@ -496,6 +507,20 @@
   }
 
   // ---- filters (apply to overview/suggestions/bulk alike) -----------------
+  // Position-based Easy Win (Task 4.3) -- separate from the Worth It-based
+  // "Easy Wins only" checkbox filter below, which applies to any keyword
+  // (Suggestions/Bulk included) and doesn't need position data. This one is
+  // Overview-only, toggled by clicking the stat card.
+  let krPositionEasyWinFilter = false;
+  function krIsPositionEasyWin(kw) {
+    return kw.position != null && kw.position >= 4 && kw.position <= 20 && kw.difficulty != null && kw.difficulty < 50;
+  }
+  function krToggleEasyWinFilter() {
+    krPositionEasyWinFilter = !krPositionEasyWinFilter;
+    const card = document.getElementById('kr-easy-wins-card');
+    if (card) card.style.boxShadow = krPositionEasyWinFilter ? '0 0 0 2px #16a34a' : '';
+    krRender('overview');
+  }
   function krFilteredRows(table) {
     const intent = document.getElementById('f-intent').value;
     const minVol = parseInt(document.getElementById('f-minvol').value) || 0;
@@ -503,6 +528,7 @@
     const include = document.getElementById('f-include').value.trim().toLowerCase();
     const exclude = document.getElementById('f-exclude').value.trim().toLowerCase();
     const easyOnly = document.getElementById('f-easy').checked;
+    const positionEasyOnly = table === 'overview' && krPositionEasyWinFilter;
     return state[table]
       .map((kw, i) => ({ ...kw, _idx: i }))
       .filter(kw =>
@@ -511,13 +537,15 @@
         (isNaN(maxKd) || kw.difficulty == null || kw.difficulty <= maxKd) &&
         (!include || kw.keyword.includes(include)) &&
         (!exclude || !kw.keyword.includes(exclude)) &&
-        (!easyOnly || (kw.worth_it && kw.worth_it.band === 'easy')));
+        (!easyOnly || (kw.worth_it && kw.worth_it.band === 'easy')) &&
+        (!positionEasyOnly || krIsPositionEasyWin(kw)));
   }
   function krApplyFilters() { ['overview', 'suggestions', 'bulk'].forEach(krRender); }
   function krClearFilters() {
     ['f-minvol', 'f-maxkd', 'f-include', 'f-exclude'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('f-intent').value = '';
     document.getElementById('f-easy').checked = false;
+    if (krPositionEasyWinFilter) krToggleEasyWinFilter();
     krApplyFilters();
   }
 

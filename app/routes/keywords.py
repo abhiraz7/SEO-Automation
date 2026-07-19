@@ -78,6 +78,7 @@ def _latest_snapshot_view(tracked: models.TrackedKeyword) -> schemas.KeywordWith
         trend=trend,
         trend_confidence=confidence,
         trend_points=_parse_trend_points(latest.trend_points),
+        position=latest.position,
     ))
 
 
@@ -94,28 +95,45 @@ def _cluster_keywords(keywords: list[str]) -> list[dict]:
     return [{"root": root, "keywords": kws} for root, kws in clusters.items()]
 
 
+# Easy Win = already ranking on page 1-2 (position 4-20 -- not top 3, which
+# doesn't need "winning") with difficulty low enough that a push to the top
+# is realistic. Threshold tuned here, one place, per Task 4.3.
+EASY_WIN_MIN_POSITION = 4
+EASY_WIN_MAX_POSITION = 20
+EASY_WIN_MAX_DIFFICULTY = 50
+
+
+def _is_easy_win(r: schemas.KeywordWithTrend) -> bool:
+    return (
+        r.position is not None
+        and EASY_WIN_MIN_POSITION <= r.position <= EASY_WIN_MAX_POSITION
+        and r.difficulty is not None
+        and r.difficulty < EASY_WIN_MAX_DIFFICULTY
+    )
+
+
 def _overview_data(db: Session, workspace_id: int) -> dict:
     tracked = db.query(models.TrackedKeyword).filter(models.TrackedKeyword.workspace_id == workspace_id).all()
     rows = [_latest_snapshot_view(t) for t in tracked]
 
-    # "Avg. Position" and "Easy Wins" (position 11-20) in the mockup are SERP
-    # rank stats. position on KeywordSnapshot is only ever populated once Rank
-    # Tracking (same tracked_keywords/keyword_snapshots tables) starts writing
-    # real ranks -- until then there is nothing honest to show here, so both
-    # stay None and data_quality tells the frontend to render "--"/"Coming
-    # soon" instead of a 0 or a proxy number. No code change needed here once
-    # Rank Tracking ships: real position values just start appearing.
     total_volume = sum(r.volume for r in rows if r.volume is not None)
     difficulties = [r.difficulty for r in rows if r.difficulty is not None]
     avg_kd = round(sum(difficulties) / len(difficulties)) if difficulties else None
-    # Easy Wins = Worth It band, not SERP position (position needs Rank
-    # Tracking, which doesn't exist yet) -- an honest number available today.
-    easy_wins = sum(1 for r in rows if r.worth_it and r.worth_it.band == "easy")
+
+    positions = [r.position for r in rows if r.position is not None]
+    avg_position = round(sum(positions) / len(positions), 1) if positions else None
+    # Rank Tracking (Task 4.1) must have actually run at least once for any
+    # position data to exist -- distinct "pending" state rather than a
+    # misleading 0, same honesty pattern as everywhere else in this tool.
+    data_quality = "live" if positions else "position_data_pending"
+    easy_wins = sum(1 for r in rows if _is_easy_win(r))
 
     return {
         "tracked_keywords": len(tracked),
         "search_volume": total_volume,
         "avg_kd": avg_kd,
+        "avg_position": avg_position,
+        "data_quality": data_quality,
         "easy_wins": easy_wins,
         "keywords": rows,
     }
