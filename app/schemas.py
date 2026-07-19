@@ -45,6 +45,20 @@ class CrawlSettingsOut(CrawlSettingsIn):
     next_run_at: datetime | None = None
 
 
+class BacklinksOverview(BaseModel):
+    """Backlinks tab overview (Task 5.1). Same ok/no_data/error discipline as
+    NormalizedKeyword -- see backlinks_provider.py."""
+    status: str = "ok"  # "ok" | "no_data" | "error"
+    error: str | None = None
+    authority_score: int | None = None
+    referring_domains: int | None = None
+    total_backlinks: int | None = None
+    follow_links: int | None = None
+    nofollow_links: int | None = None
+    source: str = "none"
+    fetched_at: datetime
+
+
 class BusinessProfileIn(BaseModel):
     """Request body for creating/updating a project's business profile."""
     brand: str | None = None

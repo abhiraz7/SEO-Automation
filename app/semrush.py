@@ -113,6 +113,48 @@ def fetch_domain_metrics(base_url: str) -> dict:
     return result
 
 
+def fetch_backlinks_overview(base_url: str) -> dict:
+    """
+    Backlinks tab overview (Task 5.1). Separate from fetch_domain_metrics
+    (which conflates domain_ranks + a narrower backlinks_overview call for
+    the project dashboard) -- this requests the fuller column set: total
+    backlink count and the follow/nofollow split, not just authority score
+    and referring domain count.
+
+    Returns a dict with keys: authority_score, referring_domains,
+    total_backlinks, follow_links, nofollow_links, error (all values are
+    strings or None; error is set on failure -- matches every other
+    provider function's contract in this codebase, see semrush.py's
+    module-level pattern in fetch_keyword_overview/fetch_domain_metrics).
+    """
+    api_key = os.environ.get("SEMRUSH_API_KEY", "").strip()
+    if not api_key:
+        return {"error": "No API key"}
+
+    domain = _domain_only(base_url)
+    result = {
+        "authority_score": None, "referring_domains": None, "total_backlinks": None,
+        "follow_links": None, "nofollow_links": None, "error": None,
+    }
+    try:
+        url = (
+            f"{SEMRUSH_ANALYTICS}?key={api_key}&type=backlinks_overview"
+            f"&target={domain}&target_type=root_domain"
+            f"&export_columns=ascore,total,domains_num,follows_num,nofollows_num"
+        )
+        data = _parse_csv(_get(url))
+        result["authority_score"] = data.get("ascore")
+        result["referring_domains"] = data.get("domains_num")
+        result["total_backlinks"] = data.get("total")
+        result["follow_links"] = data.get("follows_num")
+        result["nofollow_links"] = data.get("nofollows_num")
+        if not data:
+            result["no_data"] = True
+    except Exception as e:
+        result["error"] = f"backlinks_overview: {e}"
+    return result
+
+
 def _parse_csv_rows(text: str) -> list[dict]:
     lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
     if len(lines) < 2:

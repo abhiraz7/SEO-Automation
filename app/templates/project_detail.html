@@ -348,6 +348,17 @@
 
 </div>
 
+{# ── Backlinks (Task 5.1) ─────────────────────────── #}
+<div style="margin:0 0 20px;padding:14px 16px;border-radius:12px;background:#fff;border:1px solid #e2e8f0;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+    <div style="font-size:13px;font-weight:700;color:#0f172a;">🔗 Backlinks</div>
+    <button onclick="refreshBacklinks()" id="bl-refresh-btn" style="padding:5px 12px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer;">Refresh (live Semrush pull)</button>
+  </div>
+  <div id="bl-body" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+    <div style="grid-column:1/-1;font-size:12px;color:#94a3b8;">Loading…</div>
+  </div>
+</div>
+
 {# ── Issues by Category ──────────────────────────── #}
 {% if grouped_issues %}
 <div style="padding:20px 24px 32px;">
@@ -1330,6 +1341,42 @@ function testWordPressConnection() {
     })
     .catch(function(err) { result.style.color = '#dc2626'; result.textContent = '❌ ' + err.message; });
 }
+
+// ── Backlinks (Task 5.1) ────────────────────────────
+function blStat(label, value, color) {
+  return `<div><div style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;">${label}</div>` +
+    `<div style="font-size:20px;font-weight:800;color:${color || '#0f172a'};">${value ?? '—'}</div></div>`;
+}
+function renderBacklinks(d) {
+  const body = document.getElementById('bl-body');
+  if (d.status === 'no_snapshot_yet') {
+    body.innerHTML = '<div style="grid-column:1/-1;font-size:12px;color:#94a3b8;">No backlink data yet — click Refresh to pull it from Semrush.</div>';
+    return;
+  }
+  body.innerHTML =
+    blStat('Authority Score', d.authority_score, '#7c3aed') +
+    blStat('Referring Domains', d.referring_domains?.toLocaleString(), '#0284c7') +
+    blStat('Total Backlinks', d.total_backlinks?.toLocaleString(), '#16a34a') +
+    blStat('Follow / Nofollow', (d.follow_links ?? '—') + ' / ' + (d.nofollow_links ?? '—'), '#d97706');
+}
+function loadBacklinks() {
+  fetch('/projects/{{ project.id }}/backlinks').then(r => r.json()).then(renderBacklinks)
+    .catch(() => { document.getElementById('bl-body').innerHTML = '<div style="grid-column:1/-1;font-size:12px;color:#dc2626;">Could not load backlink data.</div>'; });
+}
+function refreshBacklinks() {
+  const btn = document.getElementById('bl-refresh-btn');
+  btn.disabled = true; btn.textContent = 'Refreshing…';
+  fetch('/projects/{{ project.id }}/backlinks/refresh', { method: 'POST' })
+    .then(res => res.json().then(d => ({ ok: res.ok, d })))
+    .then(({ ok, d }) => {
+      btn.disabled = false; btn.textContent = 'Refresh (live Semrush pull)';
+      if (!ok) { showToast('❌ ' + (d.detail || 'Refresh failed'), 'error'); return; }
+      renderBacklinks(d);
+      showToast('✅ Backlinks refreshed', 'success');
+    })
+    .catch(err => { btn.disabled = false; btn.textContent = 'Refresh (live Semrush pull)'; showToast('❌ ' + err.message, 'error'); });
+}
+loadBacklinks();
 
 // ── Job queue polling (Queue drawer + 📦 badge) ─────
 function jobRow(j) {

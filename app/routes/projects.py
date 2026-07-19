@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import audit, models, schemas
+from .. import audit, backlinks_provider, models, schemas
 from ..semrush import fetch_domain_metrics
 from ..database import get_db
 
@@ -274,6 +274,67 @@ def save_crawl_settings(project_id: int, payload: schemas.CrawlSettingsIn, db: S
     db.commit()
     db.refresh(schedule)
     return _crawl_settings_out(schedule)
+
+
+@router.get("/projects/{project_id}/backlinks")
+def backlinks_overview(project_id: int, db: Session = Depends(get_db)):
+    """Backlinks tab (Task 5.1): latest snapshot if one exists, else null --
+    never a fabricated 0. Does NOT auto-fetch on every page load (that would
+    burn a paid Semrush call per view); use the refresh endpoint below."""
+    if not db.get(models.Project, project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    latest = (
+        db.query(models.BacklinkSnapshot)
+        .filter(models.BacklinkSnapshot.project_id == project_id)
+        .order_by(models.BacklinkSnapshot.fetched_at.desc())
+        .first()
+    )
+    if not latest:
+        return {"status": "no_snapshot_yet"}
+    return {
+        "status": "ok",
+        "authority_score": latest.authority_score,
+        "referring_domains": latest.referring_domains,
+        "total_backlinks": latest.total_backlinks,
+        "follow_links": latest.follow_links,
+        "nofollow_links": latest.nofollow_links,
+        "source": latest.source,
+        "fetched_at": latest.fetched_at,
+    }
+
+
+@router.post("/projects/{project_id}/backlinks/refresh")
+def refresh_backlinks(project_id: int, db: Session = Depends(get_db)):
+    """Manual refresh -- live Semrush pull, stores a new BacklinkSnapshot on
+    success. A failed/no-data pull writes nothing, same discipline as every
+    other provider integration in this codebase."""
+    project = db.get(models.Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    overview = backlinks_provider.get_backlinks_overview(project.base_url)
+    if overview.status == "error":
+        raise HTTPException(status_code=502, detail=overview.error)
+    if overview.status == "no_data":
+        raise HTTPException(status_code=404, detail="Semrush has no backlink data for this domain.")
+
+    db.add(models.BacklinkSnapshot(
+        project_id=project_id,
+        authority_score=overview.authority_score,
+        referring_domains=overview.referring_domains,
+        total_backlinks=overview.total_backlinks,
+        follow_links=overview.follow_links,
+        nofollow_links=overview.nofollow_links,
+        source=overview.source,
+        fetched_at=overview.fetched_at,
+    ))
+    db.commit()
+    return {
+        "status": "ok", "authority_score": overview.authority_score,
+        "referring_domains": overview.referring_domains, "total_backlinks": overview.total_backlinks,
+        "follow_links": overview.follow_links, "nofollow_links": overview.nofollow_links,
+        "fetched_at": overview.fetched_at,
+    }
 
 
 @router.get("/projects/{project_id}/pages/{page_id}")

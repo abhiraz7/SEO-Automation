@@ -275,6 +275,43 @@ class SuggestionRevision(Base):
     suggestion = relationship("Suggestion")
 
 
+class BacklinkSnapshot(Base):
+    """Point-in-time backlinks_overview pull for a project (Task 5.1). One
+    row per fetch, same pattern as KeywordSnapshot -- history lets a future
+    diff show 'authority score went from 42 to 46' instead of only ever the
+    latest number."""
+    __tablename__ = "backlink_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    authority_score = Column(Integer)
+    referring_domains = Column(Integer)
+    total_backlinks = Column(Integer)
+    follow_links = Column(Integer)
+    nofollow_links = Column(Integer)
+    source = Column(String, nullable=False)
+    fetched_at = Column(DateTime, default=_utcnow)
+
+
+class BacklinkRecord(Base):
+    """One tracked backlink (Task 5.2's new/lost diffing target). Semrush's
+    backlinks_overview only gives aggregate counts -- populating this table
+    needs the separate per-link 'backlinks' report type, which
+    jobs/handlers/backlink_pull.py (Task 5.2) is responsible for calling."""
+    __tablename__ = "backlink_records"
+    __table_args__ = (UniqueConstraint("project_id", "source_url", "target_url", name="uq_backlink_record"),)
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    source_url = Column(Text, nullable=False)
+    target_url = Column(Text, nullable=False)
+    anchor_text = Column(Text)
+    is_follow = Column(Boolean)
+    first_seen_at = Column(DateTime, default=_utcnow)
+    last_seen_at = Column(DateTime, default=_utcnow)
+    lost_at = Column(DateTime)  # set when a pull no longer finds this link -- NULL means still live
+
+
 class Job(Base):
     """A unit of scheduled or on-demand background work (crawl, rank_check,
     keyword_refresh, ...). Handlers are looked up by job_type in
