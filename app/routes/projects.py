@@ -263,6 +263,13 @@ def save_crawl_settings(project_id: int, payload: schemas.CrawlSettingsIn, db: S
     schedule.timezone = payload.timezone
     schedule.cron_expression = payload.cron_expression
     schedule.payload = {field: getattr(payload, field) for field in CRAWL_SETTINGS_PAYLOAD_FIELDS}
+    if schedule.next_run_at is None:
+        # Without this, a schedule saved mid-session sits with next_run_at=NULL
+        # until the app restarts (only _backfill_next_run_at computes it, and
+        # that only runs at scheduler startup) -- "Save" would silently do
+        # nothing until then. Compute it here so it's live on the next tick.
+        from ..scheduler import compute_next_run_at
+        schedule.next_run_at = compute_next_run_at(schedule)
 
     db.commit()
     db.refresh(schedule)

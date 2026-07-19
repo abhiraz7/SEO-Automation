@@ -9,7 +9,9 @@ Every handler has the signature (db: Session, job: models.Job) -> None and
 must never raise -- see each handler's docstring for why.
 """
 from .handlers.crawl import run_crawl_job
+from .handlers.rank_check import run_rank_check_job
 
 JOB_HANDLERS = {
     "crawl": run_crawl_job,
+    "rank_check": run_rank_check_job,
 }

@@ -205,6 +205,14 @@ def keyword_research_page(workspace_id: int, request: Request, db: Session = Dep
         [{**_latest_snapshot_view(t).model_dump(), "id": t.id} for t in tracked]
     )
 
+    rank_schedule = None
+    if workspace.project_id:
+        rank_schedule = (
+            db.query(models.Schedule)
+            .filter(models.Schedule.project_id == workspace.project_id, models.Schedule.job_type == "rank_check")
+            .first()
+        )
+
     return templates.TemplateResponse(
         request,
         "keyword_research.html",
@@ -214,8 +222,48 @@ def keyword_research_page(workspace_id: int, request: Request, db: Session = Dep
             "keywords_json": keywords_json,
             "locations": keyword_locations.supported_locations(),
             "default_location": workspace.default_location or keyword_locations.DEFAULT_LOCATION,
+            "rank_schedule": rank_schedule,
         },
     )
+
+
+@router.post("/keywords/{workspace_id}/rank-schedule")
+def save_rank_schedule(workspace_id: int, payload: schemas.CrawlSettingsIn, db: Session = Depends(get_db)):
+    """Rank Tracking schedule widget (Task 4.1) -- same interval/enabled
+    shape as Crawler Settings' Schedule row (Task 2.2), job_type='rank_check'
+    instead of 'crawl'. Only the automation fields are meaningful here; the
+    crawler-specific payload fields in CrawlSettingsIn are ignored (reusing
+    the schema instead of adding a near-duplicate one for two fields)."""
+    workspace = _get_workspace(db, workspace_id)
+    if not workspace.project_id:
+        raise HTTPException(
+            status_code=400,
+            detail="This workspace isn't linked to a project yet -- rank tracking needs a project's domain to check positions against.",
+        )
+
+    schedule = (
+        db.query(models.Schedule)
+        .filter(models.Schedule.project_id == workspace.project_id, models.Schedule.job_type == "rank_check")
+        .first()
+    )
+    if not schedule:
+        schedule = models.Schedule(project_id=workspace.project_id, job_type="rank_check")
+        db.add(schedule)
+
+    schedule.enabled = payload.enabled
+    schedule.interval = payload.interval
+    schedule.timezone = payload.timezone
+    schedule.cron_expression = payload.cron_expression
+    if schedule.next_run_at is None:
+        from ..scheduler import compute_next_run_at
+        schedule.next_run_at = compute_next_run_at(schedule)
+    db.commit()
+    db.refresh(schedule)
+    return {
+        "enabled": schedule.enabled, "interval": schedule.interval,
+        "timezone": schedule.timezone, "cron_expression": schedule.cron_expression,
+        "next_run_at": schedule.next_run_at,
+    }
 
 
 @router.get("/keywords/{workspace_id}/overview")

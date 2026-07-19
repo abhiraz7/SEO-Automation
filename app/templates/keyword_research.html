@@ -142,6 +142,28 @@
   <button onclick="krDismissBanner()" style="border:none;background:none;cursor:pointer;color:inherit;font-size:14px;line-height:1;">×</button>
 </div>
 
+<!-- Rank Tracking schedule widget (Task 4.1) -->
+<div style="margin:14px 24px 0;padding:10px 14px;border-radius:8px;background:#fff;border:1px solid #e2e8f0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+  <span style="font-size:12px;font-weight:700;color:#0f172a;">📈 Rank Tracking</span>
+  {% if not workspace.project_id %}
+  <span style="font-size:12px;color:#94a3b8;">Link this workspace to a project to enable scheduled rank checks.</span>
+  {% else %}
+  <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#374151;">
+    <input type="checkbox" id="rank-enabled" {% if rank_schedule and rank_schedule.enabled %}checked{% endif %}> Enabled
+  </label>
+  <select id="rank-interval" style="padding:5px 8px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
+    <option value="24h" {% if rank_schedule and rank_schedule.interval == "24h" %}selected{% endif %}>Daily</option>
+    <option value="12h" {% if rank_schedule and rank_schedule.interval == "12h" %}selected{% endif %}>Every 12h</option>
+    <option value="6h" {% if rank_schedule and rank_schedule.interval == "6h" %}selected{% endif %}>Every 6h</option>
+    <option value="weekly" {% if not rank_schedule or rank_schedule.interval == "weekly" %}selected{% endif %}>Weekly</option>
+  </select>
+  <button onclick="saveRankSchedule()" style="padding:5px 12px;border-radius:6px;border:none;background:#4f46e5;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">Save</button>
+  <span id="rank-schedule-status" style="font-size:11px;color:#94a3b8;">
+    {% if rank_schedule and rank_schedule.next_run_at %}Next check: {{ rank_schedule.next_run_at }}{% elif rank_schedule and rank_schedule.enabled %}Scheduling on next tick…{% else %}Not scheduled{% endif %}
+  </span>
+  {% endif %}
+</div>
+
 <!-- Stat cards: immediate-value numbers only, no placeholders. -->
 <div style="padding:16px 24px 4px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
   <div class="kr-stat" style="border-left:4px solid #7c3aed;">
@@ -321,6 +343,28 @@
   function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   // ---- provider banner (compact + dismissible) ----------------------------
+  // ── Rank Tracking schedule (Task 4.1) ─────────────────────────────────
+  function saveRankSchedule() {
+    var status = document.getElementById('rank-schedule-status');
+    var enabled = document.getElementById('rank-enabled').checked;
+    var interval = document.getElementById('rank-interval').value;
+    status.textContent = 'Saving…';
+    fetch(`/keywords/${KR_WORKSPACE_ID}/rank-schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: enabled, interval: interval, timezone: 'Asia/Kolkata' }),
+    }).then(function(res) {
+      if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); });
+      return res.json();
+    }).then(function(d) {
+      status.textContent = d.enabled ? 'Scheduling on next tick…' : 'Not scheduled';
+      krToast('Rank tracking schedule saved');
+    }).catch(function(err) {
+      status.textContent = 'Save failed';
+      krToast('❌ ' + err.message);
+    });
+  }
+
   async function krLoadProviderStatus() {
     try {
       const status = await (await fetch('/keywords/provider-status')).json();

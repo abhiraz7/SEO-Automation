@@ -185,16 +185,20 @@ def get_suggestion_groups(
 
 
 def get_serp(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
-    """'View SERP'. DataForSEO first (full titles/descriptions); Semrush's
-    phrase_organic as fallback (domain+URL only) so a dead DataForSEO account
-    degrades the SERP view instead of breaking it."""
+    """'View SERP'. DataForSEO first (full titles/descriptions, ~100 results);
+    Semrush's phrase_organic as fallback (domain+URL only, 10 results) so a
+    dead DataForSEO account degrades the SERP view instead of breaking it.
+    Tags the result with _source so callers that care about result depth
+    (e.g. rank_check) know which provider actually answered."""
     result = dataforseo.fetch_serp(keyword, location)
     if not result.get("error"):
+        result["_source"] = "dataforseo"
         return result
     dfs_error = result["error"]
 
     result = semrush.fetch_serp(keyword, location)
     if not result.get("error"):
+        result["_source"] = "semrush"
         return result
     return {"error": f"dataforseo: {dfs_error}; semrush: {result['error']}"}
 
