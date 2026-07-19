@@ -263,7 +263,7 @@ class SuggestionRevision(Base):
     id = Column(Integer, primary_key=True)
     suggestion_id = Column(Integer, ForeignKey("suggestions.id"), nullable=False)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
-    field_name = Column(String, nullable=False)  # "meta_description" | "meta_title" | "content" | "image_alt"
+    field_name = Column(String, nullable=False)  # matches Issue.category -- see routes/wordpress.py FIELD_DEPLOYERS
     before_value = Column(Text)
     after_value = Column(Text)
     wp_post_id = Column(Integer, nullable=False)

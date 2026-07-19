@@ -14,11 +14,27 @@ router = APIRouter()
 
 
 # ── Field deploy registry (Task 3.5) ─────────────────────────────────────
-# One entry per deployable field: which Issue.category it applies to, how to
-# read the CURRENT value from WordPress (for before_value), and how to WRITE
-# the new value. Adding a new field type is one entry here, nothing else.
-# meta_description is the only category wired in Task 3.3; title/h1/image_alt
-# land in Task 3.5.
+# One entry per deployable Issue.category: how to READ the current value
+# from WordPress (for before_value) and how to WRITE the new one. Adding a
+# new field type is one entry here, nothing else changes in deploy/rollback.
+#
+# Real category values, confirmed from audit.py's _issue() calls: title,
+# meta_description, h1, h2, image_alt, schema, canonical, opengraph,
+# twitter, lang, content. Wired here:
+#   meta_description -> Yoast SEO meta description (yoast_set_meta)
+#   title             -> Yoast SEO <title> tag, NOT the WP post title (also
+#                        called "title" but a DIFFERENT WordPress field --
+#                        yoast_set_meta(seo_title=...) is deliberate here)
+#   h1                -> the WordPress post title itself (what themes render
+#                        as the H1 in the default template) -- update_post
+#
+# NOT wired: image_alt. The plugin's update_media_meta tool takes a
+# media_id, but our deploy contract (DeployIn.wp_post_id) only carries a
+# post_id -- a post and its images are different WordPress objects with
+# different IDs. Deploying alt text needs a media_id lookup path this repo
+# doesn't have yet (Page/CrawlSnapshot store alt text strings, not the
+# WordPress media library IDs they came from). Flagging this rather than
+# building a broken mapping; see AgentLog for what a real fix needs.
 
 def _read_meta_description(site_url: str, token: str, wp_post_id: int) -> wordpress.WordPressResult:
     return wordpress.get_yoast_meta(site_url, token, wp_post_id)
@@ -28,12 +44,40 @@ def _write_meta_description(site_url: str, token: str, wp_post_id: int, value: s
     return wordpress.set_yoast_meta(site_url, token, wp_post_id, meta_description=value)
 
 
+def _read_seo_title(site_url: str, token: str, wp_post_id: int) -> wordpress.WordPressResult:
+    return wordpress.get_yoast_meta(site_url, token, wp_post_id)
+
+
+def _write_seo_title(site_url: str, token: str, wp_post_id: int, value: str) -> wordpress.WordPressResult:
+    return wordpress.set_yoast_meta(site_url, token, wp_post_id, seo_title=value)
+
+
+def _read_post_title(site_url: str, token: str, wp_post_id: int) -> wordpress.WordPressResult:
+    return wordpress.get_post(site_url, token, wp_post_id)
+
+
+def _write_post_title(site_url: str, token: str, wp_post_id: int, value: str) -> wordpress.WordPressResult:
+    return wordpress.update_post_content(site_url, token, wp_post_id, title=value)
+
+
 FIELD_DEPLOYERS = {
     "meta_description": {
         "read": _read_meta_description,
         "read_key": "meta_description",  # key inside the read result's .data to extract before_value
         "write": _write_meta_description,
         "tool": "yoast_set_meta",
+    },
+    "title": {
+        "read": _read_seo_title,
+        "read_key": "seo_title",
+        "write": _write_seo_title,
+        "tool": "yoast_set_meta",
+    },
+    "h1": {
+        "read": _read_post_title,
+        "read_key": "title",
+        "write": _write_post_title,
+        "tool": "update_post",
     },
 }
 
