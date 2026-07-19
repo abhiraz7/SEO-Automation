@@ -206,12 +206,14 @@ def keyword_research_page(workspace_id: int, request: Request, db: Session = Dep
     )
 
     rank_schedule = None
+    refresh_schedule = None
     if workspace.project_id:
-        rank_schedule = (
-            db.query(models.Schedule)
-            .filter(models.Schedule.project_id == workspace.project_id, models.Schedule.job_type == "rank_check")
-            .first()
-        )
+        schedules = {
+            s.job_type: s
+            for s in db.query(models.Schedule).filter(models.Schedule.project_id == workspace.project_id).all()
+        }
+        rank_schedule = schedules.get("rank_check")
+        refresh_schedule = schedules.get("keyword_refresh")
 
     return templates.TemplateResponse(
         request,
@@ -222,32 +224,41 @@ def keyword_research_page(workspace_id: int, request: Request, db: Session = Dep
             "keywords_json": keywords_json,
             "locations": keyword_locations.supported_locations(),
             "default_location": workspace.default_location or keyword_locations.DEFAULT_LOCATION,
+            "refresh_schedule": refresh_schedule,
             "rank_schedule": rank_schedule,
         },
     )
 
 
-@router.post("/keywords/{workspace_id}/rank-schedule")
-def save_rank_schedule(workspace_id: int, payload: schemas.CrawlSettingsIn, db: Session = Depends(get_db)):
-    """Rank Tracking schedule widget (Task 4.1) -- same interval/enabled
-    shape as Crawler Settings' Schedule row (Task 2.2), job_type='rank_check'
-    instead of 'crawl'. Only the automation fields are meaningful here; the
-    crawler-specific payload fields in CrawlSettingsIn are ignored (reusing
-    the schema instead of adding a near-duplicate one for two fields)."""
+KEYWORD_SCHEDULABLE_JOB_TYPES = ("rank_check", "keyword_refresh")
+
+
+@router.post("/keywords/{workspace_id}/schedule/{job_type}")
+def save_keyword_schedule(workspace_id: int, job_type: str, payload: schemas.CrawlSettingsIn, db: Session = Depends(get_db)):
+    """Rank Tracking (Task 4.1) and Keyword Refresh (Task 4.2) schedule
+    widgets share this one endpoint -- same interval/enabled shape as
+    Crawler Settings' Schedule row (Task 2.2), just a different job_type.
+    Only the automation fields (enabled/interval/timezone/cron) are
+    meaningful here; the crawler-specific payload fields on CrawlSettingsIn
+    are ignored (reusing that schema instead of adding a near-duplicate one
+    for two fields)."""
+    if job_type not in KEYWORD_SCHEDULABLE_JOB_TYPES:
+        raise HTTPException(status_code=400, detail=f"job_type must be one of {KEYWORD_SCHEDULABLE_JOB_TYPES}")
+
     workspace = _get_workspace(db, workspace_id)
     if not workspace.project_id:
         raise HTTPException(
             status_code=400,
-            detail="This workspace isn't linked to a project yet -- rank tracking needs a project's domain to check positions against.",
+            detail="This workspace isn't linked to a project yet -- scheduled keyword jobs need a project to attach to.",
         )
 
     schedule = (
         db.query(models.Schedule)
-        .filter(models.Schedule.project_id == workspace.project_id, models.Schedule.job_type == "rank_check")
+        .filter(models.Schedule.project_id == workspace.project_id, models.Schedule.job_type == job_type)
         .first()
     )
     if not schedule:
-        schedule = models.Schedule(project_id=workspace.project_id, job_type="rank_check")
+        schedule = models.Schedule(project_id=workspace.project_id, job_type=job_type)
         db.add(schedule)
 
     schedule.enabled = payload.enabled
