@@ -49,6 +49,12 @@
           Crawl
         </button>
       </form>
+      <button onclick="openDrawer('queue-drawer')" title="Job queue" id="queue-btn"
+        style="position:relative;display:flex;align-items:center;justify-content:center;width:30px;height:31px;border:1px solid #e2e8f0;border-right:none;background:#fff;color:#64748b;cursor:pointer;transition:background 0.15s;"
+        onmouseover="this.style.background='#f8fafc';this.style.color='#4f46e5'" onmouseout="this.style.background='#fff';this.style.color='#64748b'">
+        <span style="font-size:13px;">📦</span>
+        <span id="queue-badge" style="display:none;position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#4f46e5;color:#fff;font-size:10px;font-weight:800;line-height:16px;text-align:center;box-shadow:0 1px 4px rgba(79,70,229,.4);"></span>
+      </button>
       <button onclick="openDrawer('settings-drawer')" title="Crawler settings"
         style="display:flex;align-items:center;justify-content:center;width:30px;height:31px;border-radius:0 6px 6px 0;border:1px solid #e2e8f0;background:#fff;color:#64748b;cursor:pointer;transition:background 0.15s;"
         onmouseover="this.style.background='#f8fafc';this.style.color='#4f46e5'" onmouseout="this.style.background='#fff';this.style.color='#64748b'">
@@ -921,13 +927,15 @@
       </button>
       {% endfor %}
     </div>
-    <!-- Tab content -->
+    <!-- Tab content: populated by pollJobs() from GET /projects/{id}/jobs -->
     {% for tab in ['running','queued','completed','failed'] %}
     <div id="qtab-{{ tab }}" style="display:{% if loop.first %}block{% else %}none{% endif %};">
-      <div style="text-align:center;padding:48px 0;">
-        <div style="font-size:36px;margin-bottom:12px;">{% if tab == 'running' %}🔄{% elif tab == 'queued' %}📦{% elif tab == 'completed' %}✅{% else %}❌{% endif %}</div>
-        <div style="font-size:13px;font-weight:600;color:#64748b;">No {{ tab }} jobs</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:4px;">Jobs will appear here when crawling starts</div>
+      <div id="qtab-{{ tab }}-body">
+        <div style="text-align:center;padding:48px 0;">
+          <div style="font-size:36px;margin-bottom:12px;">{% if tab == 'running' %}🔄{% elif tab == 'queued' %}📦{% elif tab == 'completed' %}✅{% else %}❌{% endif %}</div>
+          <div style="font-size:13px;font-weight:600;color:#64748b;">No {{ tab }} jobs</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:4px;">Jobs will appear here when crawling starts</div>
+        </div>
       </div>
     </div>
     {% endfor %}
@@ -1199,6 +1207,50 @@ function openRulesDrawer(category, label) {
   document.getElementById('rules-drawer-body').innerHTML = html;
   openDrawer('rules-drawer');
 }
+
+// ── Job queue polling (Queue drawer + 📦 badge) ─────
+function jobRow(j) {
+  var icon = { crawl: '🕷️', rank_check: '📈', keyword_refresh: '🔄', backlink_pull: '🔗', audit: '🔍' }[j.job_type] || '⚙️';
+  var when = j.finished_at || j.started_at || j.created_at || '';
+  when = when ? when.replace('T', ' ').slice(0, 19) : '';
+  var detail = '';
+  if (j.status === 'completed' && j.result_summary) {
+    detail = Object.entries(j.result_summary).map(function(kv){ return kv[0].replace(/_/g,' ') + ': ' + kv[1]; }).join(' · ');
+  } else if (j.error) {
+    detail = j.error;
+  }
+  return '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;background:#fff;">' +
+    '<span style="font-size:16px;">' + icon + '</span>' +
+    '<div style="min-width:0;flex:1;">' +
+      '<div style="font-size:12px;font-weight:700;color:#0f172a;">' + j.job_type + ' <span style="color:#94a3b8;font-weight:600;">#' + j.id + '</span></div>' +
+      (detail ? '<div style="font-size:11px;color:#64748b;margin-top:2px;word-break:break-word;">' + detail + '</div>' : '') +
+      '<div style="font-size:10px;color:#94a3b8;margin-top:2px;">' + when + '</div>' +
+    '</div></div>';
+}
+function renderQTab(tab, rows) {
+  var body = document.getElementById('qtab-' + tab + '-body');
+  if (!body) return;
+  if (!rows.length) {
+    var icon = { running: '🔄', queued: '📦', completed: '✅', failed: '❌' }[tab];
+    body.innerHTML = '<div style="text-align:center;padding:48px 0;">' +
+      '<div style="font-size:36px;margin-bottom:12px;">' + icon + '</div>' +
+      '<div style="font-size:13px;font-weight:600;color:#64748b;">No ' + tab + ' jobs</div></div>';
+    return;
+  }
+  body.innerHTML = rows.map(jobRow).join('');
+}
+function pollJobs() {
+  fetch('/projects/{{ project.id }}/jobs').then(function(r){ return r.json(); }).then(function(data) {
+    ['running', 'queued', 'completed', 'failed'].forEach(function(tab){ renderQTab(tab, data[tab] || []); });
+    var badge = document.getElementById('queue-badge');
+    if (badge) {
+      badge.style.display = data.badge > 0 ? 'block' : 'none';
+      badge.textContent = data.badge;
+    }
+  }).catch(function(){ /* polling failure shouldn't break the page */ });
+}
+pollJobs();
+setInterval(pollJobs, 10000);
 
 // ── Toast ──────────────────────────────────────────
 function showToast(msg, type) {
