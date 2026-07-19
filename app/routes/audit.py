@@ -30,14 +30,18 @@ def run_audit(project_id: int, db: Session = Depends(get_db)):
     project = _get_project(db, project_id)
     pages = db.query(models.Page).filter(models.Page.project_id == project_id).all()
 
-    _persist_issues(db, project_id, audit_engine.run_audit(pages))
+    issues = audit_engine.merge_issue_dicts(
+        audit_engine.run_audit(pages),
+        audit_engine.run_security_audit(project.base_url, pages),
+    )
+    _persist_issues(db, project_id, issues)
 
     return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
 
 
 @router.post("/projects/{project_id}/pages/{page_id}/reaudit")
 def reaudit_page(project_id: int, page_id: int, db: Session = Depends(get_db)):
-    _get_project(db, project_id)
+    project = _get_project(db, project_id)
     page = db.get(models.Page, page_id)
     if not page or page.project_id != project_id:
         raise HTTPException(status_code=404, detail="Page not found")
@@ -46,7 +50,11 @@ def reaudit_page(project_id: int, page_id: int, db: Session = Depends(get_db)):
     crawl.upsert_page(db, project_id, data)
 
     pages = db.query(models.Page).filter(models.Page.project_id == project_id).all()
-    _persist_issues(db, project_id, audit_engine.run_audit(pages))
+    issues = audit_engine.merge_issue_dicts(
+        audit_engine.run_audit(pages),
+        audit_engine.run_security_audit(project.base_url, pages),
+    )
+    _persist_issues(db, project_id, issues)
 
     return RedirectResponse(url=f"/projects/{project_id}/pages/{page_id}", status_code=303)
 

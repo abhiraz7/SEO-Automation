@@ -122,6 +122,78 @@ def _audit_content(page):
     return []
 
 
+# ── Site-level security checks (Task 6.3) ────────────────────────────────
+# SSL/headers/robots.txt are project-level (one check per site), not
+# per-page like everything else in this file -- but Issue.page_id is
+# NOT NULL, so these attach to the project's homepage Page row rather than
+# needing a schema change. If the homepage hasn't been crawled yet, these
+# checks are skipped (same "nothing to audit yet" behavior as run_audit
+# with an empty page list) rather than attaching to an arbitrary page.
+import httpx
+
+
+def _audit_ssl(base_url: str) -> list[dict]:
+    if not base_url.lower().startswith("https://"):
+        return [_issue("security", "no_ssl", "error", "Site is not served over HTTPS.")]
+    try:
+        httpx.get(base_url, timeout=10, follow_redirects=True)
+        return []
+    except httpx.RequestError as e:
+        return [_issue("security", "ssl_error", "error", f"HTTPS connection failed: {e}")]
+
+
+SECURITY_HEADERS = {
+    "strict-transport-security": "Strict-Transport-Security",
+    "x-content-type-options": "X-Content-Type-Options",
+    "x-frame-options": "X-Frame-Options",
+    "content-security-policy": "Content-Security-Policy",
+}
+
+
+def _audit_security_headers(base_url: str) -> list[dict]:
+    try:
+        resp = httpx.get(base_url, timeout=10, follow_redirects=True)
+    except httpx.RequestError:
+        return []  # _audit_ssl already reports the connection failure -- don't duplicate it
+    missing = [label for key, label in SECURITY_HEADERS.items() if key not in resp.headers]
+    if not missing:
+        return []
+    return [_issue("security", "missing_headers", "warning", f"Missing security header(s): {', '.join(missing)}.")]
+
+
+def _audit_robots_txt(base_url: str) -> list[dict]:
+    robots_url = base_url.rstrip("/") + "/robots.txt"
+    try:
+        resp = httpx.get(robots_url, timeout=10, follow_redirects=True)
+        if resp.status_code != 200:
+            return [_issue("security", "robots_missing", "warning", f"robots.txt returned HTTP {resp.status_code}.")]
+        return []
+    except httpx.RequestError as e:
+        return [_issue("security", "robots_missing", "warning", f"Could not fetch robots.txt: {e}")]
+
+
+def merge_issue_dicts(a: dict, b: dict) -> dict:
+    """Combines two {page_id: [issue, ...]} dicts, concatenating (not
+    overwriting) when both have issues for the same page_id -- needed since
+    the homepage can have both regular per-page issues AND security issues."""
+    merged = {k: list(v) for k, v in a.items()}
+    for page_id, issues in b.items():
+        merged.setdefault(page_id, [])
+        merged[page_id] = merged[page_id] + issues
+    return merged
+
+
+def run_security_audit(base_url: str, pages: list) -> dict:
+    """Returns {page_id: [issue dict, ...]} for the project's homepage, in
+    the same shape run_audit() returns -- callers merge the two dicts.
+    Empty dict if the homepage hasn't been crawled yet."""
+    homepage = next((p for p in pages if not p.error and p.url.rstrip("/") == base_url.rstrip("/")), None)
+    if not homepage:
+        return {}
+    issues = _audit_ssl(base_url) + _audit_security_headers(base_url) + _audit_robots_txt(base_url)
+    return {homepage.id: issues} if issues else {}
+
+
 RULES = [
     _audit_title,
     _audit_meta_description,
@@ -339,5 +411,11 @@ RULE_REQUIREMENTS = {
     ],
     "content": [
         {"rule": "thin", "severity": "warning", "description": f"Page content should be at least {THIN_CONTENT_WORDS} words."},
+    ],
+    "security": [
+        {"rule": "no_ssl", "severity": "error", "description": "Site must be served over HTTPS."},
+        {"rule": "ssl_error", "severity": "error", "description": "HTTPS connection must succeed without errors."},
+        {"rule": "missing_headers", "severity": "warning", "description": "Strict-Transport-Security, X-Content-Type-Options, X-Frame-Options, and Content-Security-Policy headers should be present."},
+        {"rule": "robots_missing", "severity": "warning", "description": "robots.txt should be present and return HTTP 200."},
     ],
 }

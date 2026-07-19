@@ -32,7 +32,10 @@ def run_audit_job(db: Session, job: models.Job) -> None:
             raise ValueError(f"Project {job.project_id} not found")
 
         pages = db.query(models.Page).filter(models.Page.project_id == job.project_id).all()
-        issues_by_page = audit_engine.run_audit(pages)
+        issues_by_page = audit_engine.merge_issue_dicts(
+            audit_engine.run_audit(pages),
+            audit_engine.run_security_audit(project.base_url, pages),
+        )
 
         # Same replace-all-issues approach as routes/audit.py::_persist_issues,
         # inlined here rather than imported to avoid a jobs -> routes
