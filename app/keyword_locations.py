@@ -13,7 +13,11 @@ Country-level granularity only for now. DataForSEO supports city-level codes;
 add them here (and a second selector in the UI) if/when a client needs it.
 """
 
-DEFAULT_LOCATION = "IN"  # VTechys's primary market
+# Deliberate default, not a hidden hardcode: every lookup threads an explicit
+# location and the UI selector always shows which market is active. Changed
+# IN -> US per user instruction 2026-07-19 (was India-first before that);
+# flip this one constant to change the default market app-wide.
+DEFAULT_LOCATION = "US"
 
 # ISO code -> (display name, semrush database, dataforseo location_code)
 _LOCATIONS: dict[str, tuple[str, str, int]] = {

@@ -125,7 +125,7 @@ class WorkspaceIn(BaseModel):
     """Keyword workspaces are the standalone container keyword data hangs off
     (not Project). project_id is an optional link back to a site."""
     name: str
-    default_location: str = "IN"
+    default_location: str = "US"
     project_id: int | None = None
 
 
@@ -136,7 +136,7 @@ class WorkspaceOut(WorkspaceIn):
 
 class TrackKeywordIn(BaseModel):
     keyword: str
-    location: str = "IN"  # ISO country code, see app/keyword_locations.py
+    location: str = "US"  # ISO country code, see app/keyword_locations.py (DEFAULT_LOCATION)
 
 
 class SavedKeywordIn(BaseModel):

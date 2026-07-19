@@ -239,10 +239,15 @@ def track_keyword(workspace_id: int, payload: schemas.TrackKeywordIn, db: Sessio
     )
     newly_created = tracked is None
     if newly_created:
-        tracked = models.TrackedKeyword(workspace_id=workspace_id, keyword=keyword)
+        tracked = models.TrackedKeyword(workspace_id=workspace_id, keyword=keyword, location=location)
         db.add(tracked)
         db.commit()
         db.refresh(tracked)
+    elif tracked.location != location:
+        # Re-tracking with a different market is an explicit choice -- update
+        # the persisted location so future refreshes follow it.
+        tracked.location = location
+        db.commit()
 
     normalized = keyword_provider.get_keyword_overview(keyword, location)
 
@@ -284,7 +289,7 @@ def untrack_keyword(workspace_id: int, keyword_id: int, db: Session = Depends(ge
 
 @router.get("/keywords/{workspace_id}/suggestions", response_model=dict[str, list[schemas.NormalizedKeyword]])
 def keyword_suggestions(
-    workspace_id: int, seed: str, location: str = "IN", modes: str = "related,questions",
+    workspace_id: int, seed: str, location: str = keyword_locations.DEFAULT_LOCATION, modes: str = "related,questions",
     db: Session = Depends(get_db),
 ):
     """modes: comma-separated subset of related,questions,prepositions,comparisons.
@@ -307,7 +312,7 @@ def bulk_analysis(workspace_id: int, payload: schemas.BulkKeywordsIn, db: Sessio
 
 
 @router.get("/keywords/{workspace_id}/detail")
-def keyword_detail(workspace_id: int, keyword: str, location: str = "IN", db: Session = Depends(get_db)):
+def keyword_detail(workspace_id: int, keyword: str, location: str = keyword_locations.DEFAULT_LOCATION, db: Session = Depends(get_db)):
     """Expand-row payload: live metrics + SERP top results + SERP features +
     question keywords, in one call. The SERP-aware Worth It score computed here
     is sharper than the table's (which never pays for a SERP call per row)."""
@@ -458,10 +463,13 @@ def export_keywords(workspace_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/keywords/{workspace_id}/{keyword_id}/serp")
-def view_serp(workspace_id: int, keyword_id: int, location: str = "IN", db: Session = Depends(get_db)):
+def view_serp(workspace_id: int, keyword_id: int, location: str | None = None, db: Session = Depends(get_db)):
     tracked = db.get(models.TrackedKeyword, keyword_id)
     if not tracked or tracked.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Tracked keyword not found")
+    # Default to the market this keyword was tracked against, not the app
+    # default -- an explicit ?location= still overrides for comparisons.
+    effective = location or tracked.location or keyword_locations.DEFAULT_LOCATION
     # Live lookup, intentionally not persisted -- SERP results are a point-in-time
     # check, not something we snapshot for trend history (see keyword_provider.py).
-    return keyword_provider.get_serp(tracked.keyword, _require_location(location))
+    return keyword_provider.get_serp(tracked.keyword, _require_location(effective))
