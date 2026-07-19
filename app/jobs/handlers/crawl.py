@@ -58,6 +58,14 @@ def run_crawl_job(db: Session, job: models.Job) -> None:
             "pages_errored": pages_error,
             "total": len(results),
         }
+
+        # Auto-audit (Task 5.3): a scheduled/job-driven crawl now produces a
+        # fresh audit with zero clicks, matching what a human gets today by
+        # clicking Crawl then Run Audit manually. Only for job-driven crawls
+        # (scheduler ticks, the test-crawl endpoint) -- the direct
+        # POST /projects/{id}/crawl button still leaves "Run Audit" as a
+        # separate manual action, unchanged.
+        db.add(models.Job(project_id=job.project_id, job_type="audit", status="queued"))
     except Exception as e:
         job.status = "failed"
         job.error = str(e)

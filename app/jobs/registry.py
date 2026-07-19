@@ -8,6 +8,7 @@ plus a handler module -- nothing else changes.
 Every handler has the signature (db: Session, job: models.Job) -> None and
 must never raise -- see each handler's docstring for why.
 """
+from .handlers.audit import run_audit_job
 from .handlers.backlink_pull import run_backlink_pull_job
 from .handlers.crawl import run_crawl_job
 from .handlers.keyword_refresh import run_keyword_refresh_job
@@ -18,4 +19,5 @@ JOB_HANDLERS = {
     "rank_check": run_rank_check_job,
     "keyword_refresh": run_keyword_refresh_job,
     "backlink_pull": run_backlink_pull_job,
+    "audit": run_audit_job,
 }
