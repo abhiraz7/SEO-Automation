@@ -12,6 +12,12 @@ from . import semrush
 from .schemas import BacklinksOverview
 
 
+def get_backlinks_list(base_url: str, limit: int = 100) -> dict:
+    """Per-link list for Task 5.2's diffing job. Returns {"rows": [...],
+    "error": None} -- Semrush only (see module docstring)."""
+    return semrush.fetch_backlinks_list(base_url, limit)
+
+
 def get_backlinks_overview(base_url: str) -> BacklinksOverview:
     row = semrush.fetch_backlinks_overview(base_url)
 

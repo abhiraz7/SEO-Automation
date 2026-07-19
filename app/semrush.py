@@ -155,6 +155,27 @@ def fetch_backlinks_overview(base_url: str) -> dict:
     return result
 
 
+def fetch_backlinks_list(base_url: str, limit: int = 100) -> dict:
+    """Per-link backlinks report (Task 5.2's diffing source) -- distinct from
+    fetch_backlinks_overview's aggregate counts. Returns {"rows": [...],
+    "error": None} or {"rows": [], "error": "..."} on failure, matching this
+    file's other list-fetchers (fetch_related_keywords etc.)."""
+    api_key = os.environ.get("SEMRUSH_API_KEY", "").strip()
+    if not api_key:
+        return {"rows": [], "error": "No API key"}
+    domain = _domain_only(base_url)
+    try:
+        url = (
+            f"{SEMRUSH_ANALYTICS}?key={api_key}&type=backlinks"
+            f"&target={domain}&target_type=root_domain"
+            f"&export_columns=source_url,target_url,anchor,nofollow&display_limit={limit}"
+        )
+        rows = _parse_csv_rows(_get(url))
+        return {"rows": rows, "error": None}
+    except Exception as e:
+        return {"rows": [], "error": f"backlinks: {e}"}
+
+
 def _parse_csv_rows(text: str) -> list[dict]:
     lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
     if len(lines) < 2:

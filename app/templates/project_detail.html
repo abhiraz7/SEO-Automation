@@ -348,15 +348,30 @@
 
 </div>
 
-{# ── Backlinks (Task 5.1) ─────────────────────────── #}
+{# ── Backlinks (Task 5.1 + 5.2) ───────────────────── #}
 <div style="margin:0 0 20px;padding:14px 16px;border-radius:12px;background:#fff;border:1px solid #e2e8f0;">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
     <div style="font-size:13px;font-weight:700;color:#0f172a;">🔗 Backlinks</div>
-    <button onclick="refreshBacklinks()" id="bl-refresh-btn" style="padding:5px 12px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer;">Refresh (live Semrush pull)</button>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#374151;">
+        <input type="checkbox" id="bl-sched-enabled"> Weekly auto-pull
+      </label>
+      <button onclick="saveBacklinkSchedule()" style="padding:5px 10px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer;">Save</button>
+      <button onclick="refreshBacklinks()" id="bl-refresh-btn" style="padding:5px 12px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer;">Refresh now</button>
+    </div>
   </div>
-  <div id="bl-body" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+  <div id="bl-body" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
     <div style="grid-column:1/-1;font-size:12px;color:#94a3b8;">Loading…</div>
   </div>
+  <div style="display:flex;gap:2px;background:#f1f5f9;border-radius:8px;padding:3px;margin-bottom:10px;max-width:280px;">
+    {% for t in ['active','new','lost'] %}
+    <button onclick="switchBlTab(this,'{{ t }}')" data-bltab="{{ t }}"
+      style="flex:1;padding:5px 8px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;{% if loop.first %}background:#fff;color:#4f46e5;box-shadow:0 1px 3px rgba(0,0,0,.07);{% else %}background:transparent;color:#64748b;{% endif %}">
+      {{ t|title }}
+    </button>
+    {% endfor %}
+  </div>
+  <div id="bl-records-body" style="font-size:12px;color:#94a3b8;">Loading…</div>
 </div>
 
 {# ── Issues by Category ──────────────────────────── #}
@@ -1377,6 +1392,43 @@ function refreshBacklinks() {
     .catch(err => { btn.disabled = false; btn.textContent = 'Refresh (live Semrush pull)'; showToast('❌ ' + err.message, 'error'); });
 }
 loadBacklinks();
+
+let blCurrentTab = 'active';
+function switchBlTab(btn, tab) {
+  document.querySelectorAll('[data-bltab]').forEach(function(b){
+    b.style.background = 'transparent'; b.style.color = '#64748b'; b.style.boxShadow = '';
+  });
+  btn.style.background = '#fff'; btn.style.color = '#4f46e5'; btn.style.boxShadow = '0 1px 3px rgba(0,0,0,.07)';
+  blCurrentTab = tab;
+  loadBacklinkRecords();
+}
+function loadBacklinkRecords() {
+  const body = document.getElementById('bl-records-body');
+  body.innerHTML = 'Loading…';
+  fetch(`/projects/{{ project.id }}/backlinks/records?filter=${blCurrentTab}`).then(r => r.json()).then(rows => {
+    if (!rows.length) { body.innerHTML = `No ${blCurrentTab} backlinks${blCurrentTab === 'active' ? ' yet -- click Refresh now or enable weekly auto-pull.' : '.'}`; return; }
+    body.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
+      '<thead><tr style="text-align:left;color:#94a3b8;"><th style="padding:4px 8px;">Source</th><th style="padding:4px 8px;">Anchor</th><th style="padding:4px 8px;">Follow</th></tr></thead><tbody>' +
+      rows.map(r => `<tr style="border-top:1px solid #f1f5f9;">
+        <td style="padding:4px 8px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><a href="${r.source_url}" target="_blank" rel="noopener" style="color:#4f46e5;text-decoration:none;">${r.source_url}</a></td>
+        <td style="padding:4px 8px;color:#64748b;">${r.anchor_text || '—'}</td>
+        <td style="padding:4px 8px;">${r.is_follow ? '✅' : '🚫'}</td>
+      </tr>`).join('') + '</tbody></table>';
+  }).catch(() => { body.innerHTML = 'Could not load backlink records.'; });
+}
+loadBacklinkRecords();
+
+function saveBacklinkSchedule() {
+  const enabled = document.getElementById('bl-sched-enabled').checked;
+  fetch('/projects/{{ project.id }}/schedule/backlink_pull', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: enabled, interval: 'weekly', timezone: 'Asia/Kolkata' }),
+  }).then(res => {
+    if (!res.ok) return res.json().then(d => { throw new Error(d.detail || ('HTTP ' + res.status)); });
+    showToast('✅ Backlink schedule saved', 'success');
+  }).catch(err => showToast('❌ ' + err.message, 'error'));
+}
 
 // ── Job queue polling (Queue drawer + 📦 badge) ─────
 function jobRow(j) {

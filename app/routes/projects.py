@@ -337,6 +337,75 @@ def refresh_backlinks(project_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/projects/{project_id}/backlinks/records")
+def list_backlink_records(project_id: int, filter: str = "active", db: Session = Depends(get_db)):
+    """New/Lost tabs data (Task 5.2). filter: 'new' (first seen in the most
+    recent pull), 'lost' (lost_at set), 'active' (currently live, default)."""
+    if not db.get(models.Project, project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    query = db.query(models.BacklinkRecord).filter(models.BacklinkRecord.project_id == project_id)
+    if filter == "lost":
+        query = query.filter(models.BacklinkRecord.lost_at.isnot(None)).order_by(models.BacklinkRecord.lost_at.desc())
+    elif filter == "new":
+        # "New" = first_seen_at matches the most recent pull's timestamp,
+        # i.e. this run is the first time we've ever seen it.
+        latest_pull = db.query(models.BacklinkRecord.first_seen_at).filter(
+            models.BacklinkRecord.project_id == project_id
+        ).order_by(models.BacklinkRecord.first_seen_at.desc()).first()
+        if not latest_pull:
+            return []
+        query = query.filter(models.BacklinkRecord.first_seen_at == latest_pull[0]).order_by(models.BacklinkRecord.source_url)
+    else:
+        query = query.filter(models.BacklinkRecord.lost_at.is_(None)).order_by(models.BacklinkRecord.last_seen_at.desc())
+
+    return [
+        {
+            "id": r.id, "source_url": r.source_url, "target_url": r.target_url,
+            "anchor_text": r.anchor_text, "is_follow": r.is_follow,
+            "first_seen_at": r.first_seen_at, "last_seen_at": r.last_seen_at, "lost_at": r.lost_at,
+        }
+        for r in query.limit(200).all()
+    ]
+
+
+PROJECT_SCHEDULABLE_JOB_TYPES = ("backlink_pull",)
+
+
+@router.post("/projects/{project_id}/schedule/{job_type}")
+def save_project_schedule(project_id: int, job_type: str, payload: schemas.CrawlSettingsIn, db: Session = Depends(get_db)):
+    """Generic project-level schedule save for job types not already covered
+    by save_crawl_settings (job_type='crawl') -- backlink_pull for now."""
+    if job_type not in PROJECT_SCHEDULABLE_JOB_TYPES:
+        raise HTTPException(status_code=400, detail=f"job_type must be one of {PROJECT_SCHEDULABLE_JOB_TYPES}")
+    if not db.get(models.Project, project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    schedule = (
+        db.query(models.Schedule)
+        .filter(models.Schedule.project_id == project_id, models.Schedule.job_type == job_type)
+        .first()
+    )
+    if not schedule:
+        schedule = models.Schedule(project_id=project_id, job_type=job_type)
+        db.add(schedule)
+
+    schedule.enabled = payload.enabled
+    schedule.interval = payload.interval
+    schedule.timezone = payload.timezone
+    schedule.cron_expression = payload.cron_expression
+    if schedule.next_run_at is None:
+        from ..scheduler import compute_next_run_at
+        schedule.next_run_at = compute_next_run_at(schedule)
+    db.commit()
+    db.refresh(schedule)
+    return {
+        "enabled": schedule.enabled, "interval": schedule.interval,
+        "timezone": schedule.timezone, "cron_expression": schedule.cron_expression,
+        "next_run_at": schedule.next_run_at,
+    }
+
+
 @router.get("/projects/{project_id}/pages/{page_id}")
 def page_detail(
     project_id: int,
