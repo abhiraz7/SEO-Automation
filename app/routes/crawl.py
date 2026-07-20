@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from .. import crawler, models
+from .. import crawler, models, wordpress
 from ..database import get_db
 
 router = APIRouter()
@@ -14,6 +14,34 @@ PAGE_FIELDS = [
     "twitter_title", "twitter_description", "twitter_site", "twitter_card",
     "lang", "custom_content", "markdown", "fit_markdown", "internal_links",
 ]
+
+
+def _maybe_resolve_wp_post_id(db: Session, project_id: int, page: models.Page) -> None:
+    """Best-effort: if this project has a WordPress connection saved, try to
+    resolve this page's WP post ID from its URL right now, during crawl/
+    re-audit, so 'Deploy to WordPress' later doesn't need to ask for a
+    numeric ID. Purely additive and never fatal -- any failure (no
+    connection, no match, site unreachable) just leaves wp_post_id as it
+    was; it never blocks or fails the crawl itself."""
+    conn = (
+        db.query(models.WordPressConnection)
+        .filter(models.WordPressConnection.project_id == project_id)
+        .first()
+    )
+    if not conn:
+        return
+    try:
+        token = wordpress.decrypt_token(conn.api_token)
+    except Exception:
+        token = None
+    try:
+        result = wordpress.resolve_post_id_by_url(conn.site_url, page.url, token=token)
+    except Exception:
+        return
+    if result.ok:
+        page.wp_post_id = result.data.get("post_id")
+        page.wp_post_type = result.data.get("post_type")
+        db.commit()
 
 
 def upsert_page(db: Session, project_id: int, data: dict) -> models.Page:
@@ -34,6 +62,8 @@ def upsert_page(db: Session, project_id: int, data: dict) -> models.Page:
 
     db.add(models.CrawlSnapshot(project_id=project_id, page_id=page.id, url=page.url, data=data))
     db.commit()
+
+    _maybe_resolve_wp_post_id(db, project_id, page)
     return page
 
 

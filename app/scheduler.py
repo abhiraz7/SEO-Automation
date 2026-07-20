@@ -1,14 +1,19 @@
 """
-Background scheduler -- two independent APScheduler ticks, wired into the
+Background scheduler -- three independent APScheduler ticks, wired into the
 FastAPI app lifespan (see main.py):
 
 1. dispatch_due_schedules (every 60s): finds enabled Schedule rows where
    next_run_at <= now, creates a Job row for each, advances next_run_at.
-2. run_next_queued_job (every 10s): picks the single oldest queued Job and
-   runs it via JOB_HANDLERS. max_instances=1 on this tick means APScheduler
-   won't start a second run while one is still executing, so jobs are
-   naturally processed one at a time -- no extra locking needed to keep
-   SQLite happy.
+2. run_next_crawl_job (every 10s) and 3. run_next_light_job (every 10s) --
+   two independent worker lanes. The crawl lane only runs "crawl" jobs; the
+   light lane runs everything else (rank_check, keyword_refresh,
+   backlink_pull, audit). Each tick only looks at Jobs of its own lane's
+   job_types and picks the oldest queued one.
+   max_instances=1 per tick means APScheduler won't start a second run of
+   that same lane while one is still executing, so each lane processes its
+   own jobs one at a time -- no extra locking needed to keep SQLite happy.
+   The two lanes run independently, so a slow network-bound crawl no
+   longer blocks fast API-based jobs queued behind it (and vice versa).
 
 Runs in-process via BackgroundScheduler (thread-based), not a separate
 process or APScheduler's own persistent job store -- our own Job/Schedule
@@ -26,13 +31,23 @@ from apscheduler.triggers.cron import CronTrigger
 
 from . import models
 from .database import SessionLocal
+from .jobs.registry import JOB_HANDLERS
 
 logger = logging.getLogger("scheduler")
 
 # Hard wall-clock cap per job. Jobs run as killable subprocesses because
 # crawl4ai/Playwright can hang forever when driven from a non-main thread on
 # Windows (observed live) -- and a hung in-process thread would permanently
-# block the single worker lane with no way to kill it.
+# block its worker lane with no way to kill it.
+#
+# "crawl" is network/browser-bound against a whole site and legitimately can
+# take minutes. Everything else in the "light" lane is a handful of API
+# calls -- rank_check/keyword_refresh/backlink_pull/audit have no business
+# running 15 minutes, so they get a much shorter cap. Otherwise a hung API
+# call in the light lane could starve its own lane the same way a slow
+# crawl used to starve everything.
+CRAWL_JOB_TYPES = {"crawl"}
+LIGHT_JOB_TIMEOUT_SECONDS = 180
 JOB_TIMEOUT_SECONDS = 900
 
 INTERVAL_TIMEDELTAS = {
@@ -96,17 +111,17 @@ def dispatch_due_schedules() -> None:
         db.close()
 
 
-def run_next_queued_job() -> None:
-    """Picks the oldest queued Job and runs it in a subprocess (see
-    JOB_TIMEOUT_SECONDS comment + app/jobs/runner.py for why not in-thread).
-    The handler inside the subprocess finalizes the job row itself; this
-    parent only cleans up when the subprocess dies or times out without
-    finalizing."""
+def _run_next_queued_job_in_lane(job_types: set[str], timeout_seconds: int) -> None:
+    """Picks the oldest queued Job whose job_type is in this lane and runs
+    it in a subprocess (see JOB_TIMEOUT_SECONDS comment + app/jobs/runner.py
+    for why not in-thread). The handler inside the subprocess finalizes the
+    job row itself; this parent only cleans up when the subprocess dies or
+    times out without finalizing."""
     db = SessionLocal()
     try:
         job = (
             db.query(models.Job)
-            .filter(models.Job.status == "queued")
+            .filter(models.Job.status == "queued", models.Job.job_type.in_(job_types))
             .order_by(models.Job.created_at)
             .first()
         )
@@ -117,12 +132,12 @@ def run_next_queued_job() -> None:
         try:
             result = subprocess.run(
                 [sys.executable, "-m", "app.jobs.runner", str(job_id)],
-                capture_output=True, text=True, timeout=JOB_TIMEOUT_SECONDS,
+                capture_output=True, text=True, timeout=timeout_seconds,
             )
             stderr_tail = (result.stderr or "")[-500:]
         except subprocess.TimeoutExpired:
             result = None
-            stderr_tail = f"killed after exceeding {JOB_TIMEOUT_SECONDS}s job timeout"
+            stderr_tail = f"killed after exceeding {timeout_seconds}s job timeout"
 
         # Re-read from a fresh session: the subprocess wrote its own updates.
         db.expire_all()
@@ -139,9 +154,18 @@ def run_next_queued_job() -> None:
             logger.warning("Job %s cleaned up as failed: %s", job_id, job.error)
     except Exception:
         db.rollback()
-        logger.exception("run_next_queued_job failed")
+        logger.exception("_run_next_queued_job_in_lane failed")
     finally:
         db.close()
+
+
+def run_next_crawl_job() -> None:
+    _run_next_queued_job_in_lane(CRAWL_JOB_TYPES, JOB_TIMEOUT_SECONDS)
+
+
+def run_next_light_job() -> None:
+    light_job_types = set(JOB_HANDLERS) - CRAWL_JOB_TYPES
+    _run_next_queued_job_in_lane(light_job_types, LIGHT_JOB_TIMEOUT_SECONDS)
 
 
 def _recover_interrupted_jobs() -> None:
@@ -194,11 +218,17 @@ def start() -> BackgroundScheduler:
         id="dispatch_due_schedules", max_instances=1, coalesce=True,
     )
     _scheduler.add_job(
-        run_next_queued_job, "interval", seconds=10,
-        id="run_next_queued_job", max_instances=1, coalesce=True,
+        run_next_crawl_job, "interval", seconds=10,
+        id="run_next_crawl_job", max_instances=1, coalesce=True,
+    )
+    _scheduler.add_job(
+        run_next_light_job, "interval", seconds=10,
+        id="run_next_light_job", max_instances=1, coalesce=True,
     )
     _scheduler.start()
-    logger.info("Scheduler started (dispatch every 60s, worker tick every 10s).")
+    logger.info(
+        "Scheduler started (dispatch every 60s, crawl lane + light lane worker ticks every 10s)."
+    )
     return _scheduler
 
 

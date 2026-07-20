@@ -439,3 +439,63 @@ def page_detail(
             "crawled_ago": _time_ago(page.updated_at) if page.updated_at else None,
         },
     )
+
+
+@router.get("/projects/{project_id}/pages/{page_id}/detail-json")
+def page_detail_json(project_id: int, page_id: int, issue_id: int | None = None, db: Session = Depends(get_db)):
+    """Same data as page_detail(), shaped as JSON so 'Fix on Page' can open an
+    in-context modal (project_detail.html) instead of navigating to the
+    separate page_detail.html view, which uses a different design system and
+    reads as a broken/inconsistent page when reached from the new dashboard.
+
+    issue_id (optional): the specific issue the user clicked "Fix on Page"
+    from. When given, that issue is returned separately as "focused_issue"
+    so the modal can show it first/highlighted; the rest go in
+    "other_issues" as before."""
+    page = db.get(models.Page, page_id)
+    if not page or page.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    issues = page.issues
+    non_title_issues = [issue for issue in issues if issue.category != "title"]
+
+    def _issue_out(issue: models.Issue) -> dict:
+        return {
+            "id": issue.id,
+            "category": issue.category,
+            "rule": issue.rule,
+            "severity": issue.severity,
+            "message": issue.message,
+            "suggestions": [
+                {
+                    "id": s.id,
+                    "rank": s.rank,
+                    "content": s.content,
+                    "edited_content": s.edited_content,
+                    "status": s.status,
+                }
+                for s in sorted(issue.suggestions, key=lambda s: s.rank)
+            ],
+        }
+
+    focused_issue = None
+    other_issues = non_title_issues
+    if issue_id is not None:
+        focused_issue = next((i for i in issues if i.id == issue_id), None)
+        if focused_issue is not None:
+            other_issues = [i for i in non_title_issues if i.id != issue_id]
+
+    return {
+        "id": page.id,
+        "project_id": page.project_id,
+        "url": page.url,
+        "error": page.error,
+        "score": audit.page_score(issues) if not page.error else None,
+        "title": page.title,
+        "wp_post_id": page.wp_post_id,
+        "title_checklist": audit.title_checklist(page, issues),
+        "focused_issue": _issue_out(focused_issue) if focused_issue else None,
+        "other_issues": [_issue_out(i) for i in other_issues],
+        "word_count": len((page.custom_content or "").split()),
+        "crawled_ago": _time_ago(page.updated_at) if page.updated_at else None,
+    }

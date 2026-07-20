@@ -19,6 +19,7 @@ POST /projects/{id}/wordpress (Task 3.2's route, below).
 import os
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
@@ -96,6 +97,94 @@ def _call_tool(site_url: str, token: str, tool: str, params: dict) -> WordPressR
     if not result:
         return WordPressResult(status="no_data", data={})
     return WordPressResult(status="ok", data=result)
+
+
+def _resolve_homepage_post_id(site_url: str, token: str) -> WordPressResult:
+    """Root/homepage URLs have no slug, so the core REST slug lookup
+    (below) can't apply. Instead ask the plugin (via get_options, a
+    theme-group tool that reads wp_options) which post is set as the
+    static front page. show_on_front/page_on_front are WordPress's own
+    settings under Settings > Reading -- not our data, so this is exactly
+    as reliable as WordPress itself is about its own homepage.
+
+    If the homepage shows the latest-posts blog roll instead of a single
+    static page (show_on_front == 'posts'), there IS no single post/page
+    to deploy a title/meta fix to -- that's flagged as
+    reason='homepage_is_post_archive' so the caller can show an honest
+    explanation instead of asking for a numeric ID that wouldn't help.
+    """
+    result = _call_tool(site_url, token, "get_options", {"keys": ["show_on_front", "page_on_front"]})
+    if result.status == "error":
+        return result
+    options = result.data or {}
+    show_on_front = options.get("show_on_front")
+    page_on_front = options.get("page_on_front")
+
+    if show_on_front == "page":
+        try:
+            post_id = int(page_on_front)
+        except (TypeError, ValueError):
+            post_id = 0
+        if post_id > 0:
+            return WordPressResult(status="ok", data={"post_id": post_id, "post_type": "pages"})
+
+    return WordPressResult(
+        status="no_data",
+        error="This site's homepage displays the latest posts (a blog roll), not a single WordPress page -- there's no one post/page to deploy a homepage fix to.",
+        data={"reason": "homepage_is_post_archive"},
+    )
+
+
+def resolve_post_id_by_url(site_url: str, page_url: str, token: str | None = None) -> WordPressResult:
+    """Best-effort lookup of a page's WordPress post ID from its live URL.
+
+    For normal pages/posts: uses WordPress's own public core REST API
+    (wp-json/wp/v2), NOT the claude-wp-mcp plugin -- the plugin exposes no
+    URL/slug lookup tool (see module docstring). Needs no token for this
+    path: the core API's slug lookup is public for published content on
+    virtually every WordPress site.
+
+    For the homepage/root URL (no slug to look up): falls back to
+    _resolve_homepage_post_id, which DOES need a token (it's a plugin
+    tool call). If no token is supplied, homepage resolution is skipped
+    and this returns no_data, same as before token support existed.
+
+    Never raises. A slow/offline site, a missing REST API, or an
+    ambiguous/missing slug all just mean resolution didn't happen --
+    callers (crawl, deploy) must treat that as normal and fall back to
+    asking the user for the ID manually, not as something to crash or
+    block on.
+
+    Tries /posts then /pages (the same slug can exist under either post
+    type); only trusts a single unambiguous match.
+    """
+    path = urlparse(page_url).path.strip("/")
+    slug = path.rsplit("/", 1)[-1] if path else ""
+    if not slug:
+        if token:
+            return _resolve_homepage_post_id(site_url, token)
+        return WordPressResult(status="no_data", error="Homepage/root URLs have no slug to resolve (no token supplied for a get_options lookup)")
+
+    base = site_url.rstrip("/")
+    for post_type in ("posts", "pages"):
+        try:
+            resp = httpx.get(
+                f"{base}/wp-json/wp/v2/{post_type}",
+                params={"slug": slug, "_fields": "id,link"},
+                timeout=_TIMEOUT,
+            )
+        except httpx.RequestError as e:
+            return WordPressResult(status="error", error=f"Could not reach {site_url}: {e}")
+        if resp.status_code != 200:
+            continue
+        try:
+            results = resp.json()
+        except ValueError:
+            continue
+        if isinstance(results, list) and len(results) == 1 and "id" in results[0]:
+            return WordPressResult(status="ok", data={"post_id": results[0]["id"], "post_type": post_type})
+
+    return WordPressResult(status="no_data", error=f"No unique post/page found for slug {slug!r}")
 
 
 def test_connection(site_url: str, token: str) -> WordPressResult:

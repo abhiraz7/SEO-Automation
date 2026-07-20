@@ -67,12 +67,12 @@
     </a>
 
     {{ nav_link("#", "Content", "content", enabled=False) }}
-    {{ nav_link("#", "Backlinks", "backlinks", enabled=False) }}
+    {{ nav_link((("/projects/" ~ project.id ~ "#backlinks") if project is defined else "/"), "Backlinks", "backlinks") }}
 
     <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">AI</div>
     {{ nav_link("#", "AI Visibility", "visibility", enabled=False) }}
     {{ nav_link("/keywords", "Keyword Research", "keyword", active=path.startswith("/keywords")) }}
-    {{ nav_link("#", "Rank Tracking", "rank", enabled=False) }}
+    <div style="padding:0 10px 4px 34px;font-size:10px;color:#94a3b8;">📈 includes Rank Tracking</div>
 
     <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">Tools</div>
     {{ nav_link("#", "Schema Generator", "schema", enabled=False) }}

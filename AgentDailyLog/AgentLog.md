@@ -524,3 +524,169 @@ I don't have access to** — not on missing code. I did not fake any of them.
    detect → suggest → approve → deploy — real end to end).
 3. Postgres connection string, whenever you're ready to move off SQLite.
 4. VPS access for production deployment planning.
+
+---
+
+## 2026-07-20 — Session: Wire up Backlinks sidebar link
+
+### Done
+- Audited the whole repo for backlink-related work (models, provider,
+  routes, jobs, templates, migrations) — found the feature was already
+  ~90% built end-to-end (BacklinkSnapshot/BacklinkRecord models,
+  backlinks_provider.py calling Semrush's backlinks_overview/backlinks_list,
+  three working routes, a scheduled backlink_pull diff job, and a full
+  panel in project_detail.html) but undiscoverable because the sidebar
+  "Backlinks" nav item was hardcoded `enabled=False` with a "coming soon"
+  tooltip.
+- `app/templates/partials/sidebar.html` — enabled the Backlinks nav link;
+  it now points to `/projects/{project.id}#backlinks` when a project is in
+  template context, falling back to `/` (project list) otherwise, matching
+  the existing pattern used by other project-scoped tools. Removed the
+  "coming soon" tooltip.
+- `app/templates/project_detail.html` — added `id="backlinks"` (with
+  `scroll-margin-top`) to the Backlinks panel container so the anchor link
+  actually scrolls to it.
+
+### Known gaps (unchanged, not addressed this session)
+- No toxic/spam-score concept exists anywhere in the backlinks feature.
+- No automated tests cover `backlinks_provider.py` / `backlink_pull.py`.
+
+### Next
+- Spot-check the new Backlinks link in the browser on a real project.
+- Consider adding test coverage for the backlinks provider/job before
+  building further on top of it.
+
+---
+
+## 2026-07-20 — Session: Priority-aware job queue (crawl/light lane split)
+
+### Done
+- Root-caused a real starvation bug in production testing: `run_next_
+  queued_job` picked strictly oldest-queued across ALL job types with
+  `max_instances=1`, so one slow `crawl` job (network/browser-bound,
+  can run 5+ minutes) blocked rank_check/backlink_pull/keyword_refresh/
+  audit queued behind it — observed live, a crawl held the queue for
+  5m16s while a waiting rank_check job sat untouched the whole time.
+- `app/scheduler.py` — split the single worker tick into two independent
+  APScheduler lanes: `run_next_crawl_job` (only "crawl", 900s timeout)
+  and `run_next_light_job` (everything else in JOB_HANDLERS minus crawl:
+  rank_check, keyword_refresh, backlink_pull, audit — new 180s timeout
+  so a hung API call can't reintroduce starvation from the other
+  direction). Both tick every 10s, `max_instances=1` each, same
+  subprocess-per-job execution model as before.
+- Verified live: killed and restarted the app with the new code, fired
+  crawl + rank_check via the existing `/schedules/{job_type}/run-now`
+  dev endpoint. rank_check queued 10s after crawl, started immediately,
+  and completed in 9s — while crawl was still `running` several minutes
+  later. Confirmed via direct DB queries, not just logs.
+- 71/71 tests still passing after the change.
+
+### Known gap (pre-existing, unrelated, not addressed)
+- `KeywordSnapshot.position` is landing as NULL on every rank_check run
+  observed today — likely a SERP domain-match or API-config issue, not
+  a scheduling problem. Worth a follow-up look before relying on Easy
+  Wins / rank data being populated.
+
+### Next
+- Investigate why rank_check's SERP lookups aren't resolving a position
+  for the tracked keywords (get_serp API key/config or domain-matching
+  logic in app/jobs/handlers/rank_check.py).
+
+---
+
+## 2026-07-20 — Session: DataForSEO blocker audit (client-facing)
+
+### Done
+- Traced the KeywordSnapshot.position=NULL finding from the prior audit
+  to its root cause: DataForSEO account returns a live 403 with
+  "Please verify your account before using the API" — confirmed via
+  direct health_check() and fetch_serp() calls with real credentials
+  loaded. Not a code bug, not a credentials typo — an unverified
+  DataForSEO account.
+- Traced full blast radius across app/keyword_provider.py: Rank
+  Tracking's SERP checks and Keyword Research's Related/Questions tabs
+  all fall back from DataForSEO (~100 results) to Semrush (10 results)
+  silently. Keyword Overview/Bulk Analysis is unaffected (Semrush is
+  already primary there).
+- Wrote docs/dataforseo-account-blocker.md — a dated, evidence-backed,
+  client-facing document with a concrete 3-business-day ask
+  (2026-07-23) to either verify the account, swap in a working one, or
+  explicitly accept Semrush-only depth (in which case we'd add a UI
+  disclosure for the 10-result cap instead of leaving it silent).
+
+### Next
+- Send docs/dataforseo-account-blocker.md to the client and track the
+  2026-07-23 deadline.
+- If accepted-as-is (option 3 in the doc), come back and add a visible
+  "limited depth" indicator to the Rank Tracking / Keyword Research UI.
+
+---
+
+## 2026-07-20 — Session: Remove mislabeled Rank Tracking sidebar item
+
+### Done
+- Audited all 9 greyed-out sidebar nav items (Content, AI Visibility,
+  Rank Tracking, Schema Generator, Link Analyzer, Competitor Analysis,
+  AI Writer, Reports, Settings). Found 8 of 9 are genuinely unbuilt —
+  zero route/model/template behind any of them, every grep hit traces
+  back to the sidebar's own disabled markup or unrelated existing code.
+- Rank Tracking was the exception, but a different bug shape than
+  Backlinks: no dead link to a hidden standalone page — it's a real,
+  working schedule toggle + Easy Wins card embedded inside the Keyword
+  Research workspace page (/keywords/{workspace_id}), already reachable
+  via the enabled "Keyword Research" nav item.
+- `app/templates/partials/sidebar.html` — removed the standalone
+  disabled "Rank Tracking" nav_link entirely (redundant, not broken —
+  there's no dedicated page to link it to). Added a small "📈 includes
+  Rank Tracking" sub-label under "Keyword Research" so the capability
+  stays discoverable without a fake nav destination.
+- Verified via direct Jinja render that the template still renders
+  clean with the change (Keyword Research link + sub-label present,
+  no leftover Rank Tracking nav item).
+
+### Next
+- Remaining 8 unbuilt sidebar items are correctly greyed out as-is —
+  no further sidebar wiring fixes needed until those features actually
+  get built.
+
+---
+
+## 2026-07-20 — Session: Secrets audit + public-repo presentation pass
+
+### Done
+- Full git history secrets audit (all 39 commits, `git log -p --all`) —
+  PASS on all 5 checks: no real credentials anywhere in history (only
+  var names/code), `.env` never committed, no real client data beyond
+  vseo.vtraffic.io, `scripts/test_*_api.py` (tracked for exactly one
+  commit before being gitignored) never had hardcoded keys, no BFG/
+  filter-repo scrub needed.
+- Rewrote README.md as the public front door: one-line pitch, the
+  detect→AI-suggest→approve→deploy→verify loop as the differentiator,
+  feature list restricted to confirmed-shipped items only (nothing from
+  the "genuinely unbuilt" sidebar audit), screenshot placeholders
+  flagged not faked, shields.io tech badges, real quickstart, and an
+  architecture section explaining the job/schedule lane system and the
+  provider-adapter pattern — both real, non-obvious design choices.
+  Caught and fixed a real bug along the way: the file had been silently
+  UTF-16-encoded (likely from an old editor save) and a straight
+  rewrite inherited that encoding, producing garbled output — converted
+  to clean UTF-8.
+- Created .env.example (every real env var: ANTHROPIC_API_KEY,
+  SEMRUSH_API_KEY, DATAFORSEO_LOGIN/PASSWORD, WP_TOKEN_KEY, unused
+  SUPABASE_URL/KEY stub) — placeholders only, verified against actual
+  os.environ.get() call sites in app/, not guessed.
+- Created CHANGELOG.md seeded from prompts/audit-log-compiled.md's real,
+  dated Fix Log — evidence-backed entries, not generic "various fixes."
+- Added LICENSE (Proprietary/All Rights Reserved) per explicit decision
+  — this is VTechys client IP, not an open-source showcase.
+- Asked before assuming on 3 ambiguous calls: internal docs
+  (prompts/, AgentDailyLog/) stay public as-is; the WordPress plugin
+  source folder stays gitignored, not added to the repo; license is
+  proprietary. No files renamed/removed without that confirmation.
+- 71/71 tests still passing after all changes.
+
+### Next
+- Add real screenshots/GIFs to the README (placeholders currently
+  flagged, not faked).
+- Client license/repo-visibility decision is now implemented — nothing
+  further needed there unless it changes.

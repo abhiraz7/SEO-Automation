@@ -94,6 +94,14 @@ class Page(Base):
     fit_markdown = Column(Text)
     internal_links = Column(JSON)
 
+    # Resolved during crawl (see routes/crawl.py._maybe_resolve_wp_post_id) via
+    # WordPress's public core REST API, so deploy doesn't need to ask the user
+    # for a numeric post ID every time. Stays NULL if unresolved (no
+    # WordPress connection, no matching slug, site unreachable, ...) -- deploy
+    # falls back to asking manually in that case.
+    wp_post_id = Column(Integer)
+    wp_post_type = Column(String)  # "posts" | "pages" -- which WP REST collection it matched
+
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
@@ -140,6 +148,13 @@ class Suggestion(Base):
     issue_id = Column(Integer, ForeignKey("issues.id"), nullable=False)
     understanding_id = Column(Integer, ForeignKey("page_understanding.id"), nullable=True)
     content = Column(Text, nullable=False)
+    # sha256 of content, normalized (trim/collapse-whitespace/casefold) --
+    # see routes/suggestions.py.content_hash(). Backed by a unique index on
+    # (issue_id, content_hash) (migration 012) so the same suggestion text
+    # can never exist twice for the same issue, whether from two rapid
+    # Generate clicks or a regeneration re-producing an already-decided
+    # suggestion's wording.
+    content_hash = Column(String)
     rank = Column(Integer, default=0)
     # Acceptance tracking (V6): what the user decided about this suggestion.
     # This status trail is the raw material for the future learning dataset --
@@ -151,6 +166,10 @@ class Suggestion(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     issue = relationship("Issue", back_populates="suggestions")
+
+    __table_args__ = (
+        UniqueConstraint("issue_id", "content_hash", name="uq_suggestion_issue_content_hash"),
+    )
 
 
 class KeywordWorkspace(Base):

@@ -119,3 +119,87 @@ def test_test_connection_unreachable():
         result = wordpress.test_connection("https://nonexistent.invalid", "tok")
     assert result.status == "error"
     assert "Could not reach" in result.error
+
+
+# ── resolve_post_id_by_url (auto WP post ID resolution, Task 3.5b) ──────
+
+def test_resolve_post_id_matches_posts_endpoint():
+    with patch.object(wordpress.httpx, "get", return_value=_mock_response(
+        200, [{"id": 42, "link": "https://site.com/hello-world/"}]
+    )):
+        result = wordpress.resolve_post_id_by_url("https://site.com", "https://site.com/hello-world/")
+    assert result.ok
+    assert result.data == {"post_id": 42, "post_type": "posts"}
+
+
+def test_resolve_post_id_falls_back_to_pages_endpoint():
+    def fake_get(url, params=None, timeout=None):
+        if url.endswith("/posts"):
+            return _mock_response(200, [])
+        return _mock_response(200, [{"id": 7, "link": "https://site.com/about/"}])
+
+    with patch.object(wordpress.httpx, "get", side_effect=fake_get):
+        result = wordpress.resolve_post_id_by_url("https://site.com", "https://site.com/about/")
+    assert result.ok
+    assert result.data == {"post_id": 7, "post_type": "pages"}
+
+
+def test_resolve_post_id_no_match_is_no_data_not_error():
+    with patch.object(wordpress.httpx, "get", return_value=_mock_response(200, [])):
+        result = wordpress.resolve_post_id_by_url("https://site.com", "https://site.com/missing-page/")
+    assert result.status == "no_data"
+    assert not result.ok
+
+
+def test_resolve_post_id_ambiguous_match_is_no_data():
+    with patch.object(wordpress.httpx, "get", return_value=_mock_response(
+        200, [{"id": 1, "link": "a"}, {"id": 2, "link": "b"}]
+    )):
+        result = wordpress.resolve_post_id_by_url("https://site.com", "https://site.com/dup-slug/")
+    assert result.status == "no_data"
+
+
+def test_resolve_post_id_homepage_has_no_slug():
+    result = wordpress.resolve_post_id_by_url("https://site.com", "https://site.com/")
+    assert result.status == "no_data"
+    assert "slug" in result.error.lower()
+
+
+def test_resolve_post_id_unreachable_is_error_not_crash():
+    with patch.object(wordpress.httpx, "get", side_effect=httpx.ConnectError("timeout")):
+        result = wordpress.resolve_post_id_by_url("https://nonexistent.invalid", "https://nonexistent.invalid/page/")
+    assert result.status == "error"
+    assert "Could not reach" in result.error
+
+
+# ── Homepage resolution via get_options (Task 3.5c) ─────────────────────
+
+def test_resolve_homepage_static_front_page():
+    with patch.object(wordpress.httpx, "post", return_value=_mock_response(
+        200, {"success": True, "result": {"show_on_front": "page", "page_on_front": "540"}}
+    )):
+        result = wordpress.resolve_post_id_by_url("https://site.com", "https://site.com/", token="tok")
+    assert result.ok
+    assert result.data == {"post_id": 540, "post_type": "pages"}
+
+
+def test_resolve_homepage_post_archive_is_no_data_with_reason():
+    with patch.object(wordpress.httpx, "post", return_value=_mock_response(
+        200, {"success": True, "result": {"show_on_front": "posts", "page_on_front": "0"}}
+    )):
+        result = wordpress.resolve_post_id_by_url("https://site.com", "https://site.com/", token="tok")
+    assert result.status == "no_data"
+    assert result.data.get("reason") == "homepage_is_post_archive"
+
+
+def test_resolve_homepage_without_token_skips_lookup():
+    result = wordpress.resolve_post_id_by_url("https://site.com", "https://site.com/")
+    assert result.status == "no_data"
+    assert "no token" in result.error.lower()
+
+
+def test_resolve_homepage_get_options_error_propagates():
+    with patch.object(wordpress.httpx, "post", return_value=_mock_response(403, {})):
+        result = wordpress.resolve_post_id_by_url("https://site.com", "https://site.com/", token="bad-tok")
+    assert result.status == "error"
+    assert "Authentication rejected" in result.error

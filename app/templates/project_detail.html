@@ -182,7 +182,7 @@
   /* ── Optimization dropdown panel ── */
   .opt-panel-row { display:none; }
   .opt-panel-row.opt-open { display:table-row; }
-  .opt-grid { display:grid;grid-template-columns:1fr 1fr 1fr 0.5fr 0.5fr 0.5fr 0.5fr; }
+  .opt-grid { display:grid;grid-template-columns:1fr 1fr 1fr 0.5fr 0.5fr 0.5fr; }
   .opt-col { padding:13px 14px;border-right:1px solid #f1f5f9;min-width:0;overflow:hidden; }
   .opt-col:last-child { border-right:none; }
   .opt-col-narrow { padding-left:8px;padding-right:8px; }
@@ -349,7 +349,7 @@
 </div>
 
 {# ── Backlinks (Task 5.1 + 5.2) ───────────────────── #}
-<div style="margin:0 0 20px;padding:14px 16px;border-radius:12px;background:#fff;border:1px solid #e2e8f0;">
+<div id="backlinks" style="margin:0 0 20px;padding:14px 16px;border-radius:12px;background:#fff;border:1px solid #e2e8f0;scroll-margin-top:16px;">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
     <div style="font-size:13px;font-weight:700;color:#0f172a;">🔗 Backlinks</div>
     <div style="display:flex;align-items:center;gap:8px;">
@@ -566,11 +566,12 @@
                     placeholder="AI suggestion will appear here…"></textarea>
                   <svg style="position:absolute;top:8px;right:8px;color:#94a3b8;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                 </div>
-                <div style="display:flex;gap:5px;margin-top:6px;">
-                  <button onclick="console.log('Save:',document.getElementById('ta-{{ rid }}').value)"
+                <div style="display:flex;align-items:center;gap:5px;margin-top:6px;flex-wrap:wrap;">
+                  <button id="save-{{ rid }}" onclick="saveSuggEdit('{{ rid }}')"
                     style="background:#4f46e5;color:#fff;font-size:10px;font-weight:700;padding:5px 14px;border-radius:6px;border:none;cursor:pointer;">Save</button>
                   <button onclick="document.getElementById('ta-{{ rid }}').value=''"
                     style="background:#fff;border:1px solid #e2e8f0;color:#374151;font-size:10px;font-weight:600;padding:5px 10px;border-radius:6px;cursor:pointer;">Cancel</button>
+                  <span id="ta-status-{{ rid }}"></span>
                 </div>
               </div>
 
@@ -596,62 +597,26 @@
                 <a href="#" onclick="openRulesDrawer('{{ category }}', '{{ label }}');return false;" style="font-size:10px;color:#4f46e5;font-weight:600;text-decoration:none;margin-top:10px;display:inline-block;">View all rules</a>
               </div>
 
-              {# Col 5: LLM JUDGE #}
+              {# Col 5: LLM Judge + AI Visibility Impact -- neither is built yet,
+                 collapsed into one muted chip instead of two panels of fake
+                 numbers ("Not Judged", "—/10", per-model "—") that implied
+                 working features. #}
               <div class="opt-col opt-col-narrow">
-                <div class="opt-hdr">LLM Judge</div>
-                <span style="display:inline-block;background:#f1f5f9;color:#64748b;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">Not Judged</span>
-                <div style="margin-top:16px;display:flex;flex-direction:column;align-items:center;">
-                  <div style="width:56px;height:56px;border-radius:50%;border:6px solid #f1f5f9;display:flex;align-items:center;justify-content:center;">
-                    <span style="font-size:11px;color:#94a3b8;font-weight:700;">—/10</span>
-                  </div>
-                  <div style="font-size:10px;color:#94a3b8;margin-top:6px;text-align:center;">Generate suggestion first</div>
-                </div>
-                <a href="#" style="font-size:10px;color:#4f46e5;font-weight:600;text-decoration:none;margin-top:8px;display:inline-block;">View full analysis</a>
-              </div>
-
-              {# Col 6: AI VISIBILITY IMPACT #}
-              <div class="opt-col opt-col-narrow">
-                <div class="opt-hdr">AI Visibility Impact</div>
-                <div style="font-size:9px;color:#94a3b8;margin-bottom:10px;line-height:1.3;">Avg. visibility increase if applied</div>
-                <div style="display:flex;flex-direction:column;gap:6px;">
-                  <div style="display:flex;align-items:center;justify-content:space-between;">
-                    <div style="display:flex;align-items:center;gap:5px;">
-                      <div style="width:16px;height:16px;border-radius:50%;background:#f97316;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span style="color:#fff;font-size:8px;font-weight:800;">C</span></div>
-                      <span style="font-size:10px;color:#374151;">Claude</span>
-                    </div>
-                    <span style="font-size:10px;font-weight:700;color:#94a3b8;">—</span>
-                  </div>
-                  <div style="display:flex;align-items:center;justify-content:space-between;">
-                    <div style="display:flex;align-items:center;gap:5px;">
-                      <div style="width:16px;height:16px;border-radius:50%;background:#1e293b;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span style="color:#fff;font-size:8px;font-weight:800;">G</span></div>
-                      <span style="font-size:10px;color:#374151;">GPT-4o</span>
-                    </div>
-                    <span style="font-size:10px;font-weight:700;color:#94a3b8;">—</span>
-                  </div>
-                  <div style="display:flex;align-items:center;justify-content:space-between;">
-                    <div style="display:flex;align-items:center;gap:5px;">
-                      <div style="width:16px;height:16px;border-radius:50%;background:#3b82f6;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span style="color:#fff;font-size:8px;font-weight:800;">G</span></div>
-                      <span style="font-size:10px;color:#374151;">Gemini</span>
-                    </div>
-                    <span style="font-size:10px;font-weight:700;color:#94a3b8;">—</span>
-                  </div>
-                </div>
-                <div style="margin-top:10px;padding-top:8px;border-top:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;">
-                  <span style="font-size:10px;color:#64748b;">Avg Impact</span>
-                  <span style="font-size:10px;font-weight:700;background:#f1f5f9;color:#64748b;padding:2px 7px;border-radius:5px;">—</span>
-                </div>
+                <div class="opt-hdr">Judge &amp; Visibility Impact</div>
+                <span style="display:inline-block;background:#f1f5f9;color:#94a3b8;font-size:10px;font-weight:700;padding:4px 10px;border-radius:10px;">🔧 Coming soon</span>
+                <div style="font-size:9px;color:#94a3b8;margin-top:8px;line-height:1.4;">LLM-judged quality scores and per-model AI visibility impact aren't built yet.</div>
               </div>
 
               {# Col 7: ACTION #}
               <div class="opt-col opt-col-narrow">
                 <div class="opt-hdr">Action</div>
                 <div style="display:flex;flex-direction:column;gap:5px;">
-                  <a href="/projects/{{ project.id }}/pages/{{ issue.page.id }}"
+                  <button type="button" onclick="openPageModal({{ issue.page.id }}, {{ issue.issue_id }})"
                     class="opt-action-btn"
-                    style="background:#4f46e5;color:#fff;border:none;text-decoration:none;">
+                    style="background:#4f46e5;color:#fff;border:none;">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3"/></svg>
                     Fix on Page
-                  </a>
+                  </button>
                   <button class="opt-action-btn" style="background:#fff;border:1px solid #e2e8f0;color:#374151;">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178Z"/><circle cx="12" cy="12" r="3" stroke-width="2"/></svg>
                     Preview
@@ -860,7 +825,11 @@
         <button type="button" onclick="saveWordPressConnection()" style="flex:1;padding:7px 10px;border-radius:7px;border:none;background:#4f46e5;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">Save</button>
         <button type="button" onclick="testWordPressConnection()" style="flex:1;padding:7px 10px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:12px;font-weight:700;cursor:pointer;">Test Connection</button>
       </div>
-      <div id="wp-test-result" style="font-size:12px;font-weight:600;"></div>
+      <div id="wp-test-result" style="font-size:12px;font-weight:600;margin-bottom:8px;"></div>
+      {% if wordpress_connection %}
+      <button type="button" onclick="resolveWordPressPages()" id="wp-resolve-btn" style="width:100%;padding:7px 10px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#4f46e5;font-size:12px;font-weight:700;cursor:pointer;">🔗 Resolve WordPress IDs</button>
+      <div style="font-size:10px;color:#94a3b8;margin-top:4px;">Matches each crawled page to its WordPress post/page ID, so Deploy never has to ask for it manually.</div>
+      {% endif %}
     </details>
 
   </div>
@@ -1021,6 +990,24 @@
 <!-- Toasts -->
 <div id="toast-wrap"></div>
 
+<!-- Fix on Page modal -->
+<div id="page-modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:900;" onclick="closePageModal()"></div>
+<div id="page-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(720px,92vw);max-height:86vh;overflow-y:auto;background:#fff;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.28);z-index:901;">
+  <div style="position:sticky;top:0;background:#fff;border-bottom:1px solid #e2e8f0;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-radius:14px 14px 0 0;">
+    <div style="min-width:0;">
+      <div style="font-size:13px;font-weight:700;color:#0f172a;">Fix on Page</div>
+      <div id="page-modal-url" style="font-size:11px;color:#94a3b8;word-break:break-all;"></div>
+      <div id="page-modal-wp-status" style="font-size:10px;margin-top:2px;"></div>
+    </div>
+    <button onclick="closePageModal()" style="width:28px;height:28px;border-radius:6px;border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#64748b;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div id="page-modal-body" style="padding:20px;">
+    <div style="text-align:center;padding:32px 0;color:#94a3b8;font-size:13px;">Loading…</div>
+  </div>
+</div>
+
 <script>
 var RULE_REQUIREMENTS = {{ RULE_REQUIREMENTS | tojson }};
 
@@ -1129,6 +1116,16 @@ function toggleOptPanel(id) {
   }
 }
 
+// ── Suggestion status badge (shared style with the Fix on Page modal) ──
+var SUGG_STATUS_COLORS = {
+  accepted: 'background:#dcfce7;color:#15803d;', rejected: 'background:#fee2e2;color:#dc2626;',
+  edited: 'background:#dbeafe;color:#1d4ed8;', deployed: 'background:#f3e8ff;color:#7e22ce;',
+  pending: 'background:#f1f5f9;color:#64748b;',
+};
+function suggStatusBadge(status) {
+  return '<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;' + (SUGG_STATUS_COLORS[status] || SUGG_STATUS_COLORS.pending) + '">' + status + '</span>';
+}
+
 // ── Generate AI suggestions (live Claude API) ──────
 async function generateSugg(rid, projectId, pageId, issueId) {
   var box = document.getElementById('sugg-' + rid);
@@ -1152,11 +1149,12 @@ async function generateSugg(rid, projectId, pageId, issueId) {
 
     var colors = ['#4f46e5','#7c3aed','#0891b2','#0d9488','#65a30d'];
     var html = '';
-    suggestions.forEach(function(text, i) {
+    suggestions.forEach(function(s, i) {
       var isFirst = i === 0;
       var accent = colors[i] || '#4f46e5';
+      var text = s.edited_content || s.content;
       var safeText = text.replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      html += '<div data-sugg="' + safeText.replace(/"/g,'&quot;') + '" data-rid="' + rid + '"'
+      html += '<div data-sugg-id="' + s.id + '" data-sugg-content="' + text.replace(/"/g,'&quot;') + '" data-rid="' + rid + '"'
         + ' onclick="selectSugg(this)"'
         + ' style="padding:7px 9px;border:1px solid ' + (isFirst ? '#a5b4fc' : '#e2e8f0') + ';'
         + 'border-left:3px solid ' + (isFirst ? accent : '#e2e8f0') + ';'
@@ -1168,6 +1166,7 @@ async function generateSugg(rid, projectId, pageId, issueId) {
         + '<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">'
         + '<span style="font-size:9px;font-weight:700;color:#94a3b8;">' + (i + 1) + '</span>'
         + (isFirst ? '<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;background:#dcfce7;color:#15803d;">Best</span>' : '')
+        + '<span data-sugg-badge>' + suggStatusBadge(s.status) + '</span>'
         + '</div>'
         + '<div>' + safeText + '</div>'
         + '<div style="font-size:9px;color:#94a3b8;margin-top:3px;">Click to use in editor</div>'
@@ -1176,7 +1175,7 @@ async function generateSugg(rid, projectId, pageId, issueId) {
     box.innerHTML = html;
 
     // Auto-select first
-    var firstCard = box.querySelector('[data-sugg]');
+    var firstCard = box.querySelector('[data-sugg-id]');
     if (firstCard) selectSugg(firstCard);
 
   } catch(e) {
@@ -1193,7 +1192,7 @@ function selectSugg(el) {
   var ta  = document.getElementById('ta-' + rid);
   var box = document.getElementById('sugg-' + rid);
   // Reset all cards
-  if (box) box.querySelectorAll('[data-sugg]').forEach(function(c) {
+  if (box) box.querySelectorAll('[data-sugg-id]').forEach(function(c) {
     c.classList.remove('sugg-sel');
     c.style.borderLeftColor = '#e2e8f0';
     c.style.background = '#fff';
@@ -1204,9 +1203,56 @@ function selectSugg(el) {
   el.classList.add('sugg-sel');
   el.style.borderLeft = '3px solid #4f46e5';
   el.style.background = '#eef2ff';
-  // Populate textarea
-  if (ta) ta.value = el.getAttribute('data-sugg');
+  // Populate textarea + remember which suggestion row is selected
+  if (ta) {
+    var content = el.getAttribute('data-sugg-content');
+    ta.value = content;
+    ta.dataset.suggId = el.getAttribute('data-sugg-id');
+    ta.dataset.suggOriginal = content;
+  }
+  var status = document.getElementById('ta-status-' + rid);
+  if (status) status.innerHTML = '';
   validateRule(rid);
+}
+
+// ── Save: accept the selected suggestion as-is, or store the edit if the
+// textarea no longer matches what was generated. Routes through the same
+// /suggestions/{id}/accept and /suggestions/{id}/edit endpoints the Fix on
+// Page modal uses -- one pipeline, two entry points. ──
+async function saveSuggEdit(rid) {
+  var ta = document.getElementById('ta-' + rid);
+  var statusEl = document.getElementById('ta-status-' + rid);
+  var saveBtn = document.getElementById('save-' + rid);
+  if (!ta || !ta.dataset.suggId) {
+    showToast('Generate and select a suggestion first.', 'error');
+    return;
+  }
+  var value = ta.value.trim();
+  if (!value) { showToast('Suggestion text cannot be empty.', 'error'); return; }
+
+  var id = ta.dataset.suggId;
+  var changed = value !== ta.dataset.suggOriginal;
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
+  try {
+    var resp = changed
+      ? await fetch('/suggestions/' + id + '/edit', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: value }),
+        })
+      : await fetch('/suggestions/' + id + '/accept', { method: 'POST' });
+    if (!resp.ok) { var d = await resp.json().catch(function(){return {};}); throw new Error(d.detail || ('HTTP ' + resp.status)); }
+    var s = await resp.json();
+    if (statusEl) statusEl.innerHTML = suggStatusBadge(s.status);
+    var card = document.querySelector('[data-sugg-id="' + id + '"][data-rid="' + rid + '"] [data-sugg-badge]');
+    if (card) card.innerHTML = suggStatusBadge(s.status);
+    if (changed) { ta.dataset.suggOriginal = value; }
+    showToast(changed ? 'Suggestion edited and saved.' : 'Suggestion accepted.');
+  } catch (err) {
+    showToast('Could not save: ' + err.message, 'error');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+  }
 }
 
 // ── Rule validation (does the candidate value pass its own audit rule?) ──
@@ -1349,12 +1395,27 @@ function testWordPressConnection() {
       if (r.ok) {
         result.style.color = '#16a34a';
         result.textContent = '✅ Connected — ' + (r.body.site && r.body.site.plugin ? r.body.site.plugin + ' v' + r.body.site.version : 'plugin responded');
+        var rp = r.body.resolved_pages;
+        if (rp) showToast('WordPress IDs resolved: ' + rp.resolved + ' linked' + (rp.failed ? ', ' + rp.failed + ' not matched' : '') + '.');
       } else {
         result.style.color = '#dc2626';
         result.textContent = '❌ ' + (r.body.detail || 'Connection test failed');
       }
     })
     .catch(function(err) { result.style.color = '#dc2626'; result.textContent = '❌ ' + err.message; });
+}
+function resolveWordPressPages() {
+  var btn = document.getElementById('wp-resolve-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Resolving…'; }
+  fetch('/projects/{{ project.id }}/wordpress/resolve-pages', { method: 'POST' })
+    .then(function(res) { if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); }); return res.json(); })
+    .then(function(summary) {
+      var msg = 'WordPress IDs resolved: ' + summary.resolved + ' linked';
+      if (summary.failed) msg += ', ' + summary.failed + ' not matched';
+      showToast(msg + '.');
+    })
+    .catch(function(err) { showToast('Resolve failed: ' + err.message, 'error'); })
+    .finally(function() { if (btn) { btn.disabled = false; btn.textContent = '🔗 Resolve WordPress IDs'; } });
 }
 
 // ── Backlinks (Task 5.1) ────────────────────────────
@@ -1486,6 +1547,209 @@ function showToast(msg, type) {
     t.classList.remove('show');
     setTimeout(function(){ t.remove(); }, 320);
   }, 3200);
+}
+
+// ── Fix on Page modal ─────────────────────────────
+function pmEsc(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, function(c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+var currentPageModalId = null;
+var currentPageModalIssueId = null;
+function openPageModal(pageId, issueId) {
+  currentPageModalId = pageId;
+  currentPageModalIssueId = issueId || null;
+  document.getElementById('page-modal-backdrop').style.display = 'block';
+  document.getElementById('page-modal').style.display = 'block';
+  document.getElementById('page-modal-body').innerHTML = '<div style="text-align:center;padding:32px 0;color:#94a3b8;font-size:13px;">Loading…</div>';
+  document.getElementById('page-modal-url').textContent = '';
+  loadPageModal(pageId, currentPageModalIssueId);
+}
+function closePageModal() {
+  document.getElementById('page-modal-backdrop').style.display = 'none';
+  document.getElementById('page-modal').style.display = 'none';
+  currentPageModalId = null;
+  currentPageModalIssueId = null;
+}
+function loadPageModal(pageId, issueId) {
+  var url = '/projects/{{ project.id }}/pages/' + pageId + '/detail-json';
+  if (issueId) url += '?issue_id=' + issueId;
+  fetch(url)
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(renderPageModal)
+    .catch(function(err) {
+      document.getElementById('page-modal-body').innerHTML = '<div style="color:#dc2626;font-size:13px;">Could not load page: ' + pmEsc(err.message) + '</div>';
+    });
+}
+function pmSuggestionHtml(issue, s) {
+  var statusColors = {
+    accepted: 'background:#dcfce7;color:#15803d;', rejected: 'background:#fee2e2;color:#dc2626;',
+    edited: 'background:#dbeafe;color:#1d4ed8;', deployed: 'background:#f3e8ff;color:#7e22ce;',
+    pending: 'background:#f1f5f9;color:#64748b;',
+  };
+  var canDeploy = ['accepted', 'edited'].indexOf(s.status) !== -1 && ['meta_description', 'title', 'h1'].indexOf(issue.category) !== -1;
+  var actions = s.status === 'deployed'
+    ? '<button onclick="pmSuggRollback(' + s.id + ')" style="font-size:11px;color:#ea580c;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">↩ Roll back</button>'
+    : '<button onclick="pmSuggDecide(' + s.id + ',\'accept\')" style="font-size:11px;color:#15803d;background:none;border:none;cursor:pointer;padding:0;">Accept</button>' +
+      '<button onclick="pmSuggDecide(' + s.id + ',\'reject\')" style="font-size:11px;color:#dc2626;background:none;border:none;cursor:pointer;padding:0;">Reject</button>' +
+      '<button onclick="pmSuggEditPrompt(' + s.id + ',' + JSON.stringify(s.edited_content || s.content).replace(/"/g, '&quot;') + ')" style="font-size:11px;color:#4f46e5;background:none;border:none;cursor:pointer;padding:0;">Edit</button>' +
+      (canDeploy ? '<button onclick="pmSuggDeploy(' + s.id + ', this)" style="font-size:11px;color:#7e22ce;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">🚀 Deploy</button>' : '');
+  return '<div style="display:flex;align-items:flex-start;gap:8px;font-size:12px;padding:6px 0;border-top:1px solid #f1f5f9;">' +
+    '<span style="flex-shrink:0;width:18px;height:18px;border-radius:50%;background:#eef2ff;color:#4f46e5;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">' + s.rank + '</span>' +
+    '<div style="flex:1;min-width:0;">' +
+    '<div style="color:#1e293b;">' + pmEsc(s.edited_content || s.content) + '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap;">' +
+    '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:5px;' + (statusColors[s.status] || statusColors.pending) + '">' + s.status + '</span>' +
+    actions + '</div></div></div>';
+}
+function pmIssueHtml(issue, opts) {
+  opts = opts || {};
+  var sevColor = issue.severity === 'error' ? 'background:#fee2e2;color:#dc2626;' : 'background:#fef3c7;color:#b45309;';
+  var suggHtml = (issue.suggestions || []).map(function(s) { return pmSuggestionHtml(issue, s); }).join('');
+  var focusedStyle = opts.focused
+    ? 'background:#eef2ff;border:1.5px solid #a5b4fc;border-radius:10px;padding:14px 16px;margin-bottom:14px;box-shadow:0 2px 8px rgba(79,70,229,.08);'
+    : 'background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:10px;';
+  return '<div style="' + focusedStyle + '">' +
+    (opts.focused ? '<div style="font-size:10px;font-weight:700;color:#4f46e5;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">📍 Selected issue</div>' : '') +
+    '<div style="display:flex;align-items:center;justify-content:between;gap:8px;flex-wrap:wrap;">' +
+    '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:5px;' + sevColor + '">' + pmEsc(issue.severity) + '</span>' +
+    '<span style="font-size:10px;color:#94a3b8;text-transform:capitalize;">' + pmEsc(issue.category.replace(/_/g, ' ')) + ' · ' + pmEsc(issue.rule.replace(/_/g, ' ')) + '</span>' +
+    '<button onclick="pmGetSuggestions(' + issue.id + ')" style="margin-left:auto;font-size:10px;font-weight:600;background:#4f46e5;color:#fff;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;">Get Suggestions</button>' +
+    '</div>' +
+    '<div style="font-size:12px;color:#334155;margin-top:6px;">' + pmEsc(issue.message) + '</div>' +
+    (suggHtml ? '<div style="margin-top:6px;">' + suggHtml + '</div>' : '') +
+    '</div>';
+}
+function renderPageModal(d) {
+  document.getElementById('page-modal-url').textContent = d.url;
+  var wpStatus = document.getElementById('page-modal-wp-status');
+  if (wpStatus) {
+    wpStatus.innerHTML = d.wp_post_id
+      ? '<span style="color:#15803d;font-weight:600;">🔗 Linked to WordPress post #' + d.wp_post_id + '</span>'
+      : '<span style="color:#94a3b8;">Not linked to a WordPress post yet</span> '
+        + '<a href="#" onclick="pmResolveWpPost();return false;" style="font-size:10px;color:#4f46e5;font-weight:600;text-decoration:none;">Resolve now</a>';
+  }
+  if (d.error) {
+    document.getElementById('page-modal-body').innerHTML = '<div style="background:#fee2e2;color:#dc2626;padding:10px 12px;border-radius:8px;font-size:13px;">' + pmEsc(d.error) + '</div>';
+    return;
+  }
+  var checklist = (d.title_checklist || []).map(function(pair) {
+    var label = pair[0], passed = pair[1];
+    return '<li style="display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0;">' +
+      '<span style="' + (passed ? 'color:#16a34a;' : 'color:#dc2626;') + 'font-weight:700;">' + (passed ? '✓' : '✕') + '</span>' + pmEsc(label) + '</li>';
+  }).join('');
+
+  var focusedHtml = d.focused_issue ? pmIssueHtml(d.focused_issue, { focused: true }) : '';
+  var otherIssues = d.other_issues || [];
+  var otherLabel = d.focused_issue ? 'Other issues on this page (' + otherIssues.length + ')' : 'All Other Issues (' + otherIssues.length + ')';
+  var otherHtml = otherIssues.map(function(i) { return pmIssueHtml(i, { focused: false }); }).join('') ||
+    '<div style="font-size:12px;color:#94a3b8;">No other issues detected.</div>';
+  var otherSection = d.focused_issue
+    ? '<details' + (otherIssues.length ? '' : ' open') + '><summary style="cursor:pointer;font-size:11px;font-weight:700;color:#64748b;padding:8px 0;border-top:1px dashed #e2e8f0;margin-top:4px;list-style:none;">▸ ' + otherLabel + '</summary><div style="margin-top:8px;">' + otherHtml + '</div></details>'
+    : '<div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:8px;">' + otherLabel + '</div>' + otherHtml;
+
+  document.getElementById('page-modal-body').innerHTML =
+    '<div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">' +
+    '<div style="width:56px;height:56px;border-radius:50%;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#4f46e5;flex-shrink:0;">' + (d.score == null ? '—' : d.score) + '</div>' +
+    '<div><div style="font-size:12px;font-weight:600;color:#334155;">Current Score</div>' +
+    '<div style="font-size:11px;color:#94a3b8;">' + (d.crawled_ago ? 'Crawled ' + pmEsc(d.crawled_ago) + ' · ' : '') + d.word_count + ' words</div></div>' +
+    '<form method="post" action="/projects/{{ project.id }}/pages/' + d.id + '/reaudit" style="margin-left:auto;">' +
+    '<button type="submit" style="background:#059669;color:#fff;border:none;font-size:11px;font-weight:600;padding:7px 14px;border-radius:7px;cursor:pointer;">Re-Audit</button></form>' +
+    '</div>' +
+    '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:16px;">' +
+    '<div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:6px;">Title Tag</div>' +
+    '<div style="font-size:12px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:8px;margin-bottom:8px;word-break:break-word;">' + pmEsc(d.title || 'Missing') + '</div>' +
+    '<ul style="list-style:none;padding:0;margin:0;">' + checklist + '</ul>' +
+    '</div>' +
+    focusedHtml +
+    otherSection +
+    '<a href="/projects/{{ project.id }}/pages/' + d.id + '" target="_blank" style="display:inline-block;margin-top:8px;font-size:11px;color:#4f46e5;text-decoration:underline;">Open full page data (raw meta, headings, images, schema) ↗</a>';
+}
+function pmSuggDecide(id, action) {
+  fetch('/suggestions/' + id + '/' + action, { method: 'POST' })
+    .then(function(res) { if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); }); loadPageModal(currentPageModalId, currentPageModalIssueId); })
+    .catch(function(err) { showToast('Could not ' + action + ': ' + err.message, 'error'); });
+}
+function pmSuggEditPrompt(id, current) {
+  var edited = prompt('Edit the suggestion:', current);
+  if (edited === null || !edited.trim()) return;
+  fetch('/suggestions/' + id + '/edit', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: edited.trim() }),
+  })
+    .then(function(res) { if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); }); loadPageModal(currentPageModalId, currentPageModalIssueId); })
+    .catch(function(err) { showToast('Could not save edit: ' + err.message, 'error'); });
+}
+// Deploy tries with no post_id first -- the server auto-resolves it from
+// the page's crawl-time WordPress lookup (routes/crawl.py). Only if that
+// fails (HTTP 400, e.g. homepage/ambiguous slug/never crawled with a WP
+// connection) do we fall back to asking the user for the numeric ID.
+function pmResolveWpPost() {
+  fetch('/projects/{{ project.id }}/pages/' + currentPageModalId + '/resolve-wp-post', { method: 'POST' })
+    .then(function(res) { if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); }); return res.json(); })
+    .then(function(summary) {
+      loadPageModal(currentPageModalId, currentPageModalIssueId);
+      showToast(summary.wp_post_id ? 'Linked to WordPress post #' + summary.wp_post_id + '.' : 'Could not find a matching WordPress post for this page.', summary.wp_post_id ? 'success' : 'error');
+    })
+    .catch(function(err) { showToast('Resolve failed: ' + err.message, 'error'); });
+}
+function pmSuggDeploy(id, btn) {
+  // Guard against rapid double/triple-clicks firing multiple deploy
+  // requests (each one a real write + a real revision row) before the
+  // modal reloads and this button is replaced.
+  if (btn) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.dataset.origText = btn.textContent;
+    btn.textContent = 'Deploying…';
+  }
+  function attempt(body) {
+    return fetch('/suggestions/' + id + '/deploy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+  }
+  attempt({}).then(function(res) {
+    if (res.status === 400) {
+      return res.json().then(function(d) {
+        var postId = prompt((d.detail || "Couldn't auto-detect the WordPress post ID.") + '\n\nThis will be saved for future deploys. Enter it manually (numeric):');
+        if (!postId || !postId.trim() || isNaN(parseInt(postId, 10))) { throw new Error('Deploy cancelled.'); }
+        return attempt({ wp_post_id: parseInt(postId, 10) });
+      });
+    }
+    if (res.status === 422) {
+      // No numeric ID would fix this (e.g. homepage is a post-archive
+      // blog roll, not a single page) -- show the real reason, never the
+      // generic "enter an ID" prompt.
+      return res.json().then(function(d) {
+        var msg = (d.detail && d.detail.message) || 'This suggestion cannot be deployed automatically.';
+        throw new Error(msg);
+      });
+    }
+    return res;
+  })
+    .then(function(res) { if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); }); loadPageModal(currentPageModalId, currentPageModalIssueId); showToast('Deployed to WordPress.'); })
+    .catch(function(err) {
+      showToast('Deploy failed: ' + err.message, 'error');
+      // Only re-enable on failure -- on success the modal reloads and
+      // replaces this button entirely.
+      if (btn) { btn.disabled = false; btn.textContent = btn.dataset.origText || '🚀 Deploy'; }
+    });
+}
+function pmSuggRollback(id) {
+  fetch('/projects/{{ project.id }}/revisions')
+    .then(function(res) { return res.json(); })
+    .then(function(revisions) {
+      var match = revisions.find(function(r){ return r.suggestion_id === id && !r.rolled_back_at; });
+      if (!match) throw new Error('No active deployment found for this suggestion.');
+      return fetch('/revisions/' + match.id + '/rollback', { method: 'POST' });
+    })
+    .then(function(res) { if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); }); loadPageModal(currentPageModalId, currentPageModalIssueId); showToast('Rolled back.'); })
+    .catch(function(err) { showToast('Rollback failed: ' + err.message, 'error'); });
+}
+function pmGetSuggestions(issueId) {
+  fetch('/projects/{{ project.id }}/pages/' + currentPageModalId + '/issues/' + issueId + '/suggest', { method: 'POST' })
+    .then(function(res) { if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); }); loadPageModal(currentPageModalId, currentPageModalIssueId); })
+    .catch(function(err) { showToast('Could not get suggestions: ' + err.message, 'error'); });
 }
 </script>
 
