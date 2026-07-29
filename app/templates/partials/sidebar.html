@@ -52,11 +52,13 @@
   <!-- Navigation -->
   <nav style="flex:1;padding:10px 8px;display:flex;flex-direction:column;gap:1px;">
 
-    {{ nav_link("/", "Home", "home", active=(path == "/")) }}
+    {{ nav_link("/", "Projects", "home", active=(path == "/")) }}
 
     <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">SEO Strategy</div>
     {{ nav_link("/", "On-Page", "onpage", active=in_projects) }}
+    {{ nav_link("/onpage-semrush", "On-Page SEMrush", "onpage", active=(path == "/onpage-semrush")) }}
 
+    <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">Crawling</div>
     <!-- Queue item -->
     <a href="#" onclick="if(typeof openDrawer!=='undefined'){openDrawer('queue-drawer')}return false;"
        style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;color:#64748b;background:transparent;position:relative;"

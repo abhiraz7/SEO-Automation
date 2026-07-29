@@ -71,6 +71,14 @@ def index(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "index.html", {"projects": projects})
 
 
+@router.get("/onpage-semrush")
+def onpage_semrush(request: Request):
+    """Landing page for the SEMrush-sourced on-page audit. Placeholder until
+    the Site Audit client/job handler exist (see prompts/semrush-onpage-audit-plan.md,
+    Tasks 0.1-3.2) -- no data wiring here yet."""
+    return templates.TemplateResponse(request, "onpage_semrush.html", {})
+
+
 @router.post("/projects")
 def create_project(
     name: str = Form(...),
