@@ -690,3 +690,307 @@ I don't have access to** — not on missing code. I did not fake any of them.
   flagged, not faked).
 - Client license/repo-visibility decision is now implemented — nothing
   further needed there unless it changes.
+
+---
+
+## 2026-07-29 — Session: SEMrush on-page audit migration — UI scaffold + Task 1.1
+
+### Done
+- Per `prompts/semrush-onpage-audit-plan.md`: built the "All Projects"
+  card listing for `/onpage-semrush` (`app/templates/onpage_semrush.html`,
+  route in `app/routes/projects.py`), replacing the old text-only
+  placeholder. Each card shows Site Health %, Pages Crawled, Total
+  Issues (Critical/Warning split), Last Crawled, and referring
+  domains/backlinks.
+- Flagged clearly to the user (and in code comments) which numbers are
+  real vs. placeholder: Site Health/Total Issues/Critical/Warnings are
+  currently computed from our own crawler-based `Issue` table
+  (`app/audit.py`), since the SEMrush Site Audit client doesn't exist
+  yet — Tasks 0.1–3.2 not done. Backlinks are genuinely SEMrush-sourced
+  (existing `BacklinkSnapshot` feature, unrelated to Site Audit). "AI
+  Visibility" has no backing data source at all yet, shown as "—".
+- **Task 1.1** — added `app/semrush_audit.py` (new, sibling to
+  `app/semrush.py` which is untouched): `list_projects`,
+  `create_project`, `get_or_create_project`, `enable_site_audit`,
+  `launch_site_audit`. Uses the same `SEMRUSH_API_KEY` config pattern as
+  `app/semrush.py`, but this API surface (management/v1, reports/v1) is
+  JSON in/out, not CSV like the Analytics API.
+- Verified live against the real SEMrush account (not guessed):
+  `list_projects` returns a bare JSON list (not `{"data": [...]}`) with
+  domain under `url`, not `domain` — fixed the client to match reality.
+  `launch_site_audit` confirmed working — launched a real Site Audit
+  snapshot on the existing `vtraffic.io` project (23744418), got back a
+  real `snapshot_id`.
+- `enable_site_audit`'s endpoint (`management/v1/projects/{ID}/siteaudit/settings`)
+  is still an educated guess, not yet verified — deliberately did not
+  test it against the account's existing real client projects (risk of
+  triggering an unwanted paid crawl on someone else's domain).
+
+- User decision: the `/onpage-semrush` "All Projects" listing should be
+  sourced from SEMrush's own `list_projects()` (account's real Projects),
+  not our app's local `Project` table — UI rework still pending, not yet
+  applied to `onpage_semrush.html`.
+- Tried `enable_site_audit` on a fresh SEMrush project for
+  `vseo.vtraffic.io`: `create_project` failed —
+  `{"code":521,"message":"Projects limit exceed"}`. The account is at its
+  plan's Project cap (14/14), none of which is `vseo.vtraffic.io`. Did
+  NOT test `enable_site_audit` against any of the 14 existing real
+  client projects (risk of an unwanted paid crawl on someone else's
+  site) — still unverified.
+- Jumped ahead to Task 1.2 territory to unblock the listing-page
+  redesign: found the real snapshot-overview endpoint —
+  `reports/v1/projects/{ID}/siteaudit/snapshot?snapshot_id=...` (GET).
+  Confirmed live against `vtraffic.io` project 23744438's existing
+  finished snapshot (6a6804febe69704c61c7eb88):
+  - `aiSearchScore: {value, delta}` — a real SEMrush-computed score
+    (81), a genuine candidate to back "AI Visibility" instead of the
+    placeholder.
+  - `errors: [{id, count, delta, checks}, ...]` and `warnings: [...]`
+    — per-issue-type counts keyed by numeric issue-type IDs. This is
+    Task 2.1's mapping input.
+  - Did not see the full payload (more keys existed after `errors`) —
+  - **Account hit zero API units balance mid-investigation**
+    (`{"status":403,"message":"Api units balance is zero"}`). All
+    further live SEMrush calls are blocked until units are topped up
+    or reset.
+
+### Next
+- BLOCKED on SEMrush API units (balance zero) — cannot verify anything
+  further live: full snapshot payload shape, `enable_site_audit`,
+  Task 1.2 polling, Task 2.1 issue-type mapping.
+- Once units return: (1) see the rest of the snapshot payload for a
+  site-health/pages-crawled field, (2) verify `enable_site_audit`
+  against a safe project, (3) rebuild `/onpage-semrush` listing off
+  `list_projects()` per the user's decision, backed by real
+  `aiSearchScore`/`errors`/`warnings` per project instead of our
+  crawler-based `Issue` table.
+- Also still blocked structurally: the account's Project cap (14/14)
+  means `vseo.vtraffic.io` has no SEMrush project of its own yet —
+  needs a slot freed or plan upgrade before Site Audit can run on it
+  specifically.
+
+### Update — same session, later
+- User corrected scope twice: (1) don't create new SEMrush projects —
+  just use what's already there; (2) `/onpage-semrush` must never touch
+  our crawler's Project/Page/Issue tables, full stop, not even as a
+  stand-in.
+- Rewrote `onpage_semrush()` (`app/routes/projects.py`) to source
+  entirely from `semrush_audit.list_projects()` — no `db`/`models`
+  usage at all in this route now. Added `list_snapshots`,
+  `get_snapshot`, `get_latest_snapshot_overview` to
+  `app/semrush_audit.py` (the last one never raises — returns
+  `{"error": ...}` so the page always renders a card, showing whatever
+  SEMrush actually said instead of hiding the failure).
+- Rewrote `onpage_semrush.html`: one card per real SEMrush project
+  (favicon, name, url, SEMrush project_id), KPI row is AI Search Score
+  + Critical (errors) + Warnings summed from the snapshot's `errors`/
+  `warnings` arrays. Per-project SEMrush errors render as a visible red
+  banner on that card (`SEMrush: ...`) rather than being swallowed.
+- Verified live: page renders 200, real project list (resttech.info,
+  redroadshop, etc.), and — since the account's API units are still at
+  zero — every card correctly surfaces the real
+  `{"status":403,"message":"Api units balance is zero"}` error instead
+  of blank/fake KPIs. This confirms the error-surfacing path works
+  correctly, even though we still can't see real numbers until units
+  are topped up.
+
+### Next
+- Still blocked on SEMrush API units (zero) to see real KPI numbers,
+  and on the Projects cap (14/14) for `vseo.vtraffic.io` specifically.
+- Once units return: verify the card KPIs render real numbers, not
+  just the error path.
+
+### Update — breakthrough, same session
+- User's dashboard screenshot showed "Standard API Balance: 4,960" —
+  contradicts the earlier 403. Retested live: `get_snapshot` (full
+  overview) still 403s "Api units balance is zero", but `list_projects`
+  and `list_snapshots` both succeed. Conclusion: Site Audit's full
+  snapshot-overview call draws from a SEPARATE, currently-exhausted
+  quota, not the Standard API balance shown on that screenshot (likely
+  tied to the "Website monitoring 15/15, 0 available" line — matches
+  our 14-project cap).
+- Tested the plan's originally-recommended cost-control endpoint,
+  `snapshot/{id}/issue/{issueId}` — confirmed it is NOT subject to the
+  same block. Got real data back for issue_ids 6/15/16/18 (duplicate
+  title, duplicate meta description, robots.txt, sitemap.xml pages) —
+  all real, verified via `vtraffic.io` project 23744438.
+- Fetched SEMrush's public Site Audit API docs (WebFetch) for the
+  numeric issue-id -> name catalog and cross-checked against our own
+  live responses — matched exactly (id 6 = Duplicate title tag, id 15
+  = Duplicate meta descriptions, etc). Added `ONPAGE_ISSUE_MAP` to
+  `app/semrush_audit.py` (Task 2.1 groundwork) covering the plan's
+  on-page scope: title (missing/duplicate/too short/too long), meta
+  description (missing/duplicate), H1 (missing/multiple), missing ALT
+  attributes, duplicate content.
+- Added `fetch_issue`, `fetch_onpage_issue_counts` to
+  `app/semrush_audit.py` — sums real on-page issue counts per project
+  using the working per-issue endpoint (NOT the blocked overview).
+  Verified live against `vtraffic.io`: 124 total on-page issues (5
+  critical, 119 warnings; 13 title, 4 meta description, 9 h1, 98 image
+  alt, 0 content) — all real numbers.
+- Rewired `/onpage-semrush` (route + template) to use this. Verified
+  template rendering with mocked data (to avoid firing ~140 real billed
+  calls across all 14 client projects just to check HTML output) —
+  correct KPI row + per-category breakdown render.
+- Flagged a real cost concern in code comments: this call is billed
+  per issue type (10 today) per project, on every page load, across
+  every SEMrush project on the account. Fine at today's scale; should
+  move to a cached/job-based pull (Task 3.1) before it grows.
+
+### Next
+- Load-test `/onpage-semrush` against the real API once ready to spend
+  the ~140 calls (14 projects x 10 issue types), to confirm all real
+  projects render correctly (not just the mocked path).
+- `vseo.vtraffic.io` still has no SEMrush project of its own (Projects
+  cap 14/14) — separate blocker, unrelated to this fix.
+
+### Update — cache + manual refresh + credit visibility, same session
+- User asked: one SEMrush call, save to DB, serve from DB; show API
+  credit at top; make clear how much credit each refresh burns. Built
+  exactly that instead of the live-per-request approach.
+- Added `SemrushOnPageSnapshot` model (`app/models.py`) — one row per
+  SEMrush project_id (no FK to our own `projects` table, deliberately,
+  since this listing is SEMrush-sourced only), storing total/critical/
+  warnings/by_category/error/fetched_at. Migration
+  `migrations/014_semrush_onpage_snapshots.py` (additive).
+- `GET /onpage-semrush` now reads ONLY from this table — zero SEMrush
+  API calls on page view, confirmed by testing the cached GET with no
+  mocks active at all (would have raised/failed if it tried a live
+  call).
+- `POST /onpage-semrush/refresh` — the only thing that spends units.
+  Pulls `list_projects()` + `fetch_onpage_issue_counts` per project,
+  upserts into `SemrushOnPageSnapshot`, redirects back with
+  `?refreshed=N&spent=units` so the cost is shown right after paying
+  it. Confirm dialog before submit also estimates the cost up front
+  (`semrush_audit.estimate_refresh_cost`, project_count x 10 issue
+  types x 100 units/call).
+- `GET /onpage-semrush/units` — separate, on-demand "Check API Units"
+  button using `semrush.health_check()` (confirmed free/live call,
+  returned real "2860 API units remaining" — Standard API balance,
+  same caveat as before: this is NOT necessarily the same quota Site
+  Audit's per-issue endpoint draws from).
+- Verified full flow live: empty DB -> "No data yet" state -> mocked
+  refresh -> cached GET renders real numbers with zero further SEMrush
+  calls -> cleared the test row from the real DB afterward so no fake
+  "demo" project lingers.
+
+### Next
+- Click "Refresh from SEMrush" for real when ready to spend the actual
+  ~14,000 units (14 projects x 10 issue types x 100 units) and confirm
+  real project cards render correctly end to end.
+- Task 3.1 — this manual-refresh pattern already covers the
+  "cached/job-based" concern from earlier; a scheduled auto-refresh
+  (cron/job queue) is still a future nice-to-have, not required now.
+
+### Update — MVP cutover to single project, same session
+- User: page was rendering empty (all 14 real SEMrush projects, but no
+  cached rows existed yet since the refresh had only been mocked, never
+  actually run for real). Asked to simplify to one working project
+  instead of chasing all 14.
+- Added `semrush_audit.ACTIVE_SEMRUSH_PROJECT_ID = 23744438`
+  (vtraffic.io) — the one project verified end-to-end all session.
+  Rewrote `onpage_semrush()`/`onpage_semrush_refresh()` to only ever
+  touch this single project id, not `list_projects()`'s full 14.
+  Template simplified from a card list to a single card.
+- Ran the refresh FOR REAL this time (not mocked) — spent ~1,000 real
+  API units. Confirmed real data now renders on the page: 124 total
+  on-page issues (5 critical, 119 warnings; 13 title, 4 meta
+  description, 9 h1, 98 image alt, 0 content) for vtraffic.io.
+- MVP is now genuinely working end to end with real SEMrush data
+  visible on the page, not just verified in isolated test scripts.
+
+### Next
+- If/when the account frees a Projects slot (or upgrades) so
+  `vseo.vtraffic.io` can get its own SEMrush project, swap
+  `ACTIVE_SEMRUSH_PROJECT_ID` to it and re-run refresh.
+- Extending back to multi-project (all 14, or a per-app-Project
+  mapping) is future work, not needed for the MVP.
+
+### Update — matched project_detail.html's visual language, same session
+- User wanted `/onpage-semrush` to look exactly like the existing
+  `/projects/{id}` on-page view, but SEMrush-sourced. Rebuilt the
+  template reusing project_detail.html's actual CSS classes (`.kpi-card`,
+  `.kpi-number`, `details.ig`/`.ig-table` accordion) and layout pattern
+  (breadcrumb topbar, KPI card row, "Issues by category" accordion
+  grouping affected pages under each issue type).
+- Deliberately did NOT replicate the AI-suggestion/rule-validation/judge
+  columns from that page's "optimize" panel — those operate on our own
+  `Issue.id`/`Suggestion` rows tied to the crawler pipeline, which don't
+  exist for SEMrush-sourced issues. Flagged this scope limit rather than
+  faking those columns.
+- Extended `semrush_audit.fetch_onpage_issue_counts` to also return
+  `rows`: one entry per affected page per issue type (from fetch_issue's
+  `data` list), not just aggregate counts -- this is what powers the
+  accordion. Added `issues_detail` JSON column to
+  `SemrushOnPageSnapshot` (migration 015) to cache it.
+- Ran a second real refresh (another ~1,000 units) to populate
+  `issues_detail` on the existing cached row. Verified real rows render
+  correctly: e.g. "Duplicate title tag" on 2 real vtraffic.io URLs,
+  "Title element is too long" on 11 URLs, "Missing meta description" on
+  4 URLs -- all real SEMrush-sourced data, grouped exactly like
+  project_detail.html's accordion.
+- Caught and fixed a bad formula: Site Health was showing 0% (the
+  critical*5+warnings*2 penalty was too harsh for a real site with 119
+  minor warnings). Softened it (critical*4 + capped-at-40 warnings
+  penalty) — recomputed from the already-cached counts, no extra API
+  spend. Now shows 40%, a much more sensible number for 5 critical/119
+  warnings.
+
+### Next
+- Consider whether the Site Health formula needs real product input
+  (it's still a guessed formula, not SEMrush's own health score --
+  that lives in the blocked overview endpoint's units pool).
+- Same open items as before: Projects cap (14/14), and whether to
+  extend beyond the single hard-pinned project.
+
+## 2026-07-30 — Session: Costing spike for scaling beyond the MVP
+
+### Done
+- User asked to scale the on-page MVP to all 14 real SEMrush projects,
+  then asked for a costing spike/audit before committing to that (a
+  real money question, not a code question).
+- Wrote `prompts/semrush-onpage-costing-spike.md` — consolidates every
+  real number measured this session (not estimated): 100 units/call for
+  the per-issue endpoint, 10 mapped issue types, confirmed 1,000
+  units/project/refresh (twice, both real refreshes on vtraffic.io),
+  14 real projects on the account, the Projects cap (14/14, `521
+  "Projects limit exceed"`), and the confirmed existence of TWO separate
+  quota pools (Standard API balance vs. a separate Site Audit pool that
+  hit zero independently of the Standard balance).
+- Cost table: MVP today = 1,000 units one-time; all 14 projects one-time
+  = 14,000; all 14 with daily refresh = 420,000/month; all 14 with
+  weekly refresh = ~60,200/month; full ~80-type issue catalog instead
+  of today's 10 would ~8x any of the above.
+- Flagged the real unknown: the Site Audit-specific unit pool's actual
+  ceiling/refill cadence is NOT visible from anything we can query in
+  code — it's an account/billing-page or support-ticket question, not
+  something further API calls can resolve.
+- Recommendation given (no code changes made): don't scale past the
+  single hard-pinned project until (1) the real Site Audit quota
+  ceiling is confirmed on SEMrush's side, (2) refresh cadence
+  (manual-only vs. scheduled) is explicitly decided since it's the
+  single biggest cost multiplier, (3) any scale-up happens
+  incrementally, not all 14 at once.
+
+### Next
+- Waiting on user to check the SEMrush account/billing page (or open a
+  support ticket) for the real Site Audit quota ceiling before any
+  scale-up decision.
+- No code changes pending from this spike — it's a decision input.
+
+### Update — zero-cost dev/testing path, same session
+- User asked: can we build without spending API credit. GET
+  /onpage-semrush was already zero-cost (cache-only), but iterating on
+  template/route changes still tempted clicking real "Refresh" each
+  time. Added `scripts/seed_semrush_onpage_fixture.py` -- writes a
+  fixture `SemrushOnPageSnapshot` row (9 sample issues, same field
+  shapes as a real fetch_onpage_issue_counts() result, copied from the
+  real vtraffic.io data logged 2026-07-29) with zero SEMrush API calls.
+- Verified it end to end: ran the seeder, confirmed /onpage-semrush
+  rendered the fixture data correctly (79% health, fixture issues
+  visible), zero network calls made. Then restored the real cached row
+  (124 issues, 35 detail rows) from a backup taken before seeding, so
+  the real data wasn't lost.
+- Going forward: use this script for any UI/template iteration on
+  /onpage-semrush; only use the real "Refresh from SEMrush" button when
+  actually validating against live data.

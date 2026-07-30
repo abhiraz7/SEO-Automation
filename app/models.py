@@ -312,6 +312,31 @@ class BacklinkSnapshot(Base):
     fetched_at = Column(DateTime, default=_utcnow)
 
 
+class SemrushOnPageSnapshot(Base):
+    """Cached on-page issue counts for one SEMrush Projects-API project
+    (semrush_project_id -- NOT a FK to our own `projects` table; the
+    /onpage-semrush listing is sourced entirely from SEMrush's own
+    list_projects(), independent of our app's Project rows). One row per
+    SEMrush project, upserted on each manual refresh -- GET /onpage-semrush
+    reads only from here, never calls SEMrush live, so viewing the page
+    costs zero API units. Only the explicit "Refresh from SEMrush" action
+    (app/semrush_audit.py's fetch_onpage_issue_counts, billed per issue
+    type per project) writes new values here."""
+    __tablename__ = "semrush_onpage_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    semrush_project_id = Column(Integer, nullable=False, unique=True)
+    name = Column(String)
+    url = Column(String)
+    total = Column(Integer, default=0)
+    critical = Column(Integer, default=0)
+    warnings = Column(Integer, default=0)
+    by_category = Column(JSON, default=dict)
+    issues_detail = Column(JSON, default=list)  # [{category, severity, message, url}, ...] -- powers the "Issues by category" accordion
+    error = Column(Text)
+    fetched_at = Column(DateTime, default=_utcnow)
+
+
 class BacklinkRecord(Base):
     """One tracked backlink (Task 5.2's new/lost diffing target). Semrush's
     backlinks_overview only gives aggregate counts -- populating this table

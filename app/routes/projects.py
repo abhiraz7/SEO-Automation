@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import audit, backlinks_provider, models, schemas
+from .. import audit, backlinks_provider, models, schemas, semrush, semrush_audit
 from ..semrush import fetch_domain_metrics
 from ..database import get_db
 
@@ -72,11 +72,98 @@ def index(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/onpage-semrush")
-def onpage_semrush(request: Request):
-    """Landing page for the SEMrush-sourced on-page audit. Placeholder until
-    the Site Audit client/job handler exist (see prompts/semrush-onpage-audit-plan.md,
-    Tasks 0.1-3.2) -- no data wiring here yet."""
-    return templates.TemplateResponse(request, "onpage_semrush.html", {})
+def onpage_semrush(request: Request, refreshed: int | None = None, spent: int | None = None, db: Session = Depends(get_db)):
+    """MVP: single-project on-page audit view, hard-pinned to
+    semrush_audit.ACTIVE_SEMRUSH_PROJECT_ID (the account's other 13
+    Projects are unrelated real client sites, not this app's concern right
+    now). Reads ONLY from our own SemrushOnPageSnapshot cache -- zero
+    SEMrush API calls on page load/view. Data is populated exclusively by
+    the explicit "Refresh from SEMrush" button (POST /onpage-semrush/refresh
+    below), the only thing that spends API units."""
+    row = (
+        db.query(models.SemrushOnPageSnapshot)
+        .filter(models.SemrushOnPageSnapshot.semrush_project_id == semrush_audit.ACTIVE_SEMRUSH_PROJECT_ID)
+        .first()
+    )
+    project_card = None
+    grouped_issues = {}
+    if row:
+        project_card = {
+            "project_id": row.semrush_project_id,
+            "name": row.name,
+            "url": row.url,
+            "total": row.total, "critical": row.critical, "warnings": row.warnings,
+            "by_category": row.by_category or {},
+            "error": row.error,
+            "last_synced": _time_ago(row.fetched_at) if row.fetched_at else "Never",
+        }
+        # Same shape project_detail.html's grouped_issues uses (category ->
+        # list of {message, severity, url}), sourced from the cached
+        # issues_detail rows instead of our own Issue table.
+        for issue_row in (row.issues_detail or []):
+            grouped_issues.setdefault(issue_row["category"], []).append(issue_row)
+        grouped_issues = dict(
+            sorted(grouped_issues.items(), key=lambda x: sum(1 for i in x[1] if i["severity"] == "error"), reverse=True)
+        )
+
+    return templates.TemplateResponse(
+        request, "onpage_semrush.html", {
+            "project_card": project_card,
+            "grouped_issues": grouped_issues,
+            "not_configured": not semrush_audit.is_configured(),
+            "just_refreshed": refreshed,
+            "units_spent": spent,
+        }
+    )
+
+
+@router.post("/onpage-semrush/refresh")
+def onpage_semrush_refresh(db: Session = Depends(get_db)):
+    """The ONLY action that spends SEMrush API units. MVP: refreshes just
+    semrush_audit.ACTIVE_SEMRUSH_PROJECT_ID, not every project on the
+    account (billed: UNITS_PER_ISSUE_CALL x len(ONPAGE_ISSUE_MAP), one
+    project's worth). Redirects back with how many units that cost."""
+    project_id = semrush_audit.ACTIVE_SEMRUSH_PROJECT_ID
+    projects = {p["project_id"]: p for p in semrush_audit.list_projects()}
+    project = projects.get(project_id, {})
+    snapshots = semrush_audit.list_snapshots(project_id)
+    counts = (
+        semrush_audit.fetch_onpage_issue_counts(project_id, snapshots[0]["snapshot_id"])
+        if snapshots
+        else {"total": 0, "critical": 0, "warnings": 0, "by_category": {}, "rows": [], "error": "No finished Site Audit snapshot yet"}
+    )
+
+    row = (
+        db.query(models.SemrushOnPageSnapshot)
+        .filter(models.SemrushOnPageSnapshot.semrush_project_id == project_id)
+        .first()
+    )
+    if not row:
+        row = models.SemrushOnPageSnapshot(semrush_project_id=project_id)
+        db.add(row)
+    row.name = project.get("project_name") or project.get("url") or "vtraffic.io"
+    row.url = project.get("url") or "vtraffic.io"
+    row.total = counts["total"]
+    row.critical = counts["critical"]
+    row.warnings = counts["warnings"]
+    row.by_category = counts["by_category"]
+    row.issues_detail = counts["rows"]
+    row.error = counts["error"]
+    row.fetched_at = datetime.utcnow()
+
+    db.commit()
+    spent = semrush_audit.estimate_refresh_cost(1)
+    return RedirectResponse(url=f"/onpage-semrush?refreshed=1&spent={spent}", status_code=303)
+
+
+@router.get("/onpage-semrush/units")
+def onpage_semrush_units():
+    """Free call (see semrush.health_check's docstring) -- shows the
+    Standard API balance on demand rather than on every page load. Note:
+    this is a DIFFERENT quota than the one Site Audit's per-issue endpoint
+    draws from (see AgentLog 2026-07-29) -- shown as a reference number,
+    not a guarantee refresh will succeed."""
+    return semrush.health_check()
 
 
 @router.post("/projects")
