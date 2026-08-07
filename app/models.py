@@ -414,6 +414,26 @@ class ProviderSetting(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class VisibilityCheck(Base):
+    """One DataForSEO live SERP lookup (/serp/google/organic/live/advanced,
+    via dataforseo.fetch_serp) run for a project, used to see whether the
+    project's own domain shows up in Google's real AI Overview citations
+    and/or organic rankings for a query -- all fields here are values
+    DataForSEO's API actually returned, nothing derived or invented."""
+    __tablename__ = "visibility_checks"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    query = Column(String, nullable=False)
+    ai_overview_present = Column(Boolean, nullable=False, default=False)
+    brand_in_ai_overview = Column(Boolean, nullable=False, default=False)
+    ai_overview_references = Column(JSON)  # [{domain, source, url, title}, ...] straight from DataForSEO
+    organic_rank = Column(Integer)  # project's own domain's rank_absolute, null if not ranking
+    competitor_domains = Column(JSON)  # other domains seen (AI Overview refs + top organic), straight from the API
+    raw_error = Column(Text)  # DataForSEO error string, if the call failed
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class Job(Base):
     """A unit of scheduled or on-demand background work (crawl, rank_check,
     keyword_refresh, ...). Handlers are looked up by job_type in

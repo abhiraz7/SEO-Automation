@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}AI Visibility — {{ project.name }} — VTechys SEO OS{% endblock %}
+
+{% block topbar %}
+<div style="display:flex;align-items:center;gap:8px;">
+  <a href="/visibility" style="color:#94a3b8;text-decoration:none;font-size:12px;">AI Visibility</a>
+  <span style="opacity:0.4;font-size:12px;">/</span>
+  <span style="font-size:14px;font-weight:700;color:#0f172a;">{{ project.name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .vis-check { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 18px; margin-bottom:12px; }
+  .vis-badge { display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:700; padding:3px 9px; border-radius:20px; }
+</style>
+
+<div style="padding:28px 24px 40px;max-width:760px;margin:0 auto;">
+
+  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;margin-bottom:20px;">
+    <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:2px;">{{ domain }}</div>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:14px;">Every check below is a live DataForSEO SERP lookup — the AI Overview text/citations and organic ranks shown are exactly what Google returned for that query, at that moment.</div>
+
+    {% if not dataforseo_configured %}
+    <div style="font-size:12px;color:#b91c1c;background:#fef2f2;padding:8px 12px;border-radius:6px;margin-bottom:12px;">⚠️ DataForSEO not configured — set DATAFORSEO_LOGIN/DATAFORSEO_PASSWORD.</div>
+    {% endif %}
+
+    <form method="post" action="/projects/{{ project.id }}/visibility/check" style="display:flex;gap:8px;margin-bottom:{{ '12px' if suggested else '0' }};">
+      <input name="query" required placeholder="e.g. best seo services in california"
+        style="flex:1;padding:9px 12px;border-radius:8px;border:1px solid #e2e8f0;font-size:13px;outline:none;">
+      <button type="submit" style="padding:9px 18px;border-radius:8px;border:none;background:linear-gradient(135deg,#4f46e5,#6d28d9);color:#fff;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">Check</button>
+    </form>
+
+    {% if suggested %}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+      <span style="font-size:11px;color:#94a3b8;align-self:center;">From your business profile:</span>
+      {% for q in suggested %}
+      <form method="post" action="/projects/{{ project.id }}/visibility/check" style="display:inline;">
+        <input type="hidden" name="query" value="{{ q }}">
+        <button type="submit" style="font-size:11px;color:#4f46e5;background:#eef2ff;border:1px solid #e0e7ff;border-radius:20px;padding:4px 12px;cursor:pointer;">{{ q }}</button>
+      </form>
+      {% endfor %}
+    </div>
+    {% elif not has_profile %}
+    <div style="font-size:11px;color:#94a3b8;">No business profile set — add one to get query suggestions, or just type your own above.</div>
+    {% endif %}
+  </div>
+
+  {% if checks %}
+  {% for c in checks %}
+  <div class="vis-check">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">
+      <div style="font-size:13px;font-weight:700;color:#0f172a;">"{{ c.query }}"</div>
+      <div style="font-size:10px;color:#cbd5e1;flex-shrink:0;">{{ c.created_at.strftime('%b %d, %H:%M') if c.created_at else '' }}</div>
+    </div>
+
+    {% if c.raw_error %}
+    <div style="font-size:12px;color:#b91c1c;">DataForSEO error: {{ c.raw_error }}</div>
+    {% else %}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+      {% if c.ai_overview_present %}
+        {% if c.brand_in_ai_overview %}
+        <span class="vis-badge" style="background:#dcfce7;color:#15803d;">✓ Cited in AI Overview</span>
+        {% else %}
+        <span class="vis-badge" style="background:#fee2e2;color:#dc2626;">✕ Not cited in AI Overview</span>
+        {% endif %}
+      {% else %}
+      <span class="vis-badge" style="background:#f1f5f9;color:#64748b;">No AI Overview shown for this query</span>
+      {% endif %}
+
+      {% if c.organic_rank %}
+      <span class="vis-badge" style="background:#eef2ff;color:#4f46e5;">Organic rank #{{ c.organic_rank }}</span>
+      {% else %}
+      <span class="vis-badge" style="background:#fef3c7;color:#b45309;">Not in top organic results</span>
+      {% endif %}
+    </div>
+
+    {% if c.ai_overview_references %}
+    <details style="margin-bottom:8px;">
+      <summary style="font-size:11px;color:#4f46e5;cursor:pointer;">AI Overview cited {{ c.ai_overview_references|length }} source{{ 's' if c.ai_overview_references|length != 1 }}</summary>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+        {% for ref in c.ai_overview_references %}
+        <a href="{{ ref.url }}" target="_blank" style="font-size:11px;color:#475569;text-decoration:none;display:flex;gap:6px;">
+          <span style="color:{{ '#15803d' if ref.domain == domain else '#94a3b8' }};font-weight:{{ '700' if ref.domain == domain else '400' }};">{{ ref.domain }}</span>
+          <span style="color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">— {{ ref.title }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
+    {% if c.competitor_domains %}
+    <div style="font-size:11px;color:#94a3b8;">Other domains seen: {{ c.competitor_domains|join(', ') }}</div>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% else %}
+  <div style="padding:48px 24px;text-align:center;background:#fff;border:1px solid #e2e8f0;border-radius:14px;color:#94a3b8;font-size:13px;">
+    No checks yet — run one above using a suggested query or your own.
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
