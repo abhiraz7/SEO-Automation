@@ -40,6 +40,8 @@ def _generate_and_store(db: Session, project_id: int, page_id: int, issue_id: in
 
     # Fetch/create the page's understanding (cached per crawl snapshot) before
     # generating, so the prompt gets the distilled JSON instead of raw fit_markdown.
+    # None for pages with no crawl snapshot (DataForSEO/SEMrush-sourced) --
+    # generation still works, just without that extra context.
     understanding_row = context_builder.build_page_understanding(db, page)
 
     profile = (
@@ -48,7 +50,8 @@ def _generate_and_store(db: Session, project_id: int, page_id: int, issue_id: in
         .first()
     )
     context = prompt_builder.build_suggestion_context(
-        page, issue, business_profile=profile, understanding=understanding_row.understanding_json
+        page, issue, business_profile=profile,
+        understanding=understanding_row.understanding_json if understanding_row else None,
     )
 
     # Only replace rows nobody has decided on -- accepted/edited/deployed
@@ -85,7 +88,7 @@ def _generate_and_store(db: Session, project_id: int, page_id: int, issue_id: in
             project_id=project_id,
             page_id=page_id,
             issue_id=issue_id,
-            understanding_id=understanding_row.id,
+            understanding_id=understanding_row.id if understanding_row else None,
             content=text,
             content_hash=h,
             rank=rank,
@@ -123,6 +126,7 @@ def _suggestion_out(s: models.Suggestion) -> dict:
         "status": s.status,
         "content": s.content,
         "edited_content": s.edited_content,
+        "source": "claude",
         "rank": s.rank,
         "accepted_at": s.accepted_at,
         "deployed_at": s.deployed_at,

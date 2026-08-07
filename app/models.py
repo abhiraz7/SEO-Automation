@@ -61,6 +61,17 @@ class Page(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
     url = Column(String, nullable=False)
 
+    # "crawler" (our own crawler+audit.py, Phase 1/2, being retired) |
+    # "dataforseo" (DataForSEO on_page API) | "semrush" (reserved -- SEMrush
+    # currently only writes to SemrushOnPageSnapshot, not here, until its
+    # API units are available again). Lets /onpage-semrush show ONLY
+    # non-crawler pages/issues without touching crawler-sourced rows.
+    source = Column(String, nullable=False, default="crawler")
+    onpage_task_id = Column(Integer, ForeignKey("onpage_tasks.id"), nullable=True)
+    word_count = Column(Integer)
+    onpage_score = Column(Integer)
+    checks = Column(JSON)  # raw DataForSEO checks dict, kept for reference/debugging
+
     status_code = Column(Integer)
     error = Column(Text)
 
@@ -354,6 +365,53 @@ class BacklinkRecord(Base):
     first_seen_at = Column(DateTime, default=_utcnow)
     last_seen_at = Column(DateTime, default=_utcnow)
     lost_at = Column(DateTime)  # set when a pull no longer finds this link -- NULL means still live
+
+
+class OnPageTask(Base):
+    """One DataForSEO on_page/task_post site-wide crawl (DataForSEO runs the
+    crawl on their end -- we just poll tasks_ready and pull results). A page
+    fetched via the synchronous instant_pages check instead has
+    onpage_task_id = NULL."""
+    __tablename__ = "onpage_tasks"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    dataforseo_task_id = Column(String, nullable=False)
+    max_crawl_pages = Column(Integer, default=20)
+    status = Column(String, nullable=False, default="posted")  # posted|fetched|error
+    pages_crawled = Column(Integer)
+    error = Column(Text)
+    finished_at = Column(DateTime)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class CrawlerSettings(Base):
+    """Singleton row (id=1) -- master switch for the retiring custom
+    crawler+audit.py pipeline. Gates: routes/crawl.py's /crawl and
+    /crawl-single, routes/jobs.py's test-crawl and run-now(crawl),
+    scheduler.py's dispatch_due_schedules (skips enqueueing new crawl jobs
+    while disabled), and hides the Crawl/Crawl Site buttons in
+    project_detail.html. Deliberately not surfaced in the sidebar -- only
+    reachable at /settings/crawler by typing the URL directly, since this
+    is an internal kill switch, not a normal-user-facing setting."""
+    __tablename__ = "crawler_settings"
+
+    id = Column(Integer, primary_key=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class ProviderSetting(Base):
+    """Which on-page data provider is active for /onpage-semrush --
+    "dataforseo" or "semrush". Exactly one row has enabled=True at a time
+    (radio-style, not independent checkboxes), enforced in
+    routes/settings.py rather than a DB constraint since SQLite has no
+    partial-unique-index shorthand for "at most one true"."""
+    __tablename__ = "provider_settings"
+
+    provider = Column(String, primary_key=True)  # "dataforseo" | "semrush"
+    enabled = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 class Job(Base):

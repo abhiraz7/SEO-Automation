@@ -6,16 +6,19 @@ from math import ceil
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, backlinks_provider, models, schemas, semrush, semrush_audit
+from .. import audit, backlinks_provider, models, schemas
 from ..semrush import fetch_domain_metrics
 from ..database import get_db
+from .settings import is_crawler_enabled, register_crawler_global
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["current_value_for"] = audit.current_value_for
 templates.env.globals["RULE_REQUIREMENTS"] = audit.RULE_REQUIREMENTS
+register_crawler_global(templates)
 
 ISSUES_PAGE_SIZE = 10
 
@@ -65,112 +68,119 @@ def _normalize_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
+PROVIDER_META = {
+    "dataforseo": {"label": "DataForSEO", "color": "#0891b2", "bg": "#ecfeff", "initials": "DfS"},
+    "semrush": {"label": "SEMrush", "color": "#c2410c", "bg": "#fff7ed", "initials": "Sr"},
+    "manual": {"label": "Crawler", "color": "#64748b", "bg": "#f1f5f9", "initials": "🕷"},
+    "connected": {"label": "Crawler", "color": "#64748b", "bg": "#f1f5f9", "initials": "🕷"},
+}
+
+
+def _active_source(project: models.Project, source_counts: dict) -> str:
+    """Which Page.source actually drives this project's numbers -- prefers
+    DataForSEO/SEMrush over crawler whenever either is present, since
+    crawler is a retiring/hidden feature and its page count (from years of
+    prior crawls) would otherwise dominate a raw majority vote even on
+    projects actively using a modern provider today. This is the single
+    source of truth for BOTH the homepage badge and the click-through
+    routing decision below -- they must never disagree, or a project can
+    show one provider's badge while opening a different provider's (empty)
+    page, like vtraffic.io did when its stored project_type ("semrush")
+    didn't match its actual data (crawler-only)."""
+    for preferred in ("dataforseo", "semrush"):
+        if source_counts.get(preferred):
+            return preferred
+    if source_counts.get("crawler"):
+        return "crawler"
+    return project.project_type if project.project_type in PROVIDER_META else "manual"
+
+
+def _project_active_source(project: models.Project, db: Session) -> str:
+    source_counts = dict(
+        db.query(models.Page.source, func.count(models.Page.id))
+        .filter(models.Page.project_id == project.id)
+        .group_by(models.Page.source)
+        .all()
+    )
+    return _active_source(project, source_counts)
+
+
+def _project_card_data(project: models.Project, db: Session) -> dict:
+    """Dashboard-style summary for one project card: which provider drives
+    it, plus SEMrush-Site-Audit-style numbers (health score, errors,
+    warnings, pages, last checked) computed from that provider's own pages
+    -- not mixed with any other source's leftover data on the same
+    project."""
+    source = _project_active_source(project, db)
+    provider = PROVIDER_META.get(source, PROVIDER_META["manual"])
+
+    pages = (
+        db.query(models.Page)
+        .filter(models.Page.project_id == project.id, models.Page.source == source)
+        .all()
+    )
+    page_ids = [p.id for p in pages]
+    error_count = warning_count = 0
+    if page_ids:
+        issue_counts = dict(
+            db.query(models.Issue.severity, func.count(models.Issue.id))
+            .filter(models.Issue.page_id.in_(page_ids))
+            .group_by(models.Issue.severity)
+            .all()
+        )
+        error_count = issue_counts.get("error", 0)
+        warning_count = issue_counts.get("warning", 0)
+
+    total_pages = len(pages)
+    health = max(0, 100 - (error_count * 4) - min(warning_count, 40)) if total_pages else None
+    last_checked = max((p.updated_at for p in pages if p.updated_at), default=None)
+
+    is_fetching = (
+        db.query(models.OnPageTask)
+        .filter(models.OnPageTask.project_id == project.id, models.OnPageTask.status == "posted")
+        .first() is not None
+    ) or (
+        db.query(models.Job)
+        .filter(models.Job.project_id == project.id, models.Job.status.in_(["queued", "running"]))
+        .first() is not None
+    )
+
+    return {
+        "source": source,
+        "provider": provider,
+        "total_pages": total_pages,
+        "error_count": error_count,
+        "warning_count": warning_count,
+        "total_issues": error_count + warning_count,
+        "health": health,
+        "last_checked": last_checked,
+        "is_fetching": is_fetching,
+    }
+
+
 @router.get("/")
 def index(request: Request, db: Session = Depends(get_db)):
-    projects = db.query(models.Project).order_by(models.Project.created_at.desc()).all()
-    return templates.TemplateResponse(request, "index.html", {"projects": projects})
+    all_projects = db.query(models.Project).order_by(models.Project.created_at.desc()).all()
+    project_cards = {p.id: _project_card_data(p, db) for p in all_projects}
 
-
-@router.get("/onpage-semrush")
-def onpage_semrush(request: Request, refreshed: int | None = None, spent: int | None = None, db: Session = Depends(get_db)):
-    """MVP: single-project on-page audit view, hard-pinned to
-    semrush_audit.ACTIVE_SEMRUSH_PROJECT_ID (the account's other 13
-    Projects are unrelated real client sites, not this app's concern right
-    now). Reads ONLY from our own SemrushOnPageSnapshot cache -- zero
-    SEMrush API calls on page load/view. Data is populated exclusively by
-    the explicit "Refresh from SEMrush" button (POST /onpage-semrush/refresh
-    below), the only thing that spends API units."""
-    row = (
-        db.query(models.SemrushOnPageSnapshot)
-        .filter(models.SemrushOnPageSnapshot.semrush_project_id == semrush_audit.ACTIVE_SEMRUSH_PROJECT_ID)
-        .first()
-    )
-    project_card = None
-    grouped_issues = {}
-    if row:
-        project_card = {
-            "project_id": row.semrush_project_id,
-            "name": row.name,
-            "url": row.url,
-            "total": row.total, "critical": row.critical, "warnings": row.warnings,
-            "by_category": row.by_category or {},
-            "error": row.error,
-            "last_synced": _time_ago(row.fetched_at) if row.fetched_at else "Never",
-        }
-        # Same shape project_detail.html's grouped_issues uses (category ->
-        # list of {message, severity, url}), sourced from the cached
-        # issues_detail rows instead of our own Issue table.
-        for issue_row in (row.issues_detail or []):
-            grouped_issues.setdefault(issue_row["category"], []).append(issue_row)
-        grouped_issues = dict(
-            sorted(grouped_issues.items(), key=lambda x: sum(1 for i in x[1] if i["severity"] == "error"), reverse=True)
-        )
+    # Crawler-sourced projects are a hidden/internal feature (see
+    # /settings/crawler) -- disabling it means they must never show up
+    # anywhere a normal user looks, not just lose their Crawl button.
+    if not is_crawler_enabled(db):
+        projects = [p for p in all_projects if project_cards[p.id]["source"] != "crawler"]
+    else:
+        projects = all_projects
 
     return templates.TemplateResponse(
-        request, "onpage_semrush.html", {
-            "project_card": project_card,
-            "grouped_issues": grouped_issues,
-            "not_configured": not semrush_audit.is_configured(),
-            "just_refreshed": refreshed,
-            "units_spent": spent,
-        }
+        request, "index.html", {"projects": projects, "project_cards": project_cards}
     )
-
-
-@router.post("/onpage-semrush/refresh")
-def onpage_semrush_refresh(db: Session = Depends(get_db)):
-    """The ONLY action that spends SEMrush API units. MVP: refreshes just
-    semrush_audit.ACTIVE_SEMRUSH_PROJECT_ID, not every project on the
-    account (billed: UNITS_PER_ISSUE_CALL x len(ONPAGE_ISSUE_MAP), one
-    project's worth). Redirects back with how many units that cost."""
-    project_id = semrush_audit.ACTIVE_SEMRUSH_PROJECT_ID
-    projects = {p["project_id"]: p for p in semrush_audit.list_projects()}
-    project = projects.get(project_id, {})
-    snapshots = semrush_audit.list_snapshots(project_id)
-    counts = (
-        semrush_audit.fetch_onpage_issue_counts(project_id, snapshots[0]["snapshot_id"])
-        if snapshots
-        else {"total": 0, "critical": 0, "warnings": 0, "by_category": {}, "rows": [], "error": "No finished Site Audit snapshot yet"}
-    )
-
-    row = (
-        db.query(models.SemrushOnPageSnapshot)
-        .filter(models.SemrushOnPageSnapshot.semrush_project_id == project_id)
-        .first()
-    )
-    if not row:
-        row = models.SemrushOnPageSnapshot(semrush_project_id=project_id)
-        db.add(row)
-    row.name = project.get("project_name") or project.get("url") or "vtraffic.io"
-    row.url = project.get("url") or "vtraffic.io"
-    row.total = counts["total"]
-    row.critical = counts["critical"]
-    row.warnings = counts["warnings"]
-    row.by_category = counts["by_category"]
-    row.issues_detail = counts["rows"]
-    row.error = counts["error"]
-    row.fetched_at = datetime.utcnow()
-
-    db.commit()
-    spent = semrush_audit.estimate_refresh_cost(1)
-    return RedirectResponse(url=f"/onpage-semrush?refreshed=1&spent={spent}", status_code=303)
-
-
-@router.get("/onpage-semrush/units")
-def onpage_semrush_units():
-    """Free call (see semrush.health_check's docstring) -- shows the
-    Standard API balance on demand rather than on every page load. Note:
-    this is a DIFFERENT quota than the one Site Audit's per-issue endpoint
-    draws from (see AgentLog 2026-07-29) -- shown as a reference number,
-    not a guarantee refresh will succeed."""
-    return semrush.health_check()
 
 
 @router.post("/projects")
 def create_project(
     name: str = Form(...),
     base_url: str = Form(...),
-    project_type: str = Form("manual"),
+    project_type: str = Form("dataforseo"),
     db: Session = Depends(get_db),
 ):
     project = models.Project(
@@ -240,6 +250,19 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
 def project_detail(project_id: int, request: Request, db: Session = Depends(get_db)):
     project = db.get(models.Project, project_id)
     if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    active_source = _project_active_source(project, db)
+    if active_source in ("dataforseo", "semrush"):
+        # This project's on-page audit lives on the DataForSEO/SEMrush view
+        # (routes/onpage_semrush.py), not the legacy crawler flow below.
+        # Data-driven (not just project.project_type) so a project whose
+        # actual pages are crawler-sourced never gets routed to an empty
+        # provider page just because its stored type says otherwise.
+        return RedirectResponse(url=f"/projects/{project_id}/onpage", status_code=303)
+    if active_source == "crawler" and not is_crawler_enabled(db):
+        # Crawler is a hidden/internal feature -- disabling it means a
+        # crawler-sourced project must not be reachable at all, not just
+        # missing its Crawl button, even via a direct/bookmarked URL.
         raise HTTPException(status_code=404, detail="Project not found")
     pages = (
         db.query(models.Page)
@@ -330,6 +353,7 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
             "profile": profile,
             "crawl_settings": _crawl_settings_out(crawl_schedule),
             "wordpress_connection": wordpress_connection,
+            "crawler_enabled": is_crawler_enabled(db),
         }
     )
 

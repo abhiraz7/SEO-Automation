@@ -15,9 +15,11 @@ from sqlalchemy.orm import Session
 
 from .. import claude, keyword_locations, keyword_provider, keyword_scoring, models, prompt_builder, schemas
 from ..database import get_db
+from .settings import register_crawler_global
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+register_crawler_global(templates)
 
 STOPWORDS = {"the", "a", "an", "for", "to", "of", "in", "on", "and", "is", "how", "what", "near", "me", "vs"}
 

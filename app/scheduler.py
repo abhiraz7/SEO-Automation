@@ -89,7 +89,18 @@ def dispatch_due_schedules() -> None:
             .filter(models.Schedule.enabled == True, models.Schedule.next_run_at <= now)  # noqa: E712
             .all()
         )
+        crawler_row = db.get(models.CrawlerSettings, 1)
+        crawler_enabled = crawler_row.enabled if crawler_row else True
+
         for schedule in due:
+            schedule.last_run_at = now
+            schedule.next_run_at = compute_next_run_at(schedule, now)
+            if schedule.job_type == "crawl" and not crawler_enabled:
+                logger.info(
+                    "Skipped dispatching crawl job for project %s -- crawler disabled in /settings/crawler",
+                    schedule.project_id,
+                )
+                continue
             db.add(models.Job(
                 project_id=schedule.project_id,
                 job_type=schedule.job_type,
@@ -97,8 +108,6 @@ def dispatch_due_schedules() -> None:
                 payload=schedule.payload,
                 scheduled_for=schedule.next_run_at,
             ))
-            schedule.last_run_at = now
-            schedule.next_run_at = compute_next_run_at(schedule, now)
             logger.info(
                 "Dispatched %s job for project %s, next run %s",
                 schedule.job_type, schedule.project_id, schedule.next_run_at,

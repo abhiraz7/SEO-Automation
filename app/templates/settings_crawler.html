@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Crawler Settings (hidden) — VTechys SEO OS{% endblock %}
+
+{% block topbar %}
+<div style="display:flex;align-items:center;gap:8px;">
+  <span style="font-size:14px;font-weight:700;color:#0f172a;">Crawler Settings</span>
+  <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fef2f2;color:#b91c1c;">hidden — not linked in the UI</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .switch { position:relative; display:inline-block; width:44px; height:24px; flex-shrink:0; }
+  .switch input { opacity:0; width:0; height:0; }
+  .switch-slider { position:absolute; cursor:pointer; inset:0; background:#cbd5e1; transition:.2s; border-radius:24px; }
+  .switch-slider:before { position:absolute; content:""; height:18px; width:18px; left:3px; bottom:3px; background:#fff; transition:.2s; border-radius:50%; box-shadow:0 1px 2px rgba(0,0,0,.2); }
+  .switch input:checked + .switch-slider { background:#dc2626; }
+  .switch input:checked + .switch-slider:before { transform:translateX(20px); }
+</style>
+
+<div style="max-width:640px;margin:0 auto;padding:28px 24px;">
+
+  <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;margin-bottom:20px;font-size:12px;color:#92400e;line-height:1.5;">
+    ⚠️ This page is intentionally not linked anywhere in the sidebar or Settings. It's an internal kill switch for the retiring custom crawler+audit.py pipeline (Phase 1/2 of MasterPlan), now that DataForSEO/SEMrush cover on-page auditing instead. Normal users should never need this page.
+  </div>
+
+  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;display:flex;align-items:flex-start;gap:16px;margin-bottom:20px;">
+    <div style="flex:1;min-width:0;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="font-size:15px;font-weight:700;color:#0f172a;">Custom Crawler</span>
+        {% if enabled %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#dcfce7;color:#15803d;">ENABLED</span>
+        {% else %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;">DISABLED</span>{% endif %}
+      </div>
+      <div style="font-size:12px;color:#64748b;line-height:1.6;margin-bottom:10px;">
+        When disabled, the crawler is completely unavailable to normal users:
+        <ul style="margin:6px 0 0;padding-left:18px;">
+          <li><code>POST /projects/{id}/crawl</code> and <code>/crawl-single</code> return 403</li>
+          <li><code>POST /projects/{id}/jobs/test-crawl</code> and schedule "run now" for crawl jobs return 403</li>
+          <li>The scheduler stops enqueueing new crawl jobs from any active Schedule</li>
+          <li>The Crawl / Crawl Site buttons are hidden from the project page</li>
+        </ul>
+      </div>
+      {% if updated_at %}<div style="font-size:11px;color:#94a3b8;">Last changed: {{ updated_at.strftime('%Y-%m-%d %H:%M UTC') }}</div>{% endif %}
+    </div>
+    <form method="post" action="/settings/crawler/toggle">
+      <input type="hidden" name="enabled" value="{{ 'false' if enabled else 'true' }}">
+      <label class="switch">
+        <input type="checkbox" {{ 'checked' if enabled else '' }} onchange="this.form.submit()">
+        <span class="switch-slider"></span>
+      </label>
+    </form>
+  </div>
+
+  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px 20px;">
+    <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:12px;">Current crawler footprint</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+      <div>
+        <div style="font-size:20px;font-weight:800;color:#0f172a;">{{ crawler_project_count }}</div>
+        <div style="font-size:11px;color:#94a3b8;">manual (crawler) projects</div>
+      </div>
+      <div>
+        <div style="font-size:20px;font-weight:800;color:#0f172a;">{{ queued_crawl_jobs }}</div>
+        <div style="font-size:11px;color:#94a3b8;">queued crawl jobs</div>
+      </div>
+      <div>
+        <div style="font-size:20px;font-weight:800;color:#0f172a;">{{ active_crawl_schedules }}</div>
+        <div style="font-size:11px;color:#94a3b8;">active crawl schedules</div>
+      </div>
+    </div>
+    {% if queued_crawl_jobs > 0 and not enabled %}
+    <div style="margin-top:12px;font-size:11px;color:#b45309;">Note: disabling doesn't cancel jobs already queued before the switch flipped — only blocks new ones.</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

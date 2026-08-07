@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Settings — VTechys SEO OS{% endblock %}
+
+{% block topbar %}
+<div style="display:flex;align-items:center;gap:8px;">
+  <span style="font-size:14px;font-weight:700;color:#0f172a;">Settings</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .provider-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px; display:flex; align-items:flex-start; gap:16px; transition:box-shadow .2s, border-color .2s; }
+  .provider-card.active { border-color:#4f46e5; box-shadow:0 0 0 3px #eef2ff; }
+  .switch { position:relative; display:inline-block; width:40px; height:22px; flex-shrink:0; }
+  .switch input { opacity:0; width:0; height:0; }
+  .switch-slider { position:absolute; cursor:pointer; inset:0; background:#cbd5e1; transition:.2s; border-radius:22px; }
+  .switch-slider:before { position:absolute; content:""; height:16px; width:16px; left:3px; bottom:3px; background:#fff; transition:.2s; border-radius:50%; box-shadow:0 1px 2px rgba(0,0,0,.2); }
+  .switch input:checked + .switch-slider { background:#4f46e5; }
+  .switch input:checked + .switch-slider:before { transform:translateX(18px); }
+  .switch input:disabled + .switch-slider { cursor:not-allowed; opacity:.5; }
+</style>
+
+<div style="max-width:720px;margin:0 auto;padding:28px 24px;">
+  <div style="margin-bottom:20px;">
+    <div style="font-size:18px;font-weight:800;color:#0f172a;margin-bottom:4px;">On-Page Data Provider</div>
+    <div style="font-size:13px;color:#64748b;">Choose which API powers <a href="/onpage-semrush" style="color:#4f46e5;">On-Page SEMrush</a>. Exactly one is active at a time — switching providers doesn't touch data already pulled by the other.</div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px;">
+
+    <!-- DataForSEO -->
+    <div class="provider-card {{ 'active' if active_provider == 'dataforseo' else '' }}">
+      <div style="width:44px;height:44px;border-radius:10px;background:#ecfeff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:800;font-size:15px;color:#0891b2;">DfS</div>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+          <span style="font-size:14px;font-weight:700;color:#0f172a;">DataForSEO</span>
+          {% if active_provider == 'dataforseo' %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#eef2ff;color:#4f46e5;">ACTIVE</span>{% endif %}
+          {% if dataforseo_status.configured %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#dcfce7;color:#15803d;">Configured</span>
+          {% else %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;">Not configured</span>{% endif %}
+        </div>
+        <div style="font-size:12px;color:#64748b;line-height:1.5;margin-bottom:6px;">Instant single-URL checks + site-wide crawl, ~$0.00015/page. Verified working end-to-end (generate → deploy) today.</div>
+        <div style="font-size:11px;color:#94a3b8;">{{ dataforseo_status.detail }}</div>
+      </div>
+      <form method="post" action="/settings/provider/dataforseo/activate">
+        <label class="switch">
+          <input type="checkbox" {{ 'checked' if active_provider == 'dataforseo' else '' }}
+            onchange="this.form.submit()" {{ 'disabled' if active_provider == 'dataforseo' else '' }}>
+          <span class="switch-slider"></span>
+        </label>
+      </form>
+    </div>
+
+    <!-- SEMrush -->
+    <div class="provider-card {{ 'active' if active_provider == 'semrush' else '' }}">
+      <div style="width:44px;height:44px;border-radius:10px;background:#fff7ed;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:800;font-size:16px;color:#c2410c;">Sr</div>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+          <span style="font-size:14px;font-weight:700;color:#0f172a;">SEMrush</span>
+          {% if active_provider == 'semrush' %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#eef2ff;color:#4f46e5;">ACTIVE</span>{% endif %}
+          {% if semrush_status.configured %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#dcfce7;color:#15803d;">Configured</span>
+          {% else %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;">Not configured</span>{% endif %}
+        </div>
+        <div style="font-size:12px;color:#64748b;line-height:1.5;margin-bottom:6px;">Site Audit API, project-based. Account is currently at zero API units and the Projects cap (14/14) — refresh will fail until that's resolved.</div>
+        <div style="font-size:11px;color:#94a3b8;">{{ semrush_status.detail }}</div>
+      </div>
+      <form method="post" action="/settings/provider/semrush/activate">
+        <label class="switch">
+          <input type="checkbox" {{ 'checked' if active_provider == 'semrush' else '' }}
+            onchange="this.form.submit()" {{ 'disabled' if active_provider == 'semrush' else '' }}>
+          <span class="switch-slider"></span>
+        </label>
+      </form>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

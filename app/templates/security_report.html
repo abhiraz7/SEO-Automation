@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Security — {{ project.name }} — VTechys SEO OS{% endblock %}
+
+{% block topbar %}
+<div style="display:flex;align-items:center;gap:8px;">
+  <a href="/security" style="color:#94a3b8;text-decoration:none;font-size:12px;">Security Testing</a>
+  <span style="opacity:0.4;font-size:12px;">/</span>
+  <span style="font-size:14px;font-weight:700;color:#0f172a;">{{ project.name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{% set scolor = '#16a34a' if report.score >= 80 else ('#d97706' if report.score >= 50 else '#dc2626') %}
+<style>
+  .sec-check { display:flex; align-items:center; gap:12px; padding:14px 16px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; }
+  .sec-icon { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:15px; }
+</style>
+
+<div style="padding:28px 24px 40px;max-width:720px;margin:0 auto;">
+
+  <div style="display:flex;align-items:center;gap:20px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:24px;margin-bottom:20px;">
+    <div style="position:relative;width:76px;height:76px;flex-shrink:0;">
+      <svg width="76" height="76" viewBox="0 0 76 76" style="transform:rotate(-90deg);">
+        <circle cx="38" cy="38" r="32" fill="none" stroke="#f1f5f9" stroke-width="8"/>
+        <circle cx="38" cy="38" r="32" fill="none" stroke="{{ scolor }}" stroke-width="8" stroke-linecap="round"
+                stroke-dasharray="{{ (report.score / 100 * 201.1)|round(1) }} 201.1"/>
+      </svg>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:{{ scolor }};">{{ report.score }}</div>
+    </div>
+    <div>
+      <div style="font-size:16px;font-weight:800;color:#0f172a;margin-bottom:2px;">{{ report.base_url }}</div>
+      <div style="font-size:12px;color:#94a3b8;">
+        {% if report.score >= 80 %}Looks solid — minor or no issues found.
+        {% elif report.score >= 50 %}A few things worth fixing.
+        {% else %}Several security basics are missing.{% endif %}
+      </div>
+      <a href="/projects/{{ project.id }}/security" style="display:inline-block;margin-top:8px;font-size:11px;font-weight:600;color:#4f46e5;text-decoration:none;">↻ Re-run check</a>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:10px;">
+
+    <!-- HTTPS -->
+    <div class="sec-check">
+      <div class="sec-icon" style="background:{{ '#dcfce7' if report.https else '#fee2e2' }};color:{{ '#15803d' if report.https else '#dc2626' }};">{{ '✓' if report.https else '✕' }}</div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:700;color:#0f172a;">HTTPS</div>
+        <div style="font-size:11px;color:#94a3b8;">{% if report.https %}Site is served over HTTPS.{% else %}Site is not served over HTTPS — this is a hard requirement, not optional.{% endif %}</div>
+      </div>
+    </div>
+
+    <!-- Reachability -->
+    <div class="sec-check">
+      <div class="sec-icon" style="background:{{ '#dcfce7' if report.reachable and not report.connect_error else '#fee2e2' }};color:{{ '#15803d' if report.reachable and not report.connect_error else '#dc2626' }};">{{ '✓' if report.reachable and not report.connect_error else '✕' }}</div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:700;color:#0f172a;">Reachable</div>
+        <div style="font-size:11px;color:#94a3b8;">
+          {% if report.connect_error %}Connection failed: {{ report.connect_error }}
+          {% else %}Responded with HTTP {{ report.status_code }}.{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Security headers -->
+    {% if report.headers %}
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;">
+      <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:10px;">Security headers</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        {% for h in report.headers %}
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;background:{{ '#dcfce7' if h.present else '#fee2e2' }};color:{{ '#15803d' if h.present else '#dc2626' }};">{{ '✓' if h.present else '✕' }}</span>
+          <code style="font-size:11px;color:#475569;">{{ h.label }}</code>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- robots.txt -->
+    <div class="sec-check">
+      <div class="sec-icon" style="background:{{ '#dcfce7' if report.robots.present else '#fef3c7' }};color:{{ '#15803d' if report.robots.present else '#b45309' }};">{{ '✓' if report.robots.present else '!' }}</div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:700;color:#0f172a;">robots.txt</div>
+        <div style="font-size:11px;color:#94a3b8;">
+          {% if report.robots.present %}Present and returns HTTP 200.
+          {% elif report.robots.error %}Could not fetch: {{ report.robots.error }}
+          {% else %}Returned HTTP {{ report.robots.status_code }} — expected 200.{% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

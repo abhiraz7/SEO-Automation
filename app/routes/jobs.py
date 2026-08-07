@@ -13,8 +13,11 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..database import get_db
 from ..jobs.registry import JOB_HANDLERS
+from .settings import is_crawler_enabled
 
 router = APIRouter()
+
+CRAWLER_DISABLED_DETAIL = "The crawler is disabled. Use DataForSEO/SEMrush on-page audit instead (see On-Page API)."
 
 
 @router.post("/projects/{project_id}/jobs/test-crawl")
@@ -23,6 +26,8 @@ def test_crawl_job(project_id: int, db: Session = Depends(get_db)):
     right here, so Task 2.3 can be verified without the scheduler (Task 2.4)
     existing yet. Not meant to survive past this phase as the real trigger
     path -- Task 2.4's scheduler and Task 2.5's Queue drawer supersede it."""
+    if not is_crawler_enabled(db):
+        raise HTTPException(status_code=403, detail=CRAWLER_DISABLED_DETAIL)
     project = db.get(models.Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -89,6 +94,8 @@ def force_schedule_run_now(project_id: int, job_type: str, db: Session = Depends
     dispatch tick (within 60s) picks it up, without waiting a real day/week
     for its interval to elapse. Enables the schedule too, since a disabled
     one would never be picked up regardless of next_run_at."""
+    if job_type == "crawl" and not is_crawler_enabled(db):
+        raise HTTPException(status_code=403, detail=CRAWLER_DISABLED_DETAIL)
     schedule = (
         db.query(models.Schedule)
         .filter(models.Schedule.project_id == project_id, models.Schedule.job_type == job_type)

@@ -4,8 +4,11 @@ from sqlalchemy.orm import Session
 
 from .. import crawler, models, wordpress
 from ..database import get_db
+from .settings import is_crawler_enabled
 
 router = APIRouter()
+
+CRAWLER_DISABLED_DETAIL = "The crawler is disabled. Use DataForSEO/SEMrush on-page audit instead (see On-Page API)."
 
 PAGE_FIELDS = [
     "status_code", "error", "title", "meta_description", "meta_keywords",
@@ -77,6 +80,8 @@ def _get_project(db: Session, project_id: int) -> models.Project:
 
 @router.post("/projects/{project_id}/crawl")
 def crawl_project(project_id: int, db: Session = Depends(get_db)):
+    if not is_crawler_enabled(db):
+        raise HTTPException(status_code=403, detail=CRAWLER_DISABLED_DETAIL)
     project = _get_project(db, project_id)
     for data in crawler.crawl_site(project.base_url):
         upsert_page(db, project_id, data)
@@ -89,6 +94,8 @@ def crawl_single(
     url: str = Form(None),
     db: Session = Depends(get_db),
 ):
+    if not is_crawler_enabled(db):
+        raise HTTPException(status_code=403, detail=CRAWLER_DISABLED_DETAIL)
     project = _get_project(db, project_id)
     data = crawler.crawl_single_page(url or project.base_url)
     upsert_page(db, project_id, data)

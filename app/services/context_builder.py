@@ -105,13 +105,18 @@ def _cached_row(db: Session, page_id: int, snapshot_id: int) -> models.PageUnder
     )
 
 
-def build_page_understanding(db: Session, page: models.Page) -> models.PageUnderstanding:
+def build_page_understanding(db: Session, page: models.Page) -> models.PageUnderstanding | None:
     """Return the cached page_understanding row for page's latest crawl snapshot,
     generating one with a single Claude call (retried once on malformed JSON) if
-    no cached row exists yet for that snapshot."""
+    no cached row exists yet for that snapshot.
+
+    Returns None (rather than raising) for pages with no crawl snapshot --
+    e.g. DataForSEO/SEMrush-sourced pages, which are never crawled by our
+    own crawler. Suggestion generation still works for those; it just skips
+    the extra "page understanding" context Claude would otherwise get."""
     snapshot = _latest_snapshot(db, page.id)
     if snapshot is None:
-        raise ValueError(f"Page {page.id} has no crawl snapshot to analyze yet")
+        return None
 
     cached = _cached_row(db, page.id, snapshot.id)
     if cached is not None:
