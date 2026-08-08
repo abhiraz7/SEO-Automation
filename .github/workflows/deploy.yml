@@ -15,18 +15,42 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
+      - name: Build SSM command parameters
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SEMRUSH_API_KEY: ${{ secrets.SEMRUSH_API_KEY }}
+          DATAFORSEO_LOGIN: ${{ secrets.DATAFORSEO_LOGIN }}
+          DATAFORSEO_PASSWORD: ${{ secrets.DATAFORSEO_PASSWORD }}
+          WP_TOKEN_KEY: ${{ secrets.WP_TOKEN_KEY }}
+        run: |
+          # Write .env line-by-line via plain echo (no heredoc) -- avoids the
+          # nested-quoting/newline problem heredocs hit once wrapped inside a
+          # JSON array inside a YAML string. python's json module (not jq,
+          # to avoid an extra dependency) builds the array safely, escaping
+          # each secret value correctly no matter what characters it contains.
+          python3 - <<PYEOF
+          import json
+          commands = [
+              "cd /opt/seo-automation",
+              "sudo -u ec2-user git pull origin main",
+              "sudo -u ec2-user bash -c 'echo ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} > .env'",
+              "sudo -u ec2-user bash -c 'echo SEMRUSH_API_KEY=${{ secrets.SEMRUSH_API_KEY }} >> .env'",
+              "sudo -u ec2-user bash -c 'echo DATAFORSEO_LOGIN=${{ secrets.DATAFORSEO_LOGIN }} >> .env'",
+              "sudo -u ec2-user bash -c 'echo DATAFORSEO_PASSWORD=${{ secrets.DATAFORSEO_PASSWORD }} >> .env'",
+              "sudo -u ec2-user bash -c 'echo WP_TOKEN_KEY=${{ secrets.WP_TOKEN_KEY }} >> .env'",
+              "sudo -u ec2-user docker compose -f /opt/seo-automation/docker-compose.yml up -d --build",
+              "docker image prune -f",
+          ]
+          with open("params.json", "w") as f:
+              json.dump({"commands": commands}, f)
+          PYEOF
+
       - name: Deploy via SSM
         run: |
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
-            --parameters commands='[
-              "cd /opt/seo-automation",
-              "sudo -u ec2-user git pull origin main",
-              "sudo -u ec2-user bash -c \"cat > .env << EOF\nANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}\nSEMRUSH_API_KEY=${{ secrets.SEMRUSH_API_KEY }}\nDATAFORSEO_LOGIN=${{ secrets.DATAFORSEO_LOGIN }}\nDATAFORSEO_PASSWORD=${{ secrets.DATAFORSEO_PASSWORD }}\nWP_TOKEN_KEY=${{ secrets.WP_TOKEN_KEY }}\nEOF\"",
-              "sudo -u ec2-user docker compose -f /opt/seo-automation/docker-compose.yml up -d --build",
-              "docker image prune -f"
-            ]' \
+            --parameters file://params.json \
             --query "Command.CommandId" --output text)
 
           aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${{ secrets.EC2_INSTANCE_ID }}" || true
