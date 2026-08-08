@@ -1,0 +1,16 @@
+.venv
+.git
+__pycache__
+*.pyc
+*.db
+*.db-shm
+*.db-wal
+.env
+tests
+docs
+ui-prototype
+claude-wp-mcp final
+AgentDailyLog
+*.md
+.claude
+LEARNING_JOURNAL.md
