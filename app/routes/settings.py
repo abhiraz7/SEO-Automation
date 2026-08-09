@@ -1,14 +1,19 @@
 """
-/settings -- lets the user pick which on-page data provider (DataForSEO or
-SEMrush) drives /onpage-semrush. Exactly one is active at a time; toggling
-one on turns the other off.
+/settings -- lets the user pick which data provider (DataForSEO or SEMrush)
+drives on-page audits AND backlinks (backlinks_provider.py reads this same
+setting -- one switch, both tools follow it, per the "switched for all
+tools" requirement). Exactly one is active at a time; toggling one on turns
+the other off. Keyword Research is deliberately NOT governed by this switch
+-- see backlinks_provider.py's module docstring for why.
 """
+import os
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import dataforseo_onpage, models, semrush, semrush_audit
+from .. import ai_provider, dataforseo_onpage, models, semrush, semrush_audit
 from ..database import SessionLocal, get_db
 
 router = APIRouter()
@@ -68,11 +73,24 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
     else:
         semrush_status = {"configured": False, "detail": "SEMRUSH_API_KEY not set."}
 
+    active_ai = ai_provider.get_active_ai_provider(db)
+    gemini_status = {
+        "configured": bool(os.environ.get("GEMENI_KEY")),
+        "detail": "GEMENI_KEY set." if os.environ.get("GEMENI_KEY") else "GEMENI_KEY not set.",
+    }
+    claude_status = {
+        "configured": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "detail": "ANTHROPIC_API_KEY set." if os.environ.get("ANTHROPIC_API_KEY") else "ANTHROPIC_API_KEY not set.",
+    }
+
     return templates.TemplateResponse(
         request, "settings.html", {
             "active_provider": active,
             "dataforseo_status": dataforseo_status,
             "semrush_status": semrush_status,
+            "active_ai_provider": active_ai,
+            "gemini_status": gemini_status,
+            "claude_status": claude_status,
         }
     )
 
@@ -83,6 +101,21 @@ def activate_provider(provider: str, db: Session = Depends(get_db)):
         return RedirectResponse(url="/settings", status_code=303)
 
     for name in PROVIDERS:
+        row = db.query(models.ProviderSetting).filter(models.ProviderSetting.provider == name).first()
+        if not row:
+            row = models.ProviderSetting(provider=name)
+            db.add(row)
+        row.enabled = (name == provider)
+    db.commit()
+    return RedirectResponse(url="/settings", status_code=303)
+
+
+@router.post("/settings/ai-provider/{provider}/activate")
+def activate_ai_provider(provider: str, db: Session = Depends(get_db)):
+    if provider not in ai_provider.AI_PROVIDERS:
+        return RedirectResponse(url="/settings", status_code=303)
+
+    for name in ai_provider.AI_PROVIDERS:
         row = db.query(models.ProviderSetting).filter(models.ProviderSetting.provider == name).first()
         if not row:
             row = models.ProviderSetting(provider=name)

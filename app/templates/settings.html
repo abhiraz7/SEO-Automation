@@ -22,8 +22,8 @@
 
 <div style="max-width:720px;margin:0 auto;padding:28px 24px;">
   <div style="margin-bottom:20px;">
-    <div style="font-size:18px;font-weight:800;color:#0f172a;margin-bottom:4px;">On-Page Data Provider</div>
-    <div style="font-size:13px;color:#64748b;">Choose which API powers <a href="/onpage-semrush" style="color:#4f46e5;">On-Page SEMrush</a>. Exactly one is active at a time — switching providers doesn't touch data already pulled by the other.</div>
+    <div style="font-size:18px;font-weight:800;color:#0f172a;margin-bottom:4px;">Data Provider</div>
+    <div style="font-size:13px;color:#64748b;">Choose which API powers <a href="/onpage-semrush" style="color:#4f46e5;">On-Page Audits</a> and <strong>Backlinks</strong>. One switch, both tools follow it — switching providers doesn't touch data already pulled by the other. (Keyword Research uses its own automatic Semrush→DataForSEO fallback instead, unaffected by this toggle.)</div>
   </div>
 
   <div style="display:flex;flex-direction:column;gap:14px;">
@@ -67,6 +67,59 @@
         <label class="switch">
           <input type="checkbox" {{ 'checked' if active_provider == 'semrush' else '' }}
             onchange="this.form.submit()" {{ 'disabled' if active_provider == 'semrush' else '' }}>
+          <span class="switch-slider"></span>
+        </label>
+      </form>
+    </div>
+
+  </div>
+
+  <div style="margin:36px 0 20px;">
+    <div style="font-size:18px;font-weight:800;color:#0f172a;margin-bottom:4px;">AI Provider</div>
+    <div style="font-size:13px;color:#64748b;">Choose which model generates fix suggestions, meta optimization, and keyword briefs. Exactly one is active at a time.</div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px;">
+
+    <!-- Claude -->
+    <div class="provider-card {{ 'active' if active_ai_provider == 'claude' else '' }}">
+      <div style="width:44px;height:44px;border-radius:10px;background:#fef3f2;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:800;font-size:16px;color:#c2410c;">Cl</div>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+          <span style="font-size:14px;font-weight:700;color:#0f172a;">Claude</span>
+          {% if active_ai_provider == 'claude' %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#eef2ff;color:#4f46e5;">ACTIVE</span>{% endif %}
+          {% if claude_status.configured %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#dcfce7;color:#15803d;">Configured</span>
+          {% else %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;">Not configured</span>{% endif %}
+        </div>
+        <div style="font-size:12px;color:#64748b;line-height:1.5;margin-bottom:6px;">claude-haiku-4-5. The original, proven provider — every suggestion/meta/brief feature was built and tested against this.</div>
+        <div style="font-size:11px;color:#94a3b8;">{{ claude_status.detail }}</div>
+      </div>
+      <form method="post" action="/settings/ai-provider/claude/activate">
+        <label class="switch">
+          <input type="checkbox" {{ 'checked' if active_ai_provider == 'claude' else '' }}
+            onchange="this.form.submit()" {{ 'disabled' if active_ai_provider == 'claude' else '' }}>
+          <span class="switch-slider"></span>
+        </label>
+      </form>
+    </div>
+
+    <!-- Gemini -->
+    <div class="provider-card {{ 'active' if active_ai_provider == 'gemini' else '' }}">
+      <div style="width:44px;height:44px;border-radius:10px;background:#eef2ff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:800;font-size:16px;color:#4338ca;">Ge</div>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+          <span style="font-size:14px;font-weight:700;color:#0f172a;">Gemini</span>
+          {% if active_ai_provider == 'gemini' %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#eef2ff;color:#4f46e5;">ACTIVE</span>{% endif %}
+          {% if gemini_status.configured %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#dcfce7;color:#15803d;">Configured</span>
+          {% else %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;">Not configured</span>{% endif %}
+        </div>
+        <div style="font-size:12px;color:#64748b;line-height:1.5;margin-bottom:6px;">gemini-flash-latest. Newer, being validated — verify output quality before relying on it for client-facing suggestions.</div>
+        <div style="font-size:11px;color:#94a3b8;">{{ gemini_status.detail }}</div>
+      </div>
+      <form method="post" action="/settings/ai-provider/gemini/activate">
+        <label class="switch">
+          <input type="checkbox" {{ 'checked' if active_ai_provider == 'gemini' else '' }}
+            onchange="this.form.submit()" {{ 'disabled' if active_ai_provider == 'gemini' else '' }}>
           <span class="switch-slider"></span>
         </label>
       </form>

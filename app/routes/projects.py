@@ -417,6 +417,10 @@ def backlinks_overview(project_id: int, db: Session = Depends(get_db)):
         "total_backlinks": latest.total_backlinks,
         "follow_links": latest.follow_links,
         "nofollow_links": latest.nofollow_links,
+        "spam_score": latest.spam_score,
+        "broken_backlinks": latest.broken_backlinks,
+        "tld_distribution": latest.tld_distribution,
+        "platform_distribution": latest.platform_distribution,
         "source": latest.source,
         "fetched_at": latest.fetched_at,
     }
@@ -435,7 +439,7 @@ def refresh_backlinks(project_id: int, db: Session = Depends(get_db)):
     if overview.status == "error":
         raise HTTPException(status_code=502, detail=overview.error)
     if overview.status == "no_data":
-        raise HTTPException(status_code=404, detail="Semrush has no backlink data for this domain.")
+        raise HTTPException(status_code=404, detail=f"{overview.source} has no backlink data for this domain.")
 
     db.add(models.BacklinkSnapshot(
         project_id=project_id,
@@ -444,6 +448,10 @@ def refresh_backlinks(project_id: int, db: Session = Depends(get_db)):
         total_backlinks=overview.total_backlinks,
         follow_links=overview.follow_links,
         nofollow_links=overview.nofollow_links,
+        spam_score=overview.spam_score,
+        broken_backlinks=overview.broken_backlinks,
+        tld_distribution=overview.tld_distribution,
+        platform_distribution=overview.platform_distribution,
         source=overview.source,
         fetched_at=overview.fetched_at,
     ))
@@ -452,7 +460,9 @@ def refresh_backlinks(project_id: int, db: Session = Depends(get_db)):
         "status": "ok", "authority_score": overview.authority_score,
         "referring_domains": overview.referring_domains, "total_backlinks": overview.total_backlinks,
         "follow_links": overview.follow_links, "nofollow_links": overview.nofollow_links,
-        "fetched_at": overview.fetched_at,
+        "spam_score": overview.spam_score, "broken_backlinks": overview.broken_backlinks,
+        "tld_distribution": overview.tld_distribution, "platform_distribution": overview.platform_distribution,
+        "source": overview.source, "fetched_at": overview.fetched_at,
     }
 
 
@@ -482,6 +492,7 @@ def list_backlink_records(project_id: int, filter: str = "active", db: Session =
         {
             "id": r.id, "source_url": r.source_url, "target_url": r.target_url,
             "anchor_text": r.anchor_text, "is_follow": r.is_follow,
+            "domain_rank": r.domain_rank, "spam_score": r.spam_score,
             "first_seen_at": r.first_seen_at, "last_seen_at": r.last_seen_at, "lost_at": r.lost_at,
         }
         for r in query.limit(200).all()

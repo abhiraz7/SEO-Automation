@@ -371,9 +371,12 @@
 {% endif %}
 
 {# ── Backlinks (Task 5.1 + 5.2) ───────────────────── #}
-<div id="backlinks" style="margin:0 0 20px;padding:14px 16px;border-radius:12px;background:#fff;border:1px solid #e2e8f0;scroll-margin-top:16px;">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
-    <div style="font-size:13px;font-weight:700;color:#0f172a;">🔗 Backlinks</div>
+<div id="backlinks" style="margin:0 0 20px;padding:16px 18px;border-radius:12px;background:#fff;border:1px solid #e2e8f0;scroll-margin-top:16px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:13px;font-weight:700;color:#0f172a;">🔗 Backlink Analytics</span>
+      <span id="bl-source-badge" style="display:none;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;"></span>
+    </div>
     <div style="display:flex;align-items:center;gap:8px;">
       <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#374151;">
         <input type="checkbox" id="bl-sched-enabled"> Weekly auto-pull
@@ -382,9 +385,22 @@
       <button onclick="refreshBacklinks()" id="bl-refresh-btn" style="padding:5px 12px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer;">Refresh now</button>
     </div>
   </div>
-  <div id="bl-body" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
+
+  <div id="bl-body" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;">
     <div style="grid-column:1/-1;font-size:12px;color:#94a3b8;">Loading…</div>
   </div>
+
+  <div id="bl-extras" style="display:none;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;padding-top:14px;border-top:1px solid #f1f5f9;">
+    <div>
+      <div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Referring TLDs</div>
+      <div id="bl-tld-bars"></div>
+    </div>
+    <div>
+      <div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Linking Site Types</div>
+      <div id="bl-platform-bars"></div>
+    </div>
+  </div>
+
   <div style="display:flex;gap:2px;background:#f1f5f9;border-radius:8px;padding:3px;margin-bottom:10px;max-width:280px;">
     {% for t in ['active','new','lost'] %}
     <button onclick="switchBlTab(this,'{{ t }}')" data-bltab="{{ t }}"
@@ -1449,17 +1465,71 @@ function blStat(label, value, color) {
   return `<div><div style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;">${label}</div>` +
     `<div style="font-size:20px;font-weight:800;color:${color || '#0f172a'};">${value ?? '—'}</div></div>`;
 }
+// Deterministic threshold, not AI -- spam score is a fact from the provider,
+// this just colors it. Matches the brief's "never use an LLM for basic
+// detection" rule: this is a plain if/else on a number.
+function spamColor(score) {
+  if (score == null) return '#0f172a';
+  if (score >= 30) return '#dc2626';
+  if (score >= 15) return '#d97706';
+  return '#16a34a';
+}
+function blBar(label, value, max, color) {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  return `<div style="margin-bottom:7px;">
+    <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
+      <span style="color:#374151;font-weight:600;">${label}</span>
+      <span style="color:#94a3b8;">${value.toLocaleString()}</span>
+    </div>
+    <div style="background:#f1f5f9;border-radius:4px;height:6px;overflow:hidden;">
+      <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;"></div>
+    </div>
+  </div>`;
+}
+function renderDistribution(elId, dist, color) {
+  const el = document.getElementById(elId);
+  if (!dist) { el.innerHTML = '<div style="font-size:11px;color:#cbd5e1;">Not available from this provider.</div>'; return; }
+  const entries = Object.entries(dist).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const max = entries.length ? entries[0][1] : 0;
+  el.innerHTML = entries.map(([k, v]) => blBar(k || '(unknown)', v, max, color)).join('');
+}
 function renderBacklinks(d) {
   const body = document.getElementById('bl-body');
+  const badge = document.getElementById('bl-source-badge');
+  const extras = document.getElementById('bl-extras');
   if (d.status === 'no_snapshot_yet') {
-    body.innerHTML = '<div style="grid-column:1/-1;font-size:12px;color:#94a3b8;">No backlink data yet — click Refresh to pull it from Semrush.</div>';
+    body.innerHTML = '<div style="grid-column:1/-1;font-size:12px;color:#94a3b8;">No backlink data yet — click Refresh to pull it from the active Data Provider (see Settings).</div>';
+    badge.style.display = 'none';
+    extras.style.display = 'none';
     return;
   }
-  body.innerHTML =
-    blStat('Authority Score', d.authority_score, '#7c3aed') +
-    blStat('Referring Domains', d.referring_domains?.toLocaleString(), '#0284c7') +
-    blStat('Total Backlinks', d.total_backlinks?.toLocaleString(), '#16a34a') +
-    blStat('Follow / Nofollow', (d.follow_links ?? '—') + ' / ' + (d.nofollow_links ?? '—'), '#d97706');
+
+  if (d.source) {
+    const isDfs = d.source === 'dataforseo';
+    badge.style.display = 'inline-block';
+    badge.style.background = isDfs ? '#eef2ff' : '#fff7ed';
+    badge.style.color = isDfs ? '#4338ca' : '#c2410c';
+    badge.textContent = isDfs ? 'via DataForSEO' : 'via SEMrush';
+  }
+
+  const stats = [
+    blStat('Authority / Rank', d.authority_score, '#7c3aed'),
+    blStat('Referring Domains', d.referring_domains?.toLocaleString(), '#0284c7'),
+    blStat('Total Backlinks', d.total_backlinks?.toLocaleString(), '#16a34a'),
+    blStat('Follow / Nofollow', (d.follow_links ?? '—') + ' / ' + (d.nofollow_links ?? '—'), '#d97706'),
+  ];
+  if (d.spam_score != null) stats.push(blStat('Spam Score', d.spam_score, spamColor(d.spam_score)));
+  if (d.broken_backlinks != null) stats.push(blStat('Broken Backlinks', d.broken_backlinks, d.broken_backlinks > 0 ? '#dc2626' : '#16a34a'));
+  body.innerHTML = stats.join('');
+  body.style.gridTemplateColumns = `repeat(${stats.length}, 1fr)`;
+
+  if (d.tld_distribution || d.platform_distribution) {
+    extras.style.display = 'grid';
+    renderDistribution('bl-tld-bars', d.tld_distribution, '#4f46e5');
+    renderDistribution('bl-platform-bars', d.platform_distribution, '#0891b2');
+  } else {
+    extras.style.display = 'none';
+  }
 }
 function loadBacklinks() {
   fetch('/projects/{{ project.id }}/backlinks').then(r => r.json()).then(renderBacklinks)
@@ -1471,12 +1541,12 @@ function refreshBacklinks() {
   fetch('/projects/{{ project.id }}/backlinks/refresh', { method: 'POST' })
     .then(res => res.json().then(d => ({ ok: res.ok, d })))
     .then(({ ok, d }) => {
-      btn.disabled = false; btn.textContent = 'Refresh (live Semrush pull)';
+      btn.disabled = false; btn.textContent = 'Refresh now';
       if (!ok) { showToast('❌ ' + (d.detail || 'Refresh failed'), 'error'); return; }
       renderBacklinks(d);
       showToast('✅ Backlinks refreshed', 'success');
     })
-    .catch(err => { btn.disabled = false; btn.textContent = 'Refresh (live Semrush pull)'; showToast('❌ ' + err.message, 'error'); });
+    .catch(err => { btn.disabled = false; btn.textContent = 'Refresh now'; showToast('❌ ' + err.message, 'error'); });
 }
 loadBacklinks();
 
@@ -1494,12 +1564,17 @@ function loadBacklinkRecords() {
   body.innerHTML = 'Loading…';
   fetch(`/projects/{{ project.id }}/backlinks/records?filter=${blCurrentTab}`).then(r => r.json()).then(rows => {
     if (!rows.length) { body.innerHTML = `No ${blCurrentTab} backlinks${blCurrentTab === 'active' ? ' yet -- click Refresh now or enable weekly auto-pull.' : '.'}`; return; }
+    const hasExtras = rows.some(r => r.domain_rank != null || r.spam_score != null);
     body.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
-      '<thead><tr style="text-align:left;color:#94a3b8;"><th style="padding:4px 8px;">Source</th><th style="padding:4px 8px;">Anchor</th><th style="padding:4px 8px;">Follow</th></tr></thead><tbody>' +
+      '<thead><tr style="text-align:left;color:#94a3b8;"><th style="padding:4px 8px;">Source</th><th style="padding:4px 8px;">Anchor</th>' +
+      (hasExtras ? '<th style="padding:4px 8px;">Domain Rank</th><th style="padding:4px 8px;">Spam</th>' : '') +
+      '<th style="padding:4px 8px;">Follow</th></tr></thead><tbody>' +
       rows.map(r => `<tr style="border-top:1px solid #f1f5f9;">
         <td style="padding:4px 8px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><a href="${r.source_url}" target="_blank" rel="noopener" style="color:#4f46e5;text-decoration:none;">${r.source_url}</a></td>
-        <td style="padding:4px 8px;color:#64748b;">${r.anchor_text || '—'}</td>
-        <td style="padding:4px 8px;">${r.is_follow ? '✅' : '🚫'}</td>
+        <td style="padding:4px 8px;color:#64748b;">${r.anchor_text || '—'}</td>` +
+        (hasExtras ? `<td style="padding:4px 8px;color:#374151;">${r.domain_rank ?? '—'}</td>
+        <td style="padding:4px 8px;color:${r.spam_score >= 30 ? '#dc2626' : r.spam_score >= 15 ? '#d97706' : '#374151'};">${r.spam_score ?? '—'}</td>` : '') +
+        `<td style="padding:4px 8px;">${r.is_follow ? '✅' : '🚫'}</td>
       </tr>`).join('') + '</tbody></table>';
   }).catch(() => { body.innerHTML = 'Could not load backlink records.'; });
 }

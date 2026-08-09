@@ -1,5 +1,6 @@
 fastapi
 anthropic
+google-genai
 python-dotenv
 uvicorn[standard]
 sqlalchemy

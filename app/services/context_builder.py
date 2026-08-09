@@ -3,7 +3,8 @@ Builds a structured, LLM-derived understanding of a single page: its type, topic
 search intent, target keyword(s), and which part of the business profile (service /
 location / audience) the page's own content is actually relevant to.
 
-One Claude call per page (temperature=0 for deterministic, repeatable output;
+One LLM call per page, via app/ai_provider.py's Claude/Gemini toggle
+(temperature=0 for deterministic, repeatable output;
 JSON-only response; retried once if the response isn't valid JSON). Results are
 cached per crawl snapshot in the page_understanding table — re-analyzing a page
 whose content hasn't changed since the last crawl costs nothing.
@@ -13,11 +14,10 @@ import json
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from .. import claude as claude_client
+from .. import ai_provider
 from .. import models
 from ..schemas import PageUnderstandingResult
 
-MODEL = "claude-haiku-4-5-20251001"
 TEMPERATURE = 0
 MAX_TOKENS = 1024
 
@@ -131,11 +131,11 @@ def build_page_understanding(db: Session, page: models.Page) -> models.PageUnder
     prompt = _build_prompt(page, profile, fit_markdown)
 
     try:
-        raw = claude_client.complete(prompt, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, model=MODEL)
+        raw = ai_provider.complete(db, prompt, max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
         result = _parse_response(raw)
     except (json.JSONDecodeError, ValidationError):
         # Retry once — LLMs occasionally wrap JSON in prose despite instructions.
-        raw = claude_client.complete(prompt, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, model=MODEL)
+        raw = ai_provider.complete(db, prompt, max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
         result = _parse_response(raw)
 
     row = models.PageUnderstanding(

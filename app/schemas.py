@@ -47,7 +47,13 @@ class CrawlSettingsOut(CrawlSettingsIn):
 
 class BacklinksOverview(BaseModel):
     """Backlinks tab overview (Task 5.1). Same ok/no_data/error discipline as
-    NormalizedKeyword -- see backlinks_provider.py."""
+    NormalizedKeyword -- see backlinks_provider.py.
+
+    spam_score/broken_backlinks/tld_distribution/platform_distribution are
+    DataForSEO-only -- verified live against the real backlinks/summary/live
+    response (2026-08-09), not guessed. They stay None on the Semrush path,
+    which has no equivalent fields -- the UI must treat them as optional,
+    not assume every source populates every field."""
     status: str = "ok"  # "ok" | "no_data" | "error"
     error: str | None = None
     authority_score: int | None = None
@@ -55,6 +61,10 @@ class BacklinksOverview(BaseModel):
     total_backlinks: int | None = None
     follow_links: int | None = None
     nofollow_links: int | None = None
+    spam_score: int | None = None
+    broken_backlinks: int | None = None
+    tld_distribution: dict[str, int] | None = None
+    platform_distribution: dict[str, int] | None = None
     source: str = "none"
     fetched_at: datetime
 

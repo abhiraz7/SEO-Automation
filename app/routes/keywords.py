@@ -13,7 +13,7 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import claude, keyword_locations, keyword_provider, keyword_scoring, models, prompt_builder, schemas
+from .. import ai_provider, keyword_locations, keyword_provider, keyword_scoring, models, prompt_builder, schemas
 from ..database import get_db
 from .settings import register_crawler_global
 
@@ -454,7 +454,7 @@ def generate_brief(workspace_id: int, payload: schemas.TrackKeywordIn, db: Sessi
         "questions": [q.keyword for q in questions[:8]],
     }
     try:
-        brief = claude.complete(prompt_builder.build_keyword_brief_prompt(context), max_tokens=1500, temperature=0.7)
+        brief = ai_provider.complete(db, prompt_builder.build_keyword_brief_prompt(context), max_tokens=1500, temperature=0.7)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Brief generation failed: {e}")
     return {"keyword": keyword, "brief": brief}

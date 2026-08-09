@@ -67,7 +67,17 @@
     </a>
 
     {{ nav_link("#", "Content", "content", enabled=False) }}
-    {{ nav_link((("/projects/" ~ project.id ~ "#backlinks") if project is defined else "/"), "Backlinks", "backlinks") }}
+    {% if project is defined %}
+      {# Explicit destination, not relying on the /projects/{id} -> /onpage
+         redirect preserving the #backlinks fragment (browsers do this
+         correctly, but it's implicit -- point directly at the real page
+         instead of through a redirect). Same on-page/crawler branching
+         routes/projects.py's project_detail route already does. #}
+      {% set bl_href = (path if path.startswith("/projects/" ~ project.id ~ "/onpage") else "/projects/" ~ project.id) ~ "#backlinks" %}
+    {% else %}
+      {% set bl_href = "/" %}
+    {% endif %}
+    {{ nav_link(bl_href, "Backlinks", "backlinks") }}
 
     <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">AI</div>
     {{ nav_link("/visibility", "AI Visibility", "visibility", active=path.startswith("/visibility") or path.endswith("/visibility")) }}
@@ -77,7 +87,11 @@
     <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">Tools</div>
     {{ nav_link("#", "Schema Generator", "schema", enabled=False) }}
     {{ nav_link("#", "Link Analyzer", "link", enabled=False) }}
-    {{ nav_link("#", "Competitor Analysis", "competitor", enabled=False) }}
+    {% if project is defined %}
+      {{ nav_link("/projects/" ~ project.id ~ "/competitors", "Competitor Analysis", "competitor", active=path.startswith("/projects/" ~ project.id ~ "/competitors")) }}
+    {% else %}
+      {{ nav_link("#", "Competitor Analysis", "competitor", enabled=False, disabled_reason="open a project first") }}
+    {% endif %}
     {{ nav_link("#", "AI Writer", "aiwriter", enabled=False) }}
     {{ nav_link("/security", "Security Testing", "security", active=path.startswith("/security") or path.endswith("/security")) }}
 

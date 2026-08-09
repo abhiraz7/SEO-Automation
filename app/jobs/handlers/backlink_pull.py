@@ -79,12 +79,21 @@ def run_backlink_pull_job(db: Session, job: models.Job) -> None:
                     target_url=key[1],
                     anchor_text=row.get("anchor"),
                     is_follow=(row.get("nofollow", "").lower() != "true"),
+                    domain_rank=row.get("domain_rank"),  # DataForSEO-only, None on Semrush rows
+                    spam_score=row.get("spam_score"),    # DataForSEO-only, None on Semrush rows
                     first_seen_at=now,
                     last_seen_at=now,
                 ))
                 new_count += 1
             else:
                 record.last_seen_at = now
+                # Refresh these on every pull -- a domain's rank/spam score
+                # can change between pulls, unlike anchor_text which is
+                # tied to the specific link and shouldn't silently change.
+                if row.get("domain_rank") is not None:
+                    record.domain_rank = row.get("domain_rank")
+                if row.get("spam_score") is not None:
+                    record.spam_score = row.get("spam_score")
                 if record.lost_at is not None:
                     record.lost_at = None  # relinked
                 active_count += 1

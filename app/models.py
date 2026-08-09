@@ -319,6 +319,12 @@ class BacklinkSnapshot(Base):
     total_backlinks = Column(Integer)
     follow_links = Column(Integer)
     nofollow_links = Column(Integer)
+    # DataForSEO-only (migration 020) -- NULL on Semrush-sourced rows, which
+    # have no equivalent fields.
+    spam_score = Column(Integer)
+    broken_backlinks = Column(Integer)
+    tld_distribution = Column(JSON)
+    platform_distribution = Column(JSON)
     source = Column(String, nullable=False)
     fetched_at = Column(DateTime, default=_utcnow)
 
@@ -361,6 +367,9 @@ class BacklinkRecord(Base):
     source_url = Column(Text, nullable=False)
     target_url = Column(Text, nullable=False)
     anchor_text = Column(Text)
+    # DataForSEO-only (migration 021) -- NULL on Semrush-sourced rows.
+    domain_rank = Column(Integer)
+    spam_score = Column(Integer)
     is_follow = Column(Boolean)
     first_seen_at = Column(DateTime, default=_utcnow)
     last_seen_at = Column(DateTime, default=_utcnow)
@@ -489,3 +498,49 @@ class PageUnderstanding(Base):
     snapshot_id = Column(Integer, ForeignKey("crawl_snapshots.id"), nullable=False)
     understanding_json = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class Competitor(Base):
+    """Competitor Analysis module foundation. ONE competitor record per
+    (project, domain) -- Keyword Gap, Backlink Gap, SERP Comparison, and
+    every other future Competitor Analysis branch must query this same
+    table rather than each growing their own competitor list. domain is
+    always the normalized form (domain_utils.normalize_domain) so
+    example.com / http://example.com / www.example.com/ can never become
+    three separate rows for the same real competitor."""
+    __tablename__ = "competitors"
+    __table_args__ = (UniqueConstraint("project_id", "domain", name="uq_competitor_project_domain"),)
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    domain = Column(String, nullable=False)
+    display_name = Column(String)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class CompetitorSnapshot(Base):
+    """Point-in-time comparison metrics -- same pattern as BacklinkSnapshot/
+    KeywordSnapshot: one row per fetch, never overwritten, so history is
+    preserved. competitor_id NULL means this snapshot is the PROJECT'S OWN
+    site (the "My Site" column in the comparison table), not a competitor
+    -- keeps one table serving both instead of duplicating columns.
+
+    Fetched only on an explicit Refresh action (never on page load, per
+    the Competitor Analysis brief's "do not add expensive API calls on
+    every page load" rule) via app/services/competitor_analysis.py, which
+    reads existing provider adapters (semrush.py, backlinks_provider.py)
+    -- no new provider integration was added for this module."""
+    __tablename__ = "competitor_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    competitor_id = Column(Integer, ForeignKey("competitors.id"), nullable=True)
+    organic_keywords = Column(Integer)
+    referring_domains = Column(Integer)
+    total_backlinks = Column(Integer)
+    keywords_source = Column(String)   # which provider organic_keywords came from
+    backlinks_source = Column(String)  # which provider referring_domains/total_backlinks came from
+    error = Column(Text)               # set (fields above stay NULL) if every provider call failed
+    fetched_at = Column(DateTime, default=_utcnow)

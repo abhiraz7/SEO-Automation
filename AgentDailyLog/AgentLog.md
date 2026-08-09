@@ -1093,3 +1093,98 @@ I don't have access to** — not on missing code. I did not fake any of them.
   NSSM/Caddy spec against what was actually built (Docker/SSM/GitHub
   Actions) -- probably worth rewriting that task rather than treating
   it as still-open against a plan that's no longer the intended path.
+
+## 2026-08-09 — Session: Gemini migration, dual-provider Backlinks, Competitor Analysis foundation
+
+### Done
+- **Gemini added as a second AI provider**, toggleable per-request via a new
+  `app/ai_provider.py` dispatcher (reuses the existing `ProviderSetting`
+  table/pattern from the on-page provider toggle). `app/gemini.py` mirrors
+  `app/claude.py`'s exact interface. Real live-call debugging along the
+  way: `gemini-2.5-flash` 404'd ("no longer available to new users") even
+  though listed by the API; settled on the `gemini-flash-latest` alias.
+  Hit a `MAX_TOKENS`-with-empty-content failure caused by hidden "thinking"
+  tokens consuming the budget -- fixed with `thinking_budget=0`. Then hit a
+  `429 quota=0` (Google Cloud billing not enabled on that project) --
+  user enabled billing mid-session. All 3 real call sites
+  (`suggestions.py`, `keywords.py`, `context_builder.py`) migrated to go
+  through the dispatcher; defaults to Claude with zero behavior change
+  until the /settings slider is flipped.
+- **DataForSEO wired into Backlinks** (`app/dataforseo.py`:
+  `fetch_backlinks_overview`, `fetch_backlinks_list`), verified against
+  real live calls before writing any mapping code (found DataForSEO's
+  richer fields -- spam score, TLD/platform distribution, native
+  is_new/is_lost per link -- genuinely exceed Semrush's overview).
+  `backlinks_provider.py` now routes Semrush vs DataForSEO by the SAME
+  global Data Provider switch already governing on-page audits ("switch
+  once, both tools follow" per explicit instruction) -- Keyword Research
+  deliberately left out, it has its own separate automatic fallback.
+  Migrations 020/021 add the new DataForSEO-only columns to
+  `BacklinkSnapshot`/`BacklinkRecord`.
+- **Real bug found and fixed**: the Backlinks panel only existed on
+  `project_detail.html`, which is unreachable for every real project in
+  this account (crawler-sourced projects 404 by design since the kill
+  switch is off; provider-sourced projects redirect to `/onpage`). Added
+  the panel to `onpage_semrush.html` too (kept the old one in place,
+  since "do not remove working functionality"). Also fixed the sidebar's
+  Backlinks link to point directly at the real destination instead of
+  relying on implicit redirect+URL-fragment browser behavior.
+- **Architecture audit performed** (`prompts/VTechSEO-Architecture-Audit.md`)
+  against a detailed external brief -- confirmed the Claude/Gemini
+  dispatcher and ok/no_data/error discipline already matched what the
+  brief asked for (built independently, before the brief arrived);
+  confirmed keyword clustering is lexical-only (explicitly documented as
+  "out of scope" in its own code comment) and there's zero competitor
+  storage anywhere in the schema.
+- **Competitor Analysis module, Phase 1-3 built and stopped for review**
+  (per explicit instruction not to build Keyword Gap/Backlink Gap/AI in
+  the same pass): `Competitor` + `CompetitorSnapshot` models (migration
+  022), `app/domain_utils.py` (normalize_domain -- verified all 6 required
+  cases: protocol, www, trailing slash, casing, path/query/fragment,
+  whitespace), `app/services/competitor_analysis.py` (reuses
+  `semrush.fetch_domain_metrics` + `backlinks_provider.py`, zero new
+  provider integrations), `app/routes/competitors.py`, new
+  `competitors.html` page, enabled the sidebar's previously-disabled
+  "Competitor Analysis" placeholder link. Full Phase 6 validation run and
+  passed: add/edit/deactivate/duplicate-rejected/normalization/
+  project-isolation all tested against the real app, 71/71 existing tests
+  still pass, py_compile clean. One real bug found during validation and
+  fixed: an error message mislabeled Semrush's own internal
+  domain_ranks+backlinks_overview failure as "organic keywords," making
+  working DataForSEO backlinks data look like it had also failed.
+- **`domain_intersection` (the real Backlink Gap query) verified live**,
+  not assumed: confirmed `exclude_targets` is a real, working parameter
+  (`targets: {competitor}, exclude_targets: [my domain]` returns exactly
+  the gap -- domains linking to the competitor but not to me), cost
+  $0.024/call. Stopped here, before writing any Backlink Gap code, per
+  user's "save progress, start from here" at end of session.
+- **Two stray-character path bugs** hit while writing new files this
+  session (a stray character intermittently inserted into typed Windows
+  paths) -- caught both via file-not-found errors, cleaned up the one
+  that actually created a wrong directory tree (rm -rf on the mangled
+  path, confirmed real repo untouched).
+
+### Known gaps / standing issues, not fixed this session
+- **Semrush account has 0 API units**, confirmed via multiple live 403s
+  today (backlinks overview/list, and internally inside
+  `fetch_domain_metrics`'s domain_ranks call, which blanks out the
+  Competitor Overview table's "Organic Keywords" column for every real
+  domain). This is an account/billing action item, not a code bug --
+  flagged to the user as something that will keep silently degrading
+  features built on top of it until resolved.
+- `Suggestion.source` is still hardcoded `"claude"` regardless of which
+  provider actually generated it (flagged when Gemini was added, not
+  fixed -- same as last session, still needs a real column).
+- Postgres migration, monitoring/auto-recovery, db backup, domain+HTTPS --
+  all still open from the previous session, untouched this session.
+
+### Next
+- User chose **Backlink Gap** as the next module (over fixing Semrush's
+  balance first, and over Keyword Gap) specifically because it's the only
+  gap-analysis feature already scoped in writing and doesn't depend on
+  the broken Semrush path. Proposed build, not yet started: new
+  `fetch_domain_intersection` in `dataforseo.py`, a `CompetitorBacklinkGap`
+  model (reusing the `Competitor` table, no new competitor list), a new
+  section on the Competitor Analysis page, explicit-refresh only.
+- Nothing has been committed/pushed yet as of this entry -- see the
+  commit immediately following this one for what actually landed.

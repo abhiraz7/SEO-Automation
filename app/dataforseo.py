@@ -206,6 +206,111 @@ def fetch_serp(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
         return {"error": str(e)}
 
 
+def _domain_only(base_url: str) -> str:
+    return base_url.replace("https://", "").replace("http://", "").split("/")[0]
+
+
+def fetch_backlinks_overview(base_url: str) -> dict:
+    """Mirrors semrush.fetch_backlinks_overview's dict contract (authority_score,
+    referring_domains, total_backlinks, follow_links, nofollow_links, error) so
+    backlinks_provider.py can treat both sources identically for those 5 shared
+    fields, plus 4 extra DataForSEO-only fields (spam_score, broken_backlinks,
+    tld_distribution, platform_distribution) that BacklinksOverview now carries.
+
+    Field mapping verified against a real live call (2026-08-09), not guessed:
+    - authority_score <- rank (DataForSEO's own 0-1000 domain rank, not
+      directly comparable to Semrush's Authority Score scale -- same
+      *purpose*, different *scale*. UI must not imply they're the same number.)
+    - follow/nofollow split <- referring_pages minus referring_pages_nofollow.
+      DataForSEO's summary has no single "total backlinks that are dofollow"
+      field (that would need aggregating the full per-link list, a separate,
+      far more expensive call) -- referring_pages is the closest proxy the
+      summary endpoint actually returns.
+    """
+    if not is_configured():
+        return {"error": "DataForSEO not configured"}
+
+    domain = _domain_only(base_url)
+    result = {
+        "authority_score": None, "referring_domains": None, "total_backlinks": None,
+        "follow_links": None, "nofollow_links": None, "error": None,
+    }
+    try:
+        data = _post("/backlinks/summary/live", [{"target": domain}])
+        if data.get("status_code") != 20000:
+            result["error"] = data.get("status_message") or f"status {data.get('status_code')}"
+            return result
+
+        task = (data.get("tasks") or [{}])[0]
+        if task.get("status_code") != 20000:
+            result["error"] = task.get("status_message") or f"task status {task.get('status_code')}"
+            return result
+
+        rows = task.get("result")
+        if not rows:
+            result["no_data"] = True
+            return result
+
+        row = rows[0]
+        referring_pages = row.get("referring_pages") or 0
+        referring_pages_nofollow = row.get("referring_pages_nofollow") or 0
+        result.update({
+            "authority_score": row.get("rank"),
+            "referring_domains": row.get("referring_domains"),
+            "total_backlinks": row.get("backlinks"),
+            "follow_links": referring_pages - referring_pages_nofollow,
+            "nofollow_links": referring_pages_nofollow,
+            "spam_score": row.get("backlinks_spam_score"),
+            "broken_backlinks": row.get("broken_backlinks"),
+            "tld_distribution": row.get("referring_links_tld"),
+            "platform_distribution": row.get("referring_links_platform_types"),
+        })
+        return result
+    except Exception as e:
+        result["error"] = f"backlinks_summary: {e}"
+        return result
+
+
+def fetch_backlinks_list(base_url: str, limit: int = 100) -> dict:
+    """Mirrors semrush.fetch_backlinks_list's {"rows": [...], "error": None}
+    contract. Each row maps to the same keys backlinks_provider.py already
+    reads from Semrush's CSV rows (source_url, target_url, anchor, nofollow),
+    plus DataForSEO's own is_new/is_lost flags (Semrush's per-link report has
+    no equivalent -- our own backlink_pull.py diffing job computes new/lost
+    itself instead)."""
+    if not is_configured():
+        return {"rows": [], "error": "DataForSEO not configured"}
+
+    domain = _domain_only(base_url)
+    try:
+        data = _post("/backlinks/backlinks/live", [{"target": domain, "limit": limit, "mode": "as_is"}])
+        if data.get("status_code") != 20000:
+            return {"rows": [], "error": data.get("status_message") or f"status {data.get('status_code')}"}
+
+        task = (data.get("tasks") or [{}])[0]
+        if task.get("status_code") != 20000:
+            return {"rows": [], "error": task.get("status_message") or f"task status {task.get('status_code')}"}
+
+        items = ((task.get("result") or [{}])[0] or {}).get("items") or []
+        rows = [
+            {
+                "source_url": item.get("url_from"),
+                "target_url": item.get("url_to"),
+                "anchor": item.get("anchor"),
+                "nofollow": "false" if item.get("dofollow") else "true",
+                "is_new": item.get("is_new"),
+                "is_lost": item.get("is_lost"),
+                "domain_rank": item.get("domain_from_rank"),
+                "spam_score": item.get("backlink_spam_score"),
+                "first_seen": item.get("first_seen"),
+            }
+            for item in items
+        ]
+        return {"rows": rows, "error": None}
+    except Exception as e:
+        return {"rows": [], "error": f"backlinks_list: {e}"}
+
+
 def normalize_keyword_row(row: dict, keyword: str) -> NormalizedKeyword:
     """Maps a raw DataForSEO Labs item into NormalizedKeyword. Only ever called
     on successful rows -- error/no_data results are handled by keyword_provider,

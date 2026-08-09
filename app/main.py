@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from . import scheduler as job_scheduler
 from .database import Base, engine
-from .routes import audit, crawl, jobs, keywords, onpage_semrush, projects, security, settings, suggestions, visibility, wordpress
+from .routes import audit, competitors, crawl, jobs, keywords, onpage_semrush, projects, security, settings, suggestions, visibility, wordpress
 
 Base.metadata.create_all(bind=engine)
 
@@ -37,3 +37,4 @@ app.include_router(onpage_semrush.router)
 app.include_router(settings.router)
 app.include_router(security.router)
 app.include_router(visibility.router)
+app.include_router(competitors.router)

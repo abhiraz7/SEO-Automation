@@ -7,8 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import models, prompt_builder
-from .. import claude as claude_client
+from .. import ai_provider, models, prompt_builder
 from ..database import get_db
 from ..services import context_builder
 
@@ -74,7 +73,7 @@ def _generate_and_store(db: Session, project_id: int, page_id: int, issue_id: in
         )
     }
 
-    texts = claude_client.generate_suggestions(context)
+    texts = ai_provider.generate_suggestions(db, context)
     rows = []
     seen_hashes = set(decided_hashes)  # also guards against dupes *within* this same batch
     rank = 0
@@ -126,6 +125,11 @@ def _suggestion_out(s: models.Suggestion) -> dict:
         "status": s.status,
         "content": s.content,
         "edited_content": s.edited_content,
+        # Hardcoded -- Suggestion has no source column, so this doesn't
+        # reflect which provider (Claude/Gemini) actually generated a given
+        # row, only ever shows "claude". Fine while Claude is the only
+        # provider in practice; needs a real column once Gemini suggestions
+        # start getting generated, so old and new rows stay honestly labeled.
         "source": "claude",
         "rank": s.rank,
         "accepted_at": s.accepted_at,
