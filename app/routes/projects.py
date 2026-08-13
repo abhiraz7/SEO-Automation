@@ -17,6 +17,7 @@ from .settings import is_crawler_enabled, register_crawler_global
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["current_value_for"] = audit.current_value_for
+templates.env.globals["current_value_display"] = audit.current_value_display
 templates.env.globals["RULE_REQUIREMENTS"] = audit.RULE_REQUIREMENTS
 register_crawler_global(templates)
 
@@ -194,9 +195,6 @@ def create_project(
     return RedirectResponse(url=f"/projects/{project.id}", status_code=303)
 
 
-PROFILE_FIELDS = ["brand", "industry", "services", "locations", "audiences", "tone", "usp"]
-
-
 @router.get("/projects/{project_id}/business-profile", response_model=schemas.BusinessProfileOut)
 def get_business_profile(project_id: int, db: Session = Depends(get_db)):
     profile = (
@@ -209,10 +207,22 @@ def get_business_profile(project_id: int, db: Session = Depends(get_db)):
     return profile
 
 
-@router.post("/projects/{project_id}/business-profile", response_model=schemas.BusinessProfileOut)
+def _split_list(raw: str) -> list[str]:
+    """Turns a comma/newline-separated textarea value into a clean list of strings."""
+    return [part.strip() for part in raw.replace("\n", ",").split(",") if part.strip()]
+
+
+@router.post("/projects/{project_id}/business-profile")
 def save_business_profile(
     project_id: int,
-    payload: schemas.BusinessProfileIn,
+    brand: str = Form(""),
+    industry: str = Form(""),
+    services: str = Form(""),
+    locations: str = Form(""),
+    audiences: str = Form(""),
+    tone: str = Form(""),
+    usp: str = Form(""),
+    return_to: str = Form(""),
     db: Session = Depends(get_db),
 ):
     project = db.get(models.Project, project_id)
@@ -228,12 +238,17 @@ def save_business_profile(
         profile = models.BusinessProfile(project_id=project_id)
         db.add(profile)
 
-    for field in PROFILE_FIELDS:
-        setattr(profile, field, getattr(payload, field))
+    profile.brand = brand.strip() or None
+    profile.industry = industry.strip() or None
+    profile.services = _split_list(services)
+    profile.locations = _split_list(locations)
+    profile.audiences = _split_list(audiences)
+    profile.tone = tone.strip() or None
+    profile.usp = usp.strip() or None
 
     db.commit()
-    db.refresh(profile)
-    return profile
+    safe_return_to = return_to if return_to.startswith("/") and not return_to.startswith("//") else ""
+    return RedirectResponse(url=safe_return_to or f"/projects/{project_id}", status_code=303)
 
 
 @router.post("/projects/{project_id}/delete")

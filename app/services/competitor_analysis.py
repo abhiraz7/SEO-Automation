@@ -60,6 +60,14 @@ def fetch_site_metrics(base_url: str) -> dict:
     backlinks = backlinks_provider.get_backlinks_overview(base_url)
     if backlinks.status == "error":
         errors.append(f"backlinks: {backlinks.error}")
+    elif backlinks.status == "no_data":
+        # Distinct from "error" -- the provider call succeeded, it just has
+        # no index for this domain (real, confirmed case: DataForSEO has
+        # zero backlink data for some real domains). Surfacing this
+        # explicitly so a blank cell never looks identical to "the call
+        # actually failed" -- same ok/no_data/error discipline used
+        # everywhere else in this codebase.
+        errors.append(f"backlinks: {backlinks.source or 'the active provider'} has no data indexed for this domain")
     elif backlinks.status == "ok":
         result["referring_domains"] = backlinks.referring_domains
         result["total_backlinks"] = backlinks.total_backlinks

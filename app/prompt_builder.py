@@ -22,13 +22,14 @@ from . import audit
 FIT_MARKDOWN_LIMIT = 3000
 
 PROFILE_FIELDS = [
-    ("Business name", "business_name"),
-    ("Business description", "business_description"),
+    ("Brand", "brand"),
     ("Industry", "industry"),
-    ("Products / services", "products_services"),
-    ("Target audience", "target_audience"),
-    ("Primary market", "primary_market"),
-    ("Brand tone", "brand_tone"),
+    ("Brand tone", "tone"),
+    ("USP", "usp"),
+]
+PROFILE_LIST_FIELDS = [
+    ("Services", "services"),
+    ("Audiences", "audiences"),
 ]
 
 
@@ -76,8 +77,9 @@ def _profile_block(profile) -> str:
     if profile is None:
         return ""
     lines = [f"- {label}: {getattr(profile, attr)}" for label, attr in PROFILE_FIELDS if getattr(profile, attr, None)]
+    lines += [f"- {label}: {', '.join(getattr(profile, attr))}" for label, attr in PROFILE_LIST_FIELDS if getattr(profile, attr, None)]
 
-    location_parts = [p for p in (profile.city, profile.state_region, profile.country) if p]
+    location_parts = profile.locations or []
     geo = ""
     if location_parts:
         location = ", ".join(location_parts)

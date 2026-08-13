@@ -23,12 +23,13 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import dataforseo_onpage, models, wordpress
+from .. import audit, dataforseo_onpage, models, wordpress
 from ..database import get_db
 from .settings import register_crawler_global
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["current_value_display"] = audit.current_value_display
 register_crawler_global(templates)
 
 CATEGORY_COLORS = {
@@ -41,7 +42,7 @@ CATEGORY_LABELS = {
     "image_alt": "Image Alt Text", "canonical": "Canonical Link", "opengraph": "Open Graph",
     "twitter": "Twitter Card", "content": "Content Quality", "security": "Security",
 }
-DEPLOYABLE_CATEGORIES = ["meta_description", "title", "h1"]
+DEPLOYABLE_CATEGORIES = ["meta_description", "title", "h1", "twitter", "canonical", "opengraph"]
 PROVIDER_LABELS = {"dataforseo": "DataForSEO", "semrush": "SEMrush"}
 ONPAGE_PROVIDERS = ("dataforseo", "semrush")
 
@@ -200,6 +201,7 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
         .all()
     )
     wp_conn = db.query(models.WordPressConnection).filter(models.WordPressConnection.project_id == project.id).first()
+    profile = db.query(models.BusinessProfile).filter(models.BusinessProfile.project_id == project.id).first()
 
     wp_token_preview = None
     if wp_conn:
@@ -262,6 +264,7 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             "tasks": tasks,
             "wp_conn": wp_conn,
             "wp_token_preview": wp_token_preview,
+            "profile": profile,
             "wp_error": request.query_params.get("wp_error"),
             "total_pages": total_pages,
             "total_issues": total_issues,

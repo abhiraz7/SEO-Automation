@@ -36,7 +36,7 @@
     <button onclick="openDrawer('profile-drawer')" title="Business profile — context for AI suggestions"
       style="display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer;transition:background 0.15s;"
       onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#fff'">
-      <span style="width:7px;height:7px;border-radius:50%;background:{{ '#22c55e' if profile and profile.business_name else '#cbd5e1' }};flex-shrink:0;"></span>
+      <span style="width:7px;height:7px;border-radius:50%;background:{{ '#22c55e' if profile and profile.brand else '#cbd5e1' }};flex-shrink:0;"></span>
       🏢 Business Profile
     </button>
     <!-- Crawl + settings -->
@@ -401,15 +401,24 @@
     </div>
   </div>
 
-  <div style="display:flex;gap:2px;background:#f1f5f9;border-radius:8px;padding:3px;margin-bottom:10px;max-width:280px;">
-    {% for t in ['active','new','lost'] %}
-    <button onclick="switchBlTab(this,'{{ t }}')" data-bltab="{{ t }}"
-      style="flex:1;padding:5px 8px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;{% if loop.first %}background:#fff;color:#4f46e5;box-shadow:0 1px 3px rgba(0,0,0,.07);{% else %}background:transparent;color:#64748b;{% endif %}">
-      {{ t|title }}
-    </button>
-    {% endfor %}
-  </div>
-  <div id="bl-records-body" style="font-size:12px;color:#94a3b8;">Loading…</div>
+  <details class="ig" id="bl-records-details" style="border:1px solid #e2e8f0;">
+    <summary style="padding:8px 12px;">
+      <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.5" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+      <span style="font-size:12px;font-weight:700;color:#0f172a;flex:1;">Backlink list</span>
+      <span id="bl-records-count" style="font-size:11px;color:#94a3b8;"></span>
+    </summary>
+    <div style="padding:12px;">
+      <div style="display:flex;gap:2px;background:#f1f5f9;border-radius:8px;padding:3px;margin-bottom:10px;max-width:280px;">
+        {% for t in ['active','new','lost'] %}
+        <button onclick="switchBlTab(this,'{{ t }}')" data-bltab="{{ t }}"
+          style="flex:1;padding:5px 8px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;{% if loop.first %}background:#fff;color:#4f46e5;box-shadow:0 1px 3px rgba(0,0,0,.07);{% else %}background:transparent;color:#64748b;{% endif %}">
+          {{ t|title }}
+        </button>
+        {% endfor %}
+      </div>
+      <div id="bl-records-body" style="font-size:12px;color:#94a3b8;">Loading…</div>
+    </div>
+  </details>
 </div>
 
 {# ── Issues by Category ──────────────────────────── #}
@@ -478,8 +487,9 @@
     <table class="ig-table">
       <thead>
         <tr>
-          <th style="width:36%">🌐 Page</th>
+          <th style="width:28%">🌐 Page</th>
           <th>Issue</th>
+          <th style="width:26%">Currently Displayed</th>
           <th style="width:90px">Severity</th>
           <th style="width:130px;text-align:right;padding-right:14px;">Actions</th>
         </tr>
@@ -490,6 +500,8 @@
         <tr style="cursor:default;">
           <td style="font-size:11px;color:#64748b;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ issue.page.url }}">{{ issue.page.url }}</td>
           <td style="font-size:11px;color:#0f172a;">{{ issue.message }}</td>
+          {% set current_display = current_value_display(issue.page, category) %}
+          <td style="font-size:11px;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:{{ '#cbd5e1' if current_display == '-Blank-' else '#374151' }};{{ 'font-style:italic;' if current_display == '-Blank-' }}" title="{{ current_display }}">{{ current_display }}</td>
           <td>
             {% if issue.severity == 'error' %}
             <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;font-weight:700;">Error</span>
@@ -507,7 +519,7 @@
         </tr>
         {# ── Inline optimization panel (hidden by default) ── #}
         <tr id="{{ rid }}" style="display:none;">
-          <td colspan="4" style="padding:0;border-bottom:2px solid #e0e7ff;">
+          <td colspan="5" style="padding:0;border-bottom:2px solid #e0e7ff;">
             <div class="opt-grid" style="background:#fafbfc;border-top:1px solid #e0e7ff;">
 
               {# Col 1: CURRENT — actual page value only, never the audit's description of the issue #}
@@ -896,50 +908,35 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
       </button>
     </div>
+    <input type="hidden" name="return_to" value="/projects/{{ project.id }}#backlinks"/>
     <div class="drawer-body">
       <div style="margin-bottom:12px;">
-        <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">Business Name</label>
-        <input class="dinput" style="width:100%;box-sizing:border-box;" name="business_name" value="{{ profile.business_name or '' if profile else '' }}" placeholder="e.g. VTraffic.io"/>
-      </div>
-      <div style="margin-bottom:12px;">
-        <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">Business Description</label>
-        <textarea class="dinput" style="width:100%;box-sizing:border-box;resize:vertical;" rows="3" name="business_description" placeholder="What does the business do?">{{ profile.business_description or '' if profile else '' }}</textarea>
+        <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">Brand</label>
+        <input class="dinput" style="width:100%;box-sizing:border-box;" name="brand" value="{{ profile.brand or '' if profile else '' }}" placeholder="e.g. VTraffic.io"/>
       </div>
       <div style="margin-bottom:12px;">
         <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">Industry</label>
         <input class="dinput" style="width:100%;box-sizing:border-box;" name="industry" value="{{ profile.industry or '' if profile else '' }}" placeholder="e.g. Digital Marketing"/>
       </div>
       <div style="margin-bottom:12px;">
-        <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">Products / Services</label>
-        <textarea class="dinput" style="width:100%;box-sizing:border-box;resize:vertical;" rows="2" name="products_services" placeholder="e.g. SEO, PPC, social media management">{{ profile.products_services or '' if profile else '' }}</textarea>
+        <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">Services <span style="color:#94a3b8;font-weight:400;">(comma-separated)</span></label>
+        <textarea class="dinput" style="width:100%;box-sizing:border-box;resize:vertical;" rows="2" name="services" placeholder="e.g. SEO, PPC, social media management">{{ profile.services|join(', ') if profile and profile.services else '' }}</textarea>
       </div>
       <div style="margin-bottom:12px;">
-        <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">Target Audience</label>
-        <textarea class="dinput" style="width:100%;box-sizing:border-box;resize:vertical;" rows="2" name="target_audience" placeholder="e.g. small business owners, e-commerce startups">{{ profile.target_audience or '' if profile else '' }}</textarea>
+        <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">Locations <span style="color:#94a3b8;font-weight:400;">(comma-separated)</span></label>
+        <textarea class="dinput" style="width:100%;box-sizing:border-box;resize:vertical;" rows="2" name="locations" placeholder="e.g. Patna, Bihar, India">{{ profile.locations|join(', ') if profile and profile.locations else '' }}</textarea>
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;">
-        <div style="flex:1;">
-          <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">City</label>
-          <input class="dinput" style="width:100%;box-sizing:border-box;" name="city" value="{{ profile.city or '' if profile else '' }}" placeholder="e.g. Patna"/>
-        </div>
-        <div style="flex:1;">
-          <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">State / Region</label>
-          <input class="dinput" style="width:100%;box-sizing:border-box;" name="state_region" value="{{ profile.state_region or '' if profile else '' }}" placeholder="e.g. Bihar"/>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;">
-        <div style="flex:1;">
-          <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">Country</label>
-          <input class="dinput" style="width:100%;box-sizing:border-box;" name="country" value="{{ profile.country or '' if profile else '' }}" placeholder="e.g. India"/>
-        </div>
-        <div style="flex:1;">
-          <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">Primary Market <span style="color:#94a3b8;font-weight:400;">(optional)</span></label>
-          <input class="dinput" style="width:100%;box-sizing:border-box;" name="primary_market" value="{{ profile.primary_market or '' if profile else '' }}" placeholder="e.g. local / national / global"/>
-        </div>
+      <div style="margin-bottom:12px;">
+        <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">Audiences <span style="color:#94a3b8;font-weight:400;">(comma-separated)</span></label>
+        <textarea class="dinput" style="width:100%;box-sizing:border-box;resize:vertical;" rows="2" name="audiences" placeholder="e.g. small business owners, e-commerce startups">{{ profile.audiences|join(', ') if profile and profile.audiences else '' }}</textarea>
       </div>
       <div style="margin-bottom:12px;">
         <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">Brand Tone</label>
-        <input class="dinput" style="width:100%;box-sizing:border-box;" name="brand_tone" value="{{ profile.brand_tone or '' if profile else '' }}" placeholder="e.g. friendly, professional, Hindi-English mix"/>
+        <input class="dinput" style="width:100%;box-sizing:border-box;" name="tone" value="{{ profile.tone or '' if profile else '' }}" placeholder="e.g. friendly, professional, Hindi-English mix"/>
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="display:block;font-size:12px;color:#475569;font-weight:500;margin-bottom:4px;">USP <span style="color:#94a3b8;font-weight:400;">(what makes it different)</span></label>
+        <textarea class="dinput" style="width:100%;box-sizing:border-box;resize:vertical;" rows="2" name="usp" placeholder="e.g. only same-day SEO audit turnaround in the region">{{ profile.usp or '' if profile else '' }}</textarea>
       </div>
     </div>
     <div class="drawer-foot">
@@ -1563,6 +1560,8 @@ function loadBacklinkRecords() {
   const body = document.getElementById('bl-records-body');
   body.innerHTML = 'Loading…';
   fetch(`/projects/{{ project.id }}/backlinks/records?filter=${blCurrentTab}`).then(r => r.json()).then(rows => {
+    const countEl = document.getElementById('bl-records-count');
+    if (countEl) countEl.textContent = rows.length ? `${rows.length} ${blCurrentTab}` : '';
     if (!rows.length) { body.innerHTML = `No ${blCurrentTab} backlinks${blCurrentTab === 'active' ? ' yet -- click Refresh now or enable weekly auto-pull.' : '.'}`; return; }
     const hasExtras = rows.some(r => r.domain_rank != null || r.spam_score != null);
     body.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
@@ -1689,7 +1688,7 @@ function pmSuggestionHtml(issue, s) {
     edited: 'background:#dbeafe;color:#1d4ed8;', deployed: 'background:#f3e8ff;color:#7e22ce;',
     pending: 'background:#f1f5f9;color:#64748b;',
   };
-  var canDeploy = ['accepted', 'edited'].indexOf(s.status) !== -1 && ['meta_description', 'title', 'h1'].indexOf(issue.category) !== -1;
+  var canDeploy = ['accepted', 'edited'].indexOf(s.status) !== -1 && ['meta_description', 'title', 'h1', 'twitter', 'canonical', 'opengraph'].indexOf(issue.category) !== -1;
   var actions = s.status === 'deployed'
     ? '<button onclick="pmSuggRollback(' + s.id + ')" style="font-size:11px;color:#ea580c;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">↩ Roll back</button>'
     : '<button onclick="pmSuggDecide(' + s.id + ',\'accept\')" style="font-size:11px;color:#15803d;background:none;border:none;cursor:pointer;padding:0;">Accept</button>' +

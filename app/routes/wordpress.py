@@ -34,14 +34,25 @@ _RESOLVE_PAGE_DELAY_SECONDS = 0.3
 #                        yoast_set_meta(seo_title=...) is deliberate here)
 #   h1                -> the WordPress post title itself (what themes render
 #                        as the H1 in the default template) -- update_post
+#   twitter           -> Yoast SEO Twitter Card title (yoast_set_meta(twitter_title=...)),
+#                        the free-text field the "Twitter card meta tag is missing"
+#                        suggestion actually fixes -- twitter_card/twitter_image are
+#                        not AI-suggestable text, so only twitter_title is wired
+#   canonical         -> Yoast SEO canonical URL (yoast_set_meta(canonical_url=...))
+#   opengraph         -> Yoast SEO OG title (yoast_set_meta(og_title=...)) -- same
+#                        one-field-of-several precedent as twitter_title; og_description
+#                        isn't wired for the same reason twitter_description isn't
 #
-# NOT wired: image_alt. The plugin's update_media_meta tool takes a
-# media_id, but our deploy contract (DeployIn.wp_post_id) only carries a
-# post_id -- a post and its images are different WordPress objects with
-# different IDs. Deploying alt text needs a media_id lookup path this repo
-# doesn't have yet (Page/CrawlSnapshot store alt text strings, not the
-# WordPress media library IDs they came from). Flagging this rather than
-# building a broken mapping; see AgentLog for what a real fix needs.
+# NOT wired: h2, schema, lang, content, security. h2/schema/lang/content have no
+# single WordPress write path that isn't already covered by h1/meta_description
+# deploys or a full post-content edit; security checks (SSL, robots.txt) aren't
+# something a suggestion can fix by writing one field. image_alt specifically:
+# the plugin's update_media_meta tool takes a media_id, but our deploy contract
+# (DeployIn.wp_post_id) only carries a post_id -- a post and its images are
+# different WordPress objects with different IDs. Deploying alt text needs a
+# media_id lookup path this repo doesn't have yet (Page/CrawlSnapshot store alt
+# text strings, not the WordPress media library IDs they came from). Flagging
+# this rather than building a broken mapping; see AgentLog for what a real fix needs.
 
 def _read_meta_description(site_url: str, token: str, wp_post_id: int) -> wordpress.WordPressResult:
     return wordpress.get_yoast_meta(site_url, token, wp_post_id)
@@ -67,6 +78,30 @@ def _write_post_title(site_url: str, token: str, wp_post_id: int, value: str) ->
     return wordpress.update_post_content(site_url, token, wp_post_id, title=value)
 
 
+def _read_twitter_title(site_url: str, token: str, wp_post_id: int) -> wordpress.WordPressResult:
+    return wordpress.get_yoast_meta(site_url, token, wp_post_id)
+
+
+def _write_twitter_title(site_url: str, token: str, wp_post_id: int, value: str) -> wordpress.WordPressResult:
+    return wordpress.set_yoast_meta(site_url, token, wp_post_id, twitter_title=value)
+
+
+def _read_canonical(site_url: str, token: str, wp_post_id: int) -> wordpress.WordPressResult:
+    return wordpress.get_yoast_meta(site_url, token, wp_post_id)
+
+
+def _write_canonical(site_url: str, token: str, wp_post_id: int, value: str) -> wordpress.WordPressResult:
+    return wordpress.set_yoast_meta(site_url, token, wp_post_id, canonical_url=value)
+
+
+def _read_og_title(site_url: str, token: str, wp_post_id: int) -> wordpress.WordPressResult:
+    return wordpress.get_yoast_meta(site_url, token, wp_post_id)
+
+
+def _write_og_title(site_url: str, token: str, wp_post_id: int, value: str) -> wordpress.WordPressResult:
+    return wordpress.set_yoast_meta(site_url, token, wp_post_id, og_title=value)
+
+
 FIELD_DEPLOYERS = {
     "meta_description": {
         "read": _read_meta_description,
@@ -85,6 +120,24 @@ FIELD_DEPLOYERS = {
         "read_key": "title",
         "write": _write_post_title,
         "tool": "update_post",
+    },
+    "twitter": {
+        "read": _read_twitter_title,
+        "read_key": "twitter_title",  # yoast_get_meta's key for _yoast_wpseo_twitter-title
+        "write": _write_twitter_title,
+        "tool": "yoast_set_meta",
+    },
+    "canonical": {
+        "read": _read_canonical,
+        "read_key": "canonical_url",
+        "write": _write_canonical,
+        "tool": "yoast_set_meta",
+    },
+    "opengraph": {
+        "read": _read_og_title,
+        "read_key": "og_title",  # og_description isn't AI-suggestable as a single value; og_title mirrors the twitter_title precedent
+        "write": _write_og_title,
+        "tool": "yoast_set_meta",
     },
 }
 
@@ -313,7 +366,10 @@ def _connected_or_error(db: Session, project_id: int) -> tuple[models.WordPressC
 # only ever supplies one value, so it replaces the list with a single-item
 # list; this is an approximation for pages that genuinely had >1 H1, but a
 # stale display would be a worse default than an accurate single value.
-_PAGE_FIELD_FOR_CATEGORY = {"title": "title", "meta_description": "meta_description", "h1": "h1"}
+_PAGE_FIELD_FOR_CATEGORY = {
+    "title": "title", "meta_description": "meta_description", "h1": "h1",
+    "twitter": "twitter_title", "canonical": "canonical", "opengraph": "og_title",
+}
 
 
 def _apply_deploy_to_page(db: Session, page_id: int, field_name: str, new_value: str) -> None:

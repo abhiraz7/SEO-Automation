@@ -304,6 +304,34 @@ def current_value_for(page, category):
     return {"kind": "text", "value": None}
 
 
+def current_value_display(page, category, limit=80):
+    """One-line, human-readable rendering of current_value_for(), for the issue
+    table's "Current" column -- what's actually on the page right now, not a
+    description of what's wrong. Missing/empty values render as "-Blank-" so
+    an SEO reviewer can tell "nothing there" apart from a truncated value."""
+    current = current_value_for(page, category)
+    kind = current["kind"]
+    if kind == "text":
+        text = (current["value"] or "").strip()
+    elif kind == "list":
+        text = ", ".join(item for item in current["items"] if item)
+    elif kind == "kv":
+        text = "; ".join(f"{label}: {value}" for label, value in current["items"] if value)
+    elif kind == "images":
+        items = current["items"] or []
+        missing = sum(1 for i in items if not (i.get("alt") or "").strip()) if items else 0
+        text = f"{len(items)} image(s), {missing} missing alt" if items else ""
+    elif kind == "schema":
+        text = ", ".join(current["types"])
+    elif kind == "markdown":
+        text = (current["excerpt"] or "").strip()
+    else:
+        text = ""
+    if not text:
+        return "-Blank-"
+    return text[:limit] + "…" if len(text) > limit else text
+
+
 # --- Candidate-value validation (does a suggested replacement pass its own rule?) ---
 
 _VALIDATABLE_RULES = {
