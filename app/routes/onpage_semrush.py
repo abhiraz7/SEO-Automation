@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit, dataforseo_onpage, models, wordpress
 from ..database import get_db
+from .links import store_links_for_task
 from .settings import register_crawler_global
 
 router = APIRouter()
@@ -170,6 +171,12 @@ def check_site_audit(project_id: int, task_id: int, db: Session = Depends(get_db
     task.pages_crawled = len(result.get("pages") or [])
     task.finished_at = datetime.now(timezone.utc)
     db.commit()
+
+    # Link Analyzer's data source -- same task_id, no separate DataForSEO
+    # cost. Best-effort: a links failure must not roll back the page/issue
+    # ingestion above, which already succeeded and committed.
+    store_links_for_task(db, project_id, task)
+
     return RedirectResponse(url=f"/projects/{project_id}/onpage", status_code=303)
 
 

@@ -86,10 +86,11 @@
 
     <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">Tools</div>
     {{ nav_link("#", "Schema Generator", "schema", enabled=False) }}
-    {{ nav_link("#", "Link Analyzer", "link", enabled=False) }}
     {% if project is defined %}
+      {{ nav_link("/projects/" ~ project.id ~ "/links", "Link Analyzer", "link", active=path.startswith("/projects/" ~ project.id ~ "/links")) }}
       {{ nav_link("/projects/" ~ project.id ~ "/competitors", "Competitor Analysis", "competitor", active=path.startswith("/projects/" ~ project.id ~ "/competitors")) }}
     {% else %}
+      {{ nav_link("#", "Link Analyzer", "link", enabled=False, disabled_reason="open a project first") }}
       {{ nav_link("#", "Competitor Analysis", "competitor", enabled=False, disabled_reason="open a project first") }}
     {% endif %}
     {{ nav_link("#", "AI Writer", "aiwriter", enabled=False) }}

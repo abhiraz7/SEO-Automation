@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Link Analyzer — {{ project.name }}{% endblock %}
+
+{% block topbar %}
+<div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px;min-width:0;">
+  <div style="min-width:0;flex:1;">
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:3px;display:flex;align-items:center;gap:4px;">
+      <a href="/" style="color:#94a3b8;text-decoration:none;">Projects</a>
+      <span style="opacity:0.4;">/</span>
+      <span style="color:#0f172a;font-weight:600;">Link Analyzer</span>
+    </div>
+    <div style="font-size:14px;font-weight:700;color:#0f172a;">{{ project.name }}</div>
+  </div>
+  {% if has_data %}
+  <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:#f1f5f9;color:#475569;white-space:nowrap;">
+    From Site Audit run {{ task.finished_at.strftime('%Y-%m-%d %H:%M') if task.finished_at else '—' }}
+  </span>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .la-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px; }
+  .la-num { font-size:22px; font-weight:800; color:#0f172a; line-height:1; margin:4px 0 2px; }
+  .la-label { font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.06em; }
+  .la-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .la-table th { padding:8px 12px; text-align:left; font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid #f1f5f9; }
+  .la-table td { padding:8px 12px; border-bottom:1px solid #f8fafc; vertical-align:top; }
+  .la-table tr:last-child td { border-bottom:none; }
+</style>
+
+<div style="padding:20px 24px;">
+
+  {% if not has_data %}
+  <div class="la-card" style="text-align:center;padding:40px 20px;color:#94a3b8;font-size:13px;">
+    No Site Audit data yet. Run <strong>Refresh from DataForSEO</strong> on the On-Page tab first — Link Analyzer reuses that same crawl, no separate check needed.
+    <div style="margin-top:12px;">
+      <a href="/projects/{{ project.id }}/onpage" style="font-size:12px;font-weight:600;color:#4f46e5;text-decoration:none;">Go to On-Page audit →</a>
+    </div>
+  </div>
+  {% else %}
+
+  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:18px;">
+    <div class="la-card"><div class="la-label">Total Links</div><div class="la-num">{{ total_links }}</div></div>
+    <div class="la-card" style="border-color:{{ '#fecaca' if broken_count else '#e2e8f0' }};">
+      <div class="la-label" style="color:{{ '#dc2626' if broken_count else '#94a3b8' }};">Broken</div>
+      <div class="la-num" style="color:{{ '#dc2626' if broken_count else '#0f172a' }};">{{ broken_count }}</div>
+    </div>
+    <div class="la-card"><div class="la-label">Internal</div><div class="la-num">{{ internal_count }}</div></div>
+    <div class="la-card"><div class="la-label">External</div><div class="la-num">{{ external_count }}</div></div>
+    <div class="la-card"><div class="la-label">Dofollow / Nofollow</div><div class="la-num" style="font-size:16px;">{{ dofollow_count }} / {{ nofollow_count }}</div></div>
+    <div class="la-card" style="border-color:{{ '#fde68a' if orphan_count else '#e2e8f0' }};">
+      <div class="la-label" style="color:{{ '#a16207' if orphan_count else '#94a3b8' }};">Orphan Pages</div>
+      <div class="la-num" style="color:{{ '#a16207' if orphan_count else '#0f172a' }};">{{ orphan_count }}</div>
+    </div>
+  </div>
+
+  {# ── Broken links ─────────────────────────────────── #}
+  <div class="la-card" style="margin-bottom:16px;padding:0;overflow:hidden;">
+    <div style="padding:14px 16px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:8px;">
+      <span style="font-size:13px;font-weight:700;color:#0f172a;">🔗 Broken Links</span>
+      <span style="font-size:11px;color:#94a3b8;">every link this crawl found returning an error, worth 0 link equity</span>
+    </div>
+    {% if broken %}
+    <div style="overflow-x:auto;">
+    <table class="la-table">
+      <thead><tr><th style="width:32%">Found on</th><th style="width:38%">Broken link</th><th style="width:90px">Status</th><th>Type</th></tr></thead>
+      <tbody>
+        {% for l in broken %}
+        <tr>
+          <td style="color:#64748b;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ l.url_from }}">{{ l.url_from }}</td>
+          <td style="color:#dc2626;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ l.url_to }}">{{ l.url_to }}</td>
+          <td><span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;font-weight:700;">{{ l.status_code or '—' }}</span></td>
+          <td style="color:#94a3b8;">{{ l.link_type or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div style="padding:20px 16px;color:#94a3b8;font-size:12px;">No broken links found in this crawl. 🎉</div>
+    {% endif %}
+  </div>
+
+  {# ── Orphan pages ──────────────────────────────────── #}
+  <div class="la-card" style="margin-bottom:16px;padding:0;overflow:hidden;">
+    <div style="padding:14px 16px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:8px;">
+      <span style="font-size:13px;font-weight:700;color:#0f172a;">🏝️ Orphan Pages</span>
+      <span style="font-size:11px;color:#94a3b8;">crawled pages with zero internal links pointing to them</span>
+    </div>
+    {% if orphans %}
+    <div style="overflow-x:auto;">
+    <table class="la-table">
+      <thead><tr><th>URL</th></tr></thead>
+      <tbody>
+        {% for url in orphans %}
+        <tr><td style="color:#0f172a;"><a href="{{ url }}" target="_blank" rel="noopener" style="color:#a16207;text-decoration:none;">{{ url }}</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div style="padding:20px 16px;color:#94a3b8;font-size:12px;">No orphan pages — every crawled page has at least one internal link pointing to it.</div>
+    {% endif %}
+  </div>
+
+  {# ── Most internally linked pages ─────────────────── #}
+  <div class="la-card" style="padding:0;overflow:hidden;">
+    <div style="padding:14px 16px;border-bottom:1px solid #f1f5f9;">
+      <span style="font-size:13px;font-weight:700;color:#0f172a;">📈 Most Internally Linked Pages</span>
+    </div>
+    {% if most_linked %}
+    <div style="overflow-x:auto;">
+    <table class="la-table">
+      <thead><tr><th>URL</th><th style="width:140px;">Inbound internal links</th></tr></thead>
+      <tbody>
+        {% for url, n in most_linked %}
+        <tr>
+          <td style="color:#0f172a;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ url }}">{{ url }}</td>
+          <td style="color:#374151;font-weight:600;">{{ n }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div style="padding:20px 16px;color:#94a3b8;font-size:12px;">No internal links found in this crawl.</div>
+    {% endif %}
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}

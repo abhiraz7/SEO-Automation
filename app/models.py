@@ -111,7 +111,7 @@ class Page(Base):
     # WordPress connection, no matching slug, site unreachable, ...) -- deploy
     # falls back to asking manually in that case.
     wp_post_id = Column(Integer)
-    wp_post_type = Column(String)  # "posts" | "pages" -- which WP REST collection it matched
+    wp_post_type = Column(String)  # e.g. "posts" | "pages" | a custom post type's rest_base -- which WP REST collection it matched
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -391,6 +391,38 @@ class OnPageTask(Base):
     pages_crawled = Column(Integer)
     error = Column(Text)
     finished_at = Column(DateTime)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class PageLink(Base):
+    """One row per link found by DataForSEO's on_page/links endpoint during
+    a site-wide crawl task (OnPageTask). Wholesale-replaced per task, same
+    "stale data must not linger" discipline as Issue rows in
+    onpage_semrush.py._store_page_result -- a link DataForSEO no longer
+    reports (fixed, removed) must disappear from here too, not persist as
+    a false positive.
+
+    url_from/url_to are absolute URLs (DataForSEO's link_from/link_to),
+    not FKs to Page -- link_to often points at a URL DataForSEO's crawl
+    never visited as a page in its own right (e.g. a PDF, an external
+    domain, a URL beyond max_crawl_pages), so it can't always resolve to
+    a Page row."""
+    __tablename__ = "page_links"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    onpage_task_id = Column(Integer, ForeignKey("onpage_tasks.id"), nullable=False)
+
+    url_from = Column(Text, nullable=False)
+    url_to = Column(Text, nullable=False)
+    link_type = Column(String)  # anchor | image | canonical | meta | alternate | redirect | link
+    direction = Column(String)  # internal | external
+    dofollow = Column(Boolean)
+    is_broken = Column(Boolean, default=False)
+    status_code = Column(Integer)
+    anchor_text = Column(Text)
+    is_link_relation_conflict = Column(Boolean, default=False)
+
     created_at = Column(DateTime, default=_utcnow)
 
 

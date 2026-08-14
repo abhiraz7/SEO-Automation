@@ -135,14 +135,47 @@ def _resolve_homepage_post_id(site_url: str, token: str) -> WordPressResult:
     )
 
 
+def _rest_post_type_bases(site_url: str) -> list[str]:
+    """REST rest_base values for every post type this site exposes over
+    wp/v2/types, "posts" and "pages" first (cheapest -- covers the vast
+    majority of sites in one or two requests before falling through to
+    custom post types like a theme's "free_notes" or "case_studies").
+
+    Sites without custom post types, or whose /types endpoint is
+    blocked/unreachable, just get the two built-ins back -- same
+    behavior as before this existed. Never raises."""
+    bases = ["posts", "pages"]
+    try:
+        resp = httpx.get(f"{site_url.rstrip('/')}/wp-json/wp/v2/types", timeout=_TIMEOUT)
+        if resp.status_code != 200:
+            return bases
+        types = resp.json()
+    except (httpx.RequestError, ValueError):
+        return bases
+    if not isinstance(types, dict):
+        return bases
+
+    extra = sorted({
+        t.get("rest_base") for t in types.values()
+        if isinstance(t, dict) and t.get("rest_base") and t.get("rest_base") not in bases
+        # media/menu-items/blocks/templates/etc. are WordPress-internal REST
+        # types, never a page a suggestion could target -- skip them so a
+        # broken/large site doesn't turn every deploy into N extra requests.
+        and t.get("rest_base") not in ("media", "menu-items", "blocks", "templates", "template-parts",
+                                        "global-styles", "navigation", "font-families")
+    })
+    return bases + extra
+
+
 def resolve_post_id_by_url(site_url: str, page_url: str, token: str | None = None) -> WordPressResult:
     """Best-effort lookup of a page's WordPress post ID from its live URL.
 
-    For normal pages/posts: uses WordPress's own public core REST API
-    (wp-json/wp/v2), NOT the claude-wp-mcp plugin -- the plugin exposes no
-    URL/slug lookup tool (see module docstring). Needs no token for this
-    path: the core API's slug lookup is public for published content on
-    virtually every WordPress site.
+    For normal pages/posts (and any custom post type the site registers
+    with show_in_rest=True -- see _rest_post_type_bases): uses WordPress's
+    own public core REST API (wp-json/wp/v2), NOT the claude-wp-mcp plugin
+    -- the plugin exposes no URL/slug lookup tool (see module docstring).
+    Needs no token for this path: the core API's slug lookup is public for
+    published content on virtually every WordPress site.
 
     For the homepage/root URL (no slug to look up): falls back to
     _resolve_homepage_post_id, which DOES need a token (it's a plugin
@@ -155,8 +188,9 @@ def resolve_post_id_by_url(site_url: str, page_url: str, token: str | None = Non
     asking the user for the ID manually, not as something to crash or
     block on.
 
-    Tries /posts then /pages (the same slug can exist under either post
-    type); only trusts a single unambiguous match.
+    Tries every REST-exposed post type's rest_base in turn (the same slug
+    can exist under more than one); only trusts a single unambiguous
+    match under whichever type responds first.
     """
     path = urlparse(page_url).path.strip("/")
     slug = path.rsplit("/", 1)[-1] if path else ""
@@ -166,7 +200,7 @@ def resolve_post_id_by_url(site_url: str, page_url: str, token: str | None = Non
         return WordPressResult(status="no_data", error="Homepage/root URLs have no slug to resolve (no token supplied for a get_options lookup)")
 
     base = site_url.rstrip("/")
-    for post_type in ("posts", "pages"):
+    for post_type in _rest_post_type_bases(site_url):
         try:
             resp = httpx.get(
                 f"{base}/wp-json/wp/v2/{post_type}",

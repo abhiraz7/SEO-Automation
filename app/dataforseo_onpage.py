@@ -125,6 +125,24 @@ def fetch_task_pages(task_id: str, limit: int = 100) -> dict:
         return {"error": "Unexpected response shape from DataForSEO on_page/pages."}
 
 
+def fetch_task_links(task_id: str, limit: int = 1000) -> dict:
+    """Pulls every link (anchor/image/canonical/redirect/...) DataForSEO found
+    while crawling this task -- the Link Analyzer's sole data source. Same
+    task_id as fetch_task_pages, no separate crawl/cost. Returns
+    {"links": [...]} or {"error": ...}. DataForSEO caps a single page at 1000
+    results; a site with more links than that gets a partial (but still
+    representative -- broken links surface early) set rather than us adding
+    pagination for a v1."""
+    data = _post("/on_page/links", [{"id": task_id, "limit": limit}])
+    if data.get("error"):
+        return data
+    try:
+        result = data["tasks"][0]["result"][0]
+        return {"links": result.get("items") or []}
+    except (KeyError, IndexError):
+        return {"error": "Unexpected response shape from DataForSEO on_page/links."}
+
+
 # ── checks -> our Issue vocabulary ───────────────────────────────────────
 # DataForSEO's `checks` object is ~50 booleans (true = problem present, for
 # most of them). This maps a curated subset onto the same category/rule/
