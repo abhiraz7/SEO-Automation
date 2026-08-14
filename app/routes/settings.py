@@ -49,6 +49,14 @@ def is_crawler_enabled(db: Session) -> bool:
     return row.enabled if row else True
 
 
+def get_site_audit_cooldown_hours(db: Session) -> int:
+    """No-arg-friendly getter for start_site_audit's cooldown check (see
+    models.SiteAuditSettings). Defaults to 24h if the singleton row is
+    somehow missing (fresh DB before its migration/first /settings visit)."""
+    row = db.get(models.SiteAuditSettings, 1)
+    return row.cooldown_hours if row else 24
+
+
 def register_crawler_global(templates_env: Jinja2Templates) -> None:
     """Every Jinja2Templates instance across routes/ gets its own Environment,
     so this must be called once per instance for sidebar.html's
@@ -91,8 +99,21 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
             "active_ai_provider": active_ai,
             "gemini_status": gemini_status,
             "claude_status": claude_status,
+            "site_audit_cooldown_hours": get_site_audit_cooldown_hours(db),
         }
     )
+
+
+@router.post("/settings/site-audit/cooldown")
+def save_site_audit_cooldown(cooldown_hours: int = Form(...), db: Session = Depends(get_db)):
+    cooldown_hours = max(0, min(cooldown_hours, 24 * 30))  # 0 = disabled, capped at 30 days against fat-fingering
+    row = db.get(models.SiteAuditSettings, 1)
+    if not row:
+        row = models.SiteAuditSettings(id=1)
+        db.add(row)
+    row.cooldown_hours = cooldown_hours
+    db.commit()
+    return RedirectResponse(url="/settings", status_code=303)
 
 
 @router.post("/settings/provider/{provider}/activate")

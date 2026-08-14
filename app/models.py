@@ -442,6 +442,22 @@ class CrawlerSettings(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class SiteAuditSettings(Base):
+    """Singleton row (id=1) -- the minimum gap (hours) required between two
+    completed DataForSEO Site Audit crawls for the same project, editable
+    from /settings. Exists because start_site_audit has no cost/dedup
+    protection of its own: without this, a double-clicked "Refresh now" (or
+    someone re-running it minutes apart out of impatience) bills DataForSEO
+    for a full re-crawl of pages that almost certainly haven't changed.
+    Deliberately separate from CrawlerSettings -- this gates the DataForSEO
+    on-page flow, not the retiring custom crawler."""
+    __tablename__ = "site_audit_settings"
+
+    id = Column(Integer, primary_key=True)
+    cooldown_hours = Column(Integer, nullable=False, default=24)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class ProviderSetting(Base):
     """Which on-page data provider is active for /onpage-semrush --
     "dataforseo" or "semrush". Exactly one row has enabled=True at a time

@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from .. import audit, dataforseo_onpage, models, wordpress
 from ..database import get_db
 from .links import store_links_for_task
-from .settings import register_crawler_global
+from .settings import get_site_audit_cooldown_hours, register_crawler_global
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -126,7 +126,50 @@ def instant_check(project_id: int, url: str = Form(...), db: Session = Depends(g
 
 @router.post("/projects/{project_id}/onpage/site-audit/start")
 def start_site_audit(project_id: int, max_crawl_pages: int = Form(20), db: Session = Depends(get_db)):
+    """Guarded on two fronts before ever calling DataForSEO (each billed):
+    an in-flight (status='posted') task always blocks a new one outright --
+    no legitimate reason to run two crawls of the same site at once -- and,
+    on top of that, a completed run within the last cooldown_hours (see
+    /settings, models.SiteAuditSettings) blocks a fresh one too, since page
+    content/SEO metadata essentially never changes meaningfully faster than
+    that. Both exist because of a real incident: a double-clicked "Refresh
+    now" button with no submit-guard fired 13 billed crawls of the same 20
+    pages in 4 seconds -- see AgentLog for the debugging writeup."""
     project = _get_project(db, project_id)
+
+    in_flight = (
+        db.query(models.OnPageTask)
+        .filter(models.OnPageTask.project_id == project_id, models.OnPageTask.status == "posted")
+        .first()
+    )
+    if in_flight:
+        return RedirectResponse(
+            url=f"/projects/{project_id}/onpage?refresh_blocked=A+crawl+is+already+in+progress+for+this+project+%28started+{in_flight.created_at.strftime('%Y-%m-%d %H:%M')}%29.+Wait+for+it+to+finish+before+starting+another.",
+            status_code=303,
+        )
+
+    cooldown_hours = get_site_audit_cooldown_hours(db)
+    if cooldown_hours > 0:
+        last_fetched = (
+            db.query(models.OnPageTask)
+            .filter(models.OnPageTask.project_id == project_id, models.OnPageTask.status == "fetched")
+            .order_by(models.OnPageTask.finished_at.desc())
+            .first()
+        )
+        if last_fetched and last_fetched.finished_at:
+            # Naive UTC math, matching routes/projects.py._time_ago's convention --
+            # finished_at is written via datetime.now(timezone.utc) but SQLite
+            # stores/reads it back naive, so comparing against an aware "now"
+            # would raise TypeError.
+            elapsed = datetime.utcnow() - last_fetched.finished_at
+            remaining = cooldown_hours * 3600 - elapsed.total_seconds()
+            if remaining > 0:
+                remaining_h = round(remaining / 3600, 1)
+                return RedirectResponse(
+                    url=f"/projects/{project_id}/onpage?refresh_blocked=Last+refresh+was+{last_fetched.finished_at.strftime('%Y-%m-%d %H:%M')}.+Wait+about+{remaining_h}h+more+%28cooldown%3A+{cooldown_hours}h%2C+see+Settings%29+or+use+Instant+Check+for+a+single+URL.",
+                    status_code=303,
+                )
+
     result = dataforseo_onpage.start_site_task(_target_domain(project), max_crawl_pages=max_crawl_pages)
     if result.get("error"):
         raise HTTPException(status_code=502, detail=result["error"])
@@ -273,6 +316,7 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             "wp_token_preview": wp_token_preview,
             "profile": profile,
             "wp_error": request.query_params.get("wp_error"),
+            "refresh_blocked": request.query_params.get("refresh_blocked"),
             "total_pages": total_pages,
             "total_issues": total_issues,
             "error_count": error_count,
