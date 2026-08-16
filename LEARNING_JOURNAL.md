@@ -631,3 +631,25 @@ Two upgrades cost zero extra API units: `phrase_this` returns a 12-month trend s
 
 ### LLM as the judgment layer, not the data layer
 The Claude brief prompt receives only facts we fetched (metrics, top-10 URLs, real question keywords) and asks for structure + strategy. Claude never invents volumes; the API never writes prose. Clean separation means a hallucinated number can't appear — there are no numbers for it to make up, they're all injected.
+
+## 2026-08-16 — Shipping the claude-wp-mcp plugin: a file location choice is also a security review
+
+### Read the artifact's own docs before wiring it in
+Before adding a download button, I read the plugin's README first — it flagged a `php_exec` (arbitrary PHP execution) tool and an explicit "staging, not production" warning. That fact had to reach you *before* the plugin got a one-click download link, not after. Testing analogy: you wouldn't add a new test dependency to CI without reading what permissions/network access it needs first.
+
+### This app has no static file server — "adding a download" means adding a route
+No `StaticFiles` mount exists in `app/main.py`; every byte the browser gets comes through a route. So shipping a downloadable file is a backend decision (`FileResponse` from a new `GET /downloads/claude-wp-mcp` route in `app/routes/wordpress.py`), not a frontend one. `FileResponse` is FastAPI's `send_file` — it sets `Content-Type`/`Content-Disposition` so the browser downloads instead of rendering.
+
+### Reuse the surface that already owns the concept
+The WordPress connection drawer in `onpage_semrush.html` already referenced "the claude-wp-mcp plugin" in its help text before this session — that's the "suitable place," not a new page. Finding where a concept is *already* named in the UI beats inventing a second home for it.
+
+### `unzip -l`, don't eyeball folder names
+WordPress's plugin installer only unwraps **one** level of zip nesting looking for the `Plugin Name:` header. The zip I linked has `claude-wp-mcp/claude-wp-mcp.php` (correct — one level). A stray sibling file in the repo (`claude-wp-mcp final.zip`) wrapped the whole source tree one level too deep: `claude-wp-mcp final/claude-wp-mcp/claude-wp-mcp.php`. WordPress reports a confusing "invalid header" style error for that, with no hint about *why*. The fix wasn't visual inspection — it was running `unzip -l` on both archives and comparing the top-level entry. Same discipline as diffing actual test output instead of assuming a refactor didn't change behavior.
+
+### Stage surgically when the working tree has someone else's WIP
+`git status` showed unrelated in-progress edits (`links.py`, `scheduler.py`, `links.html`) sitting in the working tree from earlier work. `git add` named exactly the four files this task touched instead of `git add -A` — a broad add would have silently bundled unrelated, possibly-unfinished changes into an unrelated commit.
+
+### Interview questions this session answers
+- Why does a FastAPI app need an explicit route to serve a static file, unlike a plain web server?
+- What's the actual failure mode when a zip's plugin folder is nested one level too deep, and why does "it looks like the same files" not catch it?
+- When is a file-organization task also a security review?
