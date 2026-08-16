@@ -3,8 +3,10 @@ WordPress connection + deploy/rollback routes (Tasks 3.2-3.5).
 """
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,22 @@ from .. import models, wordpress
 from ..database import get_db
 
 router = APIRouter()
+
+_PLUGIN_ZIP_PATH = Path(__file__).resolve().parent.parent / "downloads" / "claude-wp-mcp.zip"
+
+
+@router.get("/downloads/claude-wp-mcp")
+def download_wp_plugin():
+    """Serves the claude-wp-mcp WordPress plugin zip -- the connection drawer
+    links here so a user can install it on their site before saving a
+    connection above."""
+    if not _PLUGIN_ZIP_PATH.exists():
+        raise HTTPException(status_code=404, detail="Plugin package not found on server.")
+    return FileResponse(
+        _PLUGIN_ZIP_PATH,
+        media_type="application/zip",
+        filename="claude-wp-mcp.zip",
+    )
 
 # Politeness delay between resolve_post_id_by_url calls when resolving a
 # whole project's pages in one pass -- each call is 1-2 HTTP requests to the
