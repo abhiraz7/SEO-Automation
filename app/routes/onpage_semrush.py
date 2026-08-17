@@ -125,7 +125,7 @@ def instant_check(project_id: int, url: str = Form(...), db: Session = Depends(g
 
 
 @router.post("/projects/{project_id}/onpage/site-audit/start")
-def start_site_audit(project_id: int, max_crawl_pages: int = Form(20), db: Session = Depends(get_db)):
+def start_site_audit(project_id: int, max_crawl_pages: int = Form(100), db: Session = Depends(get_db)):
     """Guarded on two fronts before ever calling DataForSEO (each billed):
     an in-flight (status='posted') task always blocks a new one outright --
     no legitimate reason to run two crawls of the same site at once -- and,
@@ -200,7 +200,7 @@ def check_site_audit(project_id: int, task_id: int, db: Session = Depends(get_db
     if not dataforseo_onpage.is_task_ready(task.dataforseo_task_id):
         return RedirectResponse(url=f"/projects/{project_id}/onpage", status_code=303)
 
-    result = dataforseo_onpage.fetch_task_pages(task.dataforseo_task_id)
+    result = dataforseo_onpage.fetch_task_pages(task.dataforseo_task_id, limit=task.max_crawl_pages)
     if result.get("error"):
         task.status = "error"
         task.error = result["error"]

@@ -357,7 +357,7 @@ async def _as_async_iterable(crawl_results):
             yield item
 
 
-def crawl_site(base_url: str, max_pages: int = 25) -> list:
+def crawl_site(base_url: str, max_pages: int = 100) -> list:
     """Discover URLs (sitemap, falling back to link BFS) then crawl them all with Crawl4AI."""
     parsed = urlparse(base_url)
     base_origin = f"{parsed.scheme}://{parsed.netloc}"

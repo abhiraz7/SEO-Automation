@@ -40,7 +40,7 @@ def run_crawl_job(db: Session, job: models.Job) -> None:
         if not project:
             raise ValueError(f"Project {job.project_id} not found")
 
-        max_pages = (job.payload or {}).get("max_pages", 25)
+        max_pages = (job.payload or {}).get("max_pages", 100)
         results = crawl_site(project.base_url, max_pages=max_pages)
 
         pages_ok = 0

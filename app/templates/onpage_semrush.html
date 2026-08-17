@@ -51,7 +51,7 @@
       Refresh
     </button>
     <form id="refresh-form" method="post" action="/projects/{{ project.id }}/onpage/site-audit/start" style="display:none;">
-      <input type="hidden" name="max_crawl_pages" value="20">
+      <input type="hidden" name="max_crawl_pages" value="100">
     </form>
     <button onclick="openDrawer('instant-drawer')" title="Instant Check (1 URL)"
       style="font-size:12px;font-weight:600;color:#334155;padding:6px 10px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;white-space:nowrap;">
