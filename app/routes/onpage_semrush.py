@@ -262,7 +262,12 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             wp_token_preview = "(unreadable — re-enter token)"
 
     pages_by_id = {p.id: p for p in pages}
-    grouped_issues: dict[str, list] = {}
+    # Always show every known category, even at 0 issues, so a client with a
+    # genuinely clean site (or one where DataForSEO simply never flagged a
+    # given category) doesn't look like its data is missing -- only shows up
+    # after there's at least one crawled page, since before that "0 issues"
+    # would be a lack of data, not a clean bill of health.
+    grouped_issues: dict[str, list] = {cat: [] for cat in CATEGORY_LABELS} if pages else {}
     for issue in issues:
         grouped_issues.setdefault(issue.category, []).append(issue)
 

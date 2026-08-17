@@ -206,18 +206,21 @@
   </details>
 </div>
 
-{% if grouped_issues %}
+{% set ns = namespace(max_count=0) %}
+{% for category, cat_issues in grouped_issues.items() %}
+  {% if cat_issues|length > ns.max_count %}{% set ns.max_count = cat_issues|length %}{% endif %}
+{% endfor %}
+{% if ns.max_count > 0 %}
 <div style="margin:16px 24px 0;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px 18px;">
   <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:12px;">Issue breakdown by category</div>
-  {% set max_count = grouped_issues.values()|map('length')|max %}
   <div style="display:flex;flex-direction:column;gap:8px;">
-    {% for category, cat_issues in grouped_issues.items() %}
+    {% for category, cat_issues in grouped_issues.items() if cat_issues %}
     {% set accent = cat_colors.get(category, '#4f46e5') %}
     {% set label = cat_labels.get(category, category|replace('_',' ')|title) %}
     <div style="display:flex;align-items:center;gap:10px;">
       <div style="width:120px;flex-shrink:0;font-size:11px;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ label }}</div>
       <div style="flex:1;height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
-        <div style="height:100%;width:{{ (cat_issues|length / max_count * 100)|round(1) }}%;background:{{ accent }};border-radius:4px;"></div>
+        <div style="height:100%;width:{{ (cat_issues|length / ns.max_count * 100)|round(1) }}%;background:{{ accent }};border-radius:4px;"></div>
       </div>
       <div style="width:24px;flex-shrink:0;text-align:right;font-size:11px;font-weight:700;color:#0f172a;">{{ cat_issues|length }}</div>
     </div>
@@ -259,7 +262,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="1.5" width="15" height="15"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z"/></svg>
     </div>
     <span style="font-size:15px;font-weight:700;color:#0f172a;">Issues by category</span>
-    <span style="font-size:11px;background:#eef2ff;color:#4f46e5;padding:2px 9px;border-radius:10px;font-weight:700;">{{ grouped_issues|length }}</span>
+    <span style="font-size:11px;background:#eef2ff;color:#4f46e5;padding:2px 9px;border-radius:10px;font-weight:700;">{{ grouped_issues.values()|select|list|length }} of {{ grouped_issues|length }} with issues</span>
     <span style="font-size:11px;color:#94a3b8;margin-left:auto;">{{ total_issues }} total on-page issues across {{ total_pages }} pages</span>
   </div>
 
@@ -268,16 +271,24 @@
   {% set warn_n = cat_issues|selectattr('severity','eq','warning')|list|length %}
   {% set accent = cat_colors.get(category, '#4f46e5') %}
   {% set label = cat_labels.get(category, category|replace('_',' ')|title) %}
+  {% set is_clean = not cat_issues %}
 
-  <details class="ig" style="border-left:3px solid {{ accent }};">
+  <details class="ig" style="border-left:3px solid {{ '#e2e8f0' if is_clean else accent }};">
     <summary>
       <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.5" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
-      <span style="width:8px;height:8px;border-radius:50%;background:{{ accent }};flex-shrink:0;"></span>
-      <span style="font-size:13px;font-weight:600;color:#0f172a;flex:1;">{{ label }}</span>
+      <span style="width:8px;height:8px;border-radius:50%;background:{{ '#cbd5e1' if is_clean else accent }};flex-shrink:0;"></span>
+      <span style="font-size:13px;font-weight:600;color:{{ '#94a3b8' if is_clean else '#0f172a' }};flex:1;">{{ label }}</span>
+      {% if is_clean %}
+      <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#dcfce7;color:#15803d;font-weight:700;">clean</span>
+      {% else %}
       <span style="font-size:11px;color:#94a3b8;margin-right:12px;">{{ cat_issues|length }} affected page{{ 's' if cat_issues|length != 1 }}</span>
       {% if err_n > 0 %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;font-weight:700;margin-right:4px;">{{ err_n }} error{% if err_n != 1 %}s{% endif %}</span>{% endif %}
       {% if warn_n > 0 %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fef9c3;color:#a16207;font-weight:700;">{{ warn_n }} warning{% if warn_n != 1 %}s{% endif %}</span>{% endif %}
+      {% endif %}
     </summary>
+    {% if is_clean %}
+    <div style="padding:16px 18px;color:#94a3b8;font-size:12px;">No {{ label|lower }} issues found across {{ total_pages }} crawled page{{ 's' if total_pages != 1 }}. 🎉</div>
+    {% else %}
     <table class="ig-table">
       <thead>
         <tr><th style="width:32%">🌐 Page</th><th>Issue</th><th style="width:26%">Currently Displayed</th><th style="width:90px">Severity</th><th style="width:110px;text-align:right;padding-right:14px;">Actions</th></tr>
@@ -305,6 +316,7 @@
         {% endfor %}
       </tbody>
     </table>
+    {% endif %}
   </details>
   {% endfor %}
 </div>
@@ -312,15 +324,12 @@
 {% else %}
 <div style="padding:64px 24px;text-align:center;">
   <div style="max-width:380px;margin:0 auto;">
-    <div style="font-size:48px;margin-bottom:16px;">{{ '🎉' if total_pages > 0 else '🔄' }}</div>
-    <div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:6px;">
-      {% if total_pages == 0 %}No data yet{% else %}No on-page issues found — clean!{% endif %}
-    </div>
+    <div style="font-size:48px;margin-bottom:16px;">🔄</div>
+    <div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:6px;">No data yet</div>
     <div style="font-size:13px;color:#64748b;">
       {% if active_provider != 'dataforseo' %}
       SEMrush isn't wired up to pull issues yet — switch back to DataForSEO in <a href="/settings" style="color:#4f46e5;">Settings</a>, or wait until the SEMrush account has API units again.
-      {% elif total_pages == 0 %}Click <strong>Refresh from DataForSEO</strong> or <strong>Instant Check</strong> above to pull real on-page data for the first time.
-      {% else %}Click <strong>Refresh from DataForSEO</strong> to re-check.{% endif %}
+      {% else %}Click <strong>Refresh from DataForSEO</strong> or <strong>Instant Check</strong> above to pull real on-page data for the first time.{% endif %}
     </div>
   </div>
 </div>
