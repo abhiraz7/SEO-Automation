@@ -39,9 +39,9 @@ CATEGORY_COLORS = {
     "twitter": "#1d4ed8", "content": "#d97706", "security": "#dc2626",
 }
 CATEGORY_LABELS = {
-    "title": "Meta Title", "meta_description": "Meta Description", "h1": "H1 Heading",
-    "image_alt": "Image Alt Text", "canonical": "Canonical Link", "opengraph": "Open Graph",
-    "twitter": "Twitter Card", "content": "Content Quality", "security": "Security",
+    "title": "📝 Meta Title", "meta_description": "📄 Meta Description", "h1": "🔠 H1 Heading",
+    "image_alt": "🖼️ Image Alt Text", "canonical": "🔗 Canonical Link", "opengraph": "📱 Open Graph",
+    "twitter": "🐦 Twitter Card", "content": "✍️ Content Quality", "security": "🔒 Security",
 }
 DEPLOYABLE_CATEGORIES = ["meta_description", "title", "h1", "twitter", "canonical", "opengraph"]
 PROVIDER_LABELS = {"dataforseo": "DataForSEO", "semrush": "SEMrush"}

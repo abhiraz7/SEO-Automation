@@ -48,7 +48,7 @@
 <div style="padding:32px 24px 40px;max-width:1280px;margin:0 auto;">
 
   <div style="margin-bottom:24px;">
-    <div style="font-size:22px;font-weight:800;color:#0f172a;letter-spacing:-0.01em;margin-bottom:4px;">Your projects</div>
+    <div style="font-size:22px;font-weight:800;color:#0f172a;letter-spacing:-0.01em;margin-bottom:4px;">📁 Your projects</div>
     <div style="font-size:13px;color:#94a3b8;">Every project is powered by one on-page data provider — DataForSEO or SEMrush — chosen when it's created.</div>
   </div>
 
@@ -100,25 +100,25 @@
       <div class="proj-stats" style="display:flex;align-items:center;gap:28px;flex:1;">
         <div class="stat-block">
           <div style="font-size:17px;font-weight:800;color:#0f172a;">{{ card.total_pages }}</div>
-          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;">Crawled Pages</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;">🕷️ Crawled Pages</div>
         </div>
         <div class="stat-block">
           <div style="display:flex;align-items:center;gap:5px;">
             <span style="width:7px;height:7px;border-radius:50%;background:#dc2626;flex-shrink:0;"></span>
             <span style="font-size:17px;font-weight:800;color:{% if card.error_count > 0 %}#dc2626{% else %}#0f172a{% endif %};">{{ card.error_count }}</span>
           </div>
-          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;">Errors</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;">🚫 Errors</div>
         </div>
         <div class="stat-block">
           <div style="display:flex;align-items:center;gap:5px;">
             <span style="width:7px;height:7px;border-radius:50%;background:#d97706;flex-shrink:0;"></span>
             <span style="font-size:17px;font-weight:800;color:{% if card.warning_count > 0 %}#b45309{% else %}#0f172a{% endif %};">{{ card.warning_count }}</span>
           </div>
-          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;">Warnings</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;">⚠️ Warnings</div>
         </div>
         <div class="stat-block">
           <div style="font-size:12px;font-weight:600;color:#64748b;">{{ card.last_checked.strftime('%b %d, %Y') if card.last_checked else 'Never' }}</div>
-          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;">Last Checked</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;">🕒 Last Checked</div>
         </div>
       </div>
 

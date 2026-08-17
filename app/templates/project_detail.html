@@ -428,7 +428,7 @@
     <div style="width:28px;height:28px;border-radius:8px;background:#eef2ff;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
       <svg viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="1.5" width="15" height="15"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z"/></svg>
     </div>
-    <span style="font-size:15px;font-weight:700;color:#0f172a;">Issues by category</span>
+    <span style="font-size:15px;font-weight:700;color:#0f172a;">🗂️ Issues by category</span>
     <span style="font-size:11px;background:#eef2ff;color:#4f46e5;padding:2px 9px;border-radius:10px;font-weight:700;">{{ grouped_issues|length }}</span>
     <span style="font-size:11px;color:#94a3b8;margin-left:auto;">{{ ti.n }} total issues across {{ total_pages }} pages</span>
   </div>
@@ -447,17 +447,17 @@
     'content': '#d97706',
   } %}
   {% set cat_labels = {
-    'title': 'Meta Title',
-    'meta_description': 'Meta Description',
-    'h1': 'H1 Heading',
-    'h2': 'H2 Tags',
-    'image_alt': 'Image Alt Text',
-    'schema': 'Schema Markup',
-    'canonical': 'Canonical Link',
-    'opengraph': 'Open Graph',
-    'twitter': 'Twitter Card',
-    'lang': 'Lang Attribute',
-    'content': 'Content Quality',
+    'title': '📝 Meta Title',
+    'meta_description': '📄 Meta Description',
+    'h1': '🔠 H1 Heading',
+    'h2': '🔤 H2 Tags',
+    'image_alt': '🖼️ Image Alt Text',
+    'schema': '🧩 Schema Markup',
+    'canonical': '🔗 Canonical Link',
+    'opengraph': '📱 Open Graph',
+    'twitter': '🐦 Twitter Card',
+    'lang': '🌐 Lang Attribute',
+    'content': '✍️ Content Quality',
   } %}
 
   {% for category, issues in grouped_issues.items() %}
