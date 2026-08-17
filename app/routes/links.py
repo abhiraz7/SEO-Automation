@@ -121,11 +121,22 @@ def link_analyzer(project_id: int, request: Request, db: Session = Depends(get_d
         inbound_counts[key] = inbound_counts.get(key, 0) + 1
     most_linked = sorted(inbound_counts.items(), key=lambda kv: kv[1], reverse=True)[:15]
 
+    # Same "start at 100, subtract weighted penalties" shape as onpage_semrush's
+    # health score -- broken links hurt more per-occurrence (0 link equity,
+    # each one is a dead end a visitor/crawler hits), orphans hurt less (bad
+    # for discovery, not actively broken). Computed here rather than inline in
+    # the template: Jinja's filter/arithmetic precedence makes multi-term
+    # expressions like this easy to get subtly wrong.
+    link_health = 100
+    if links:
+        link_health = round(max(0, 100 - (len(broken) / len(links) * 100 * 3) - (len(orphans) * 2)))
+
     return templates.TemplateResponse(
         request, "links.html", {
             "project": project,
             "task": task,
             "has_data": True,
+            "link_health": link_health,
             "total_links": len(links),
             "broken": sorted(broken, key=lambda l: l.status_code or 0, reverse=True),
             "broken_count": len(broken),

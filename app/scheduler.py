@@ -169,6 +169,42 @@ def _run_next_queued_job_in_lane(job_types: set[str], timeout_seconds: int) -> N
 
 
 def run_next_crawl_job() -> None:
+    """Every path that CREATES a crawl Job (manual /crawl, test-crawl,
+    schedule dispatch) already checks is_crawler_enabled -- but this is the
+    lane that actually EXECUTES queued jobs, ticking independently every
+    10s, so a job queued a moment before the kill switch flips off would
+    otherwise still run here regardless. Checked fresh on every tick (not
+    cached) so a mid-queue disable takes effect on the very next tick.
+
+    When disabled, any crawl jobs still sitting in 'queued' are cancelled
+    outright rather than left as stale, confusing entries that never seem
+    to move in the Queue drawer. A crawl already 'running' (subprocess
+    already launched) is left to finish -- this stops future picks, it
+    doesn't kill in-flight work."""
+    db = SessionLocal()
+    try:
+        crawler_row = db.get(models.CrawlerSettings, 1)
+        crawler_enabled = crawler_row.enabled if crawler_row else True
+        if not crawler_enabled:
+            stale = (
+                db.query(models.Job)
+                .filter(models.Job.status == "queued", models.Job.job_type.in_(CRAWL_JOB_TYPES))
+                .all()
+            )
+            for job in stale:
+                job.status = "cancelled"
+                job.error = "Crawler is disabled in /settings/crawler -- job cancelled."
+                job.finished_at = datetime.now(timezone.utc)
+            if stale:
+                db.commit()
+                logger.info("Cancelled %d queued crawl job(s) -- crawler disabled", len(stale))
+            return
+    except Exception:
+        db.rollback()
+        logger.exception("run_next_crawl_job's crawler-enabled check failed")
+        return
+    finally:
+        db.close()
     _run_next_queued_job_in_lane(CRAWL_JOB_TYPES, JOB_TIMEOUT_SECONDS)
 
 
