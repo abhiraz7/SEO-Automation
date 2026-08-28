@@ -569,6 +569,22 @@ def page_detail(
     current_page = min(max(pg, 1), total_pages)
     start = (current_page - 1) * ISSUES_PAGE_SIZE
 
+    # Latest deploy-verification status per suggestion, so the template can
+    # show "verified live" / "not yet visible" without a separate fetch. One
+    # suggestion can have multiple revisions (deploy, rollback, redeploy) --
+    # only the most recent one still matters to the badge.
+    suggestion_ids = [s.id for issue in issues for s in issue.suggestions]
+    latest_revision_by_suggestion: dict[int, models.SuggestionRevision] = {}
+    if suggestion_ids:
+        revisions = (
+            db.query(models.SuggestionRevision)
+            .filter(models.SuggestionRevision.suggestion_id.in_(suggestion_ids))
+            .order_by(models.SuggestionRevision.deployed_at.desc())
+            .all()
+        )
+        for rev in revisions:
+            latest_revision_by_suggestion.setdefault(rev.suggestion_id, rev)
+
     return templates.TemplateResponse(
         request,
         "page_detail.html",
@@ -582,6 +598,7 @@ def page_detail(
             "total_pages": total_pages,
             "word_count": len((page.custom_content or "").split()),
             "crawled_ago": _time_ago(page.updated_at) if page.updated_at else None,
+            "latest_revision_by_suggestion": latest_revision_by_suggestion,
         },
     )
 

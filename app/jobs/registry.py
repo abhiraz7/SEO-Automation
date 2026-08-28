@@ -13,6 +13,7 @@ from .handlers.backlink_pull import run_backlink_pull_job
 from .handlers.crawl import run_crawl_job
 from .handlers.keyword_refresh import run_keyword_refresh_job
 from .handlers.rank_check import run_rank_check_job
+from .handlers.verify_deploy import run_verify_deploy_job
 
 JOB_HANDLERS = {
     "crawl": run_crawl_job,
@@ -20,4 +21,5 @@ JOB_HANDLERS = {
     "keyword_refresh": run_keyword_refresh_job,
     "backlink_pull": run_backlink_pull_job,
     "audit": run_audit_job,
+    "verify_deploy": run_verify_deploy_job,
 }

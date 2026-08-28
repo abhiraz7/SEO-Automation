@@ -38,6 +38,9 @@
     @keyframes badgePulse { 0%,100%{ box-shadow:0 0 0 0 rgba(79,70,229,.5) } 50%{ box-shadow:0 0 0 4px rgba(79,70,229,0) } }
     .q-badge { animation:badgePulse 2s infinite; }
 
+    /* Background-fetch status strip spinner (crawl progress, site-audit polling) */
+    @keyframes vtx-spin { to { transform: rotate(360deg); } }
+
     /* Hamburger button */
     #hamburger {
       display: flex;
@@ -77,6 +80,11 @@
           {% block topbar %}{% endblock %}
         </div>
       </header>
+
+      <!-- Background-fetch status strip -- empty on pages with nothing
+           running; each page's own block fills it (crawl progress,
+           DataForSEO/Semrush audit polling, etc). -->
+      {% block status_bar %}{% endblock %}
 
       <!-- Content -->
       <main style="flex:1;overflow-y:auto;background:#f8fafc;">

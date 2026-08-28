@@ -187,25 +187,28 @@ def start_site_audit(project_id: int, max_crawl_pages: int = Form(100), db: Sess
 
 @router.post("/projects/{project_id}/onpage/site-audit/{task_id}/check")
 def check_site_audit(project_id: int, task_id: int, db: Session = Depends(get_db)):
-    """Poll-and-pull in one action, triggered by an explicit 'Check status'
-    click -- no background poller, matches 'everything on runtime'."""
+    """Poll-and-pull in one action. Previously triggered by a manual 'Check
+    status' button click; now called automatically by the status-strip poll
+    in onpage_semrush.html (see its block status_bar) every few seconds
+    while a task is in flight, so returns JSON instead of redirecting --
+    nothing renders a <form> against this route anymore."""
     task = db.get(models.OnPageTask, task_id)
     if not task or task.project_id != project_id:
         raise HTTPException(status_code=404, detail="Task not found")
     project = _get_project(db, project_id)
 
     if task.status == "fetched":
-        return RedirectResponse(url=f"/projects/{project_id}/onpage", status_code=303)
+        return {"status": "fetched", "pages_crawled": task.pages_crawled}
 
     if not dataforseo_onpage.is_task_ready(task.dataforseo_task_id):
-        return RedirectResponse(url=f"/projects/{project_id}/onpage", status_code=303)
+        return {"status": "posted"}
 
     result = dataforseo_onpage.fetch_task_pages(task.dataforseo_task_id, limit=task.max_crawl_pages)
     if result.get("error"):
         task.status = "error"
         task.error = result["error"]
         db.commit()
-        return RedirectResponse(url=f"/projects/{project_id}/onpage", status_code=303)
+        return {"status": "error", "error": result["error"]}
 
     for item in result.get("pages") or []:
         _store_page_result(db, project, item, onpage_task_id=task.id)
@@ -220,7 +223,7 @@ def check_site_audit(project_id: int, task_id: int, db: Session = Depends(get_db
     # ingestion above, which already succeeded and committed.
     store_links_for_task(db, project_id, task)
 
-    return RedirectResponse(url=f"/projects/{project_id}/onpage", status_code=303)
+    return {"status": "fetched", "pages_crawled": task.pages_crawled}
 
 
 # ── View ──────────────────────────────────────────────────────────────

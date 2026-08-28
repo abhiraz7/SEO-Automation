@@ -301,6 +301,14 @@ class SuggestionRevision(Base):
     deployed_at = Column(DateTime, default=_utcnow)
     rolled_back_at = Column(DateTime)
     deploy_result_raw = Column(JSON)
+    # Post-deploy verification (migration 025): a live, external re-fetch of
+    # the page (DataForSEO instant_pages, not our own server/browser) run a
+    # short while after deploy, confirming the public site actually shows
+    # the new value rather than trusting "WordPress accepted the write" as
+    # proof. pending until the verify_deploy job runs once.
+    verify_status = Column(String, default="pending")  # pending|verified|mismatch|error
+    verify_checked_at = Column(DateTime)
+    verify_detail = Column(Text)  # the live value seen, or the error message
 
     suggestion = relationship("Suggestion")
 

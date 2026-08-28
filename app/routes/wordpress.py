@@ -360,6 +360,9 @@ def _revision_out(r: models.SuggestionRevision) -> dict:
         "deployed_via": r.deployed_via,
         "deployed_at": r.deployed_at,
         "rolled_back_at": r.rolled_back_at,
+        "verify_status": r.verify_status,
+        "verify_checked_at": r.verify_checked_at,
+        "verify_detail": r.verify_detail,
     }
 
 
@@ -472,6 +475,21 @@ def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depen
 
     db.commit()
     db.refresh(revision)
+
+    # Fire-and-forget verification: an independent, external re-fetch of the
+    # live page (see app/jobs/handlers/verify_deploy.py) confirming the
+    # public site really shows the new value, not just that WordPress
+    # accepted the write. Picked up by the light-job worker lane within
+    # ~60s -- no delay added here on purpose, since a "mismatch" result
+    # right after deploy is itself useful signal (a page cache exists and
+    # needs purging), not something to hide by waiting longer.
+    db.add(models.Job(
+        project_id=suggestion.project_id,
+        job_type="verify_deploy",
+        payload={"revision_id": revision.id},
+    ))
+    db.commit()
+
     return _revision_out(revision)
 
 

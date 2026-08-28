@@ -94,6 +94,20 @@
               {% elif s.status == 'deployed' %}bg-purple-100 text-purple-700
               {% else %}bg-gray-100 text-gray-500{% endif %}">{{ s.status }}</span>
             {% if s.status == 'deployed' %}
+            {% set rev = latest_revision_by_suggestion.get(s.id) %}
+            {% if rev and not rev.rolled_back_at %}
+            <span class="px-2 py-0.5 rounded text-xs font-semibold
+              {% if rev.verify_status == 'verified' %}bg-emerald-100 text-emerald-700
+              {% elif rev.verify_status == 'mismatch' %}bg-amber-100 text-amber-700
+              {% elif rev.verify_status == 'error' %}bg-red-100 text-red-600
+              {% else %}bg-gray-100 text-gray-500{% endif %}"
+              title="{{ rev.verify_detail or '' }}">
+              {% if rev.verify_status == 'verified' %}✓ Verified live
+              {% elif rev.verify_status == 'mismatch' %}⚠ Not yet visible on site
+              {% elif rev.verify_status == 'error' %}⚠ Could not verify
+              {% else %}⏳ Checking live site...{% endif %}
+            </span>
+            {% endif %}
             <button onclick="suggRollback({{ s.id }})" class="text-xs text-orange-600 font-semibold hover:underline">↩ Roll back</button>
             {% else %}
             <button onclick="suggDecide({{ s.id }}, 'accept')" class="text-xs text-green-700 hover:underline">Accept</button>
