@@ -1188,3 +1188,82 @@ I don't have access to** — not on missing code. I did not fake any of them.
   section on the Competitor Analysis page, explicit-refresh only.
 - Nothing has been committed/pushed yet as of this entry -- see the
   commit immediately following this one for what actually landed.
+
+## 2026-08-31 — Session: Stuck on-page site-audit task, root cause + proactive reconciliation fix
+
+### Done
+- User spotted a production symptom on `/projects/2/onpage`: a DataForSEO
+  site-audit task (`08240832-213...`, posted **2026-08-24 08:32**) still
+  showing status `posted` a full week later, and a fresh "Refresh"
+  attempt correctly got blocked with "A crawl is already in progress."
+- **Root cause diagnosed, not guessed**: the app already had a
+  `STALE_TASK_HOURS = 6` guard in `routes/onpage_semrush.py` meant for
+  exactly this case, but it was **reactive-only** -- it only ever ran
+  when a human clicked "Refresh" again on that same project. The
+  client-side JS auto-poll that's supposed to resolve `posted` tasks
+  only runs while a browser tab has that page open, so a task nobody
+  revisited just sat there indefinitely with a misleading "Auto-
+  checking..." label, even though nothing was actually checking it.
+  Ruled out a naive/aware-datetime crash as a competing theory by
+  checking `models._utcnow()`/SQLite's DateTime round-trip -- both sides
+  of the comparison are naive, so that wasn't it.
+- Separately flagged (not yet confirmed or fixed): the running
+  production container showed `docker ps` uptime/created of **13 days**,
+  which predates several recent commits -- real possibility that prod is
+  simply running old code, independent of the reconciliation gap below.
+  Attempted to confirm the live commit via `docker exec ... git rev-parse
+  HEAD` over SSM; blocked by Claude Code's own permission classifier
+  (exec into a running prod container is treated as higher-risk than the
+  read-only `docker logs`/`docker ps` pulled earlier) -- not resolved
+  this session, needs the user to run it directly or explicitly approve.
+- **Fix built for the reconciliation gap** (the part fixable without
+  touching prod directly): extracted the existing staleness math into a
+  new shared module, `app/onpage_task_maintenance.py`
+  (`mark_stale_onpage_tasks(db, project_id=None)`), so the exact same
+  check can run from two places instead of duplicating it:
+  - `routes/onpage_semrush.py`'s `start_site_audit` now calls the shared
+    function instead of its old inline copy -- pure extraction, same 6h
+    threshold, same error message, zero behavior change for the reactive
+    path.
+  - New proactive path: `scheduler.py`'s `reconcile_stale_onpage_tasks()`
+    runs once at startup (alongside the existing `_recover_interrupted_
+    jobs()`/`_backfill_next_run_at()` pattern) and then every 10 minutes
+    via its own APScheduler interval job, sweeping **all** projects, not
+    just whichever one a human happens to be looking at. Logs a warning
+    with the marked task ids when it finds something -- visible in
+    `docker logs`, though no push/alert wiring yet (flagged as a
+    follow-up, not built this session to keep the change small).
+- Verified: `py_compile` clean on all three touched files, `.venv`
+  pytest run (system Python lacks `sqlalchemy` -- had to switch to the
+  project's actual venv) -- 71/71 existing tests still pass. Not yet
+  verified against a real stuck row locally (no seeded fixture task run
+  through the new tick) or live on production.
+
+### Bigger picture, discussed but not built this session
+Walked through what a "production-grade" fix for this class of bug looks
+like beyond this one incident, per the user's ask -- three gaps named,
+only the first addressed above:
+1. Background reconciliation instead of human-triggered checking (done,
+   see above).
+2. A `/version` or `/health` endpoint exposing the deployed git SHA, so
+   "is prod running current code" is a `curl` instead of inferring it
+   from a container's `Created` timestamp over SSM (not built).
+3. Centralizing naive-UTC datetime handling behind one helper instead of
+   scattered by-hand `datetime.utcnow()` calls with comments warning
+   about the pitfall (not built -- this session's investigation confirmed
+   the current call sites happen to be consistent, but the risk pattern
+   is real and already commented on elsewhere in the codebase).
+
+### Next
+- **User still needs to resolve the specific stuck row on production** --
+  this session's fix prevents the NEXT occurrence from going unnoticed
+  for a week, it does not retroactively touch the row from 08-24. Either
+  redeploy current `main` (if the 13-day-old-container theory is right,
+  the reconciliation tick then heals it within 10 minutes of restart) or
+  manually flip that row's status via the DB.
+- Confirm whether prod is actually running stale code: rerun `docker exec
+  seo-automation-app-1 git rev-parse HEAD` over SSM (user-approved this
+  time) and diff against local `git log`.
+- `/version` endpoint and the datetime-helper cleanup are both proposed,
+  not started -- candidates for a follow-up session per the task-list-
+  workflow rule (one task at a time, verify, then push before the next).

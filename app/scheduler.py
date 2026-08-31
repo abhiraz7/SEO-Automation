@@ -32,6 +32,7 @@ from apscheduler.triggers.cron import CronTrigger
 from . import models
 from .database import SessionLocal
 from .jobs.registry import JOB_HANDLERS
+from .onpage_task_maintenance import mark_stale_onpage_tasks
 
 logger = logging.getLogger("scheduler")
 
@@ -233,6 +234,28 @@ def _recover_interrupted_jobs() -> None:
         db.close()
 
 
+def reconcile_stale_onpage_tasks() -> None:
+    """Proactive counterpart to onpage_semrush.py's reactive stale-task
+    check, which only ever ran when a user tried to start a new crawl on
+    the SAME project that already had a stuck one -- if nobody revisited
+    that project, a task DataForSEO silently dropped stayed 'posted'
+    indefinitely (real incident: a task posted 2026-08-24 was still
+    'posted' a week later, with no signal besides a stale spinner in the
+    UI). This tick runs independently of any request, across every
+    project, every 10 minutes -- see onpage_task_maintenance.py."""
+    db = SessionLocal()
+    try:
+        marked = mark_stale_onpage_tasks(db)
+        if marked:
+            db.commit()
+            logger.warning("Reconciled %d stale on-page task(s): %s", len(marked), marked)
+    except Exception:
+        db.rollback()
+        logger.exception("reconcile_stale_onpage_tasks failed")
+    finally:
+        db.close()
+
+
 def _backfill_next_run_at() -> None:
     """On startup: any Schedule row saved before it had a next_run_at (or
     freshly created without one) gets one computed now, so it isn't
@@ -257,6 +280,7 @@ def start() -> BackgroundScheduler:
         return _scheduler
     _recover_interrupted_jobs()
     _backfill_next_run_at()
+    reconcile_stale_onpage_tasks()
     _scheduler = BackgroundScheduler()
     _scheduler.add_job(
         dispatch_due_schedules, "interval", seconds=60,
@@ -270,9 +294,14 @@ def start() -> BackgroundScheduler:
         run_next_light_job, "interval", seconds=10,
         id="run_next_light_job", max_instances=1, coalesce=True,
     )
+    _scheduler.add_job(
+        reconcile_stale_onpage_tasks, "interval", seconds=600,
+        id="reconcile_stale_onpage_tasks", max_instances=1, coalesce=True,
+    )
     _scheduler.start()
     logger.info(
-        "Scheduler started (dispatch every 60s, crawl lane + light lane worker ticks every 10s)."
+        "Scheduler started (dispatch every 60s, crawl lane + light lane worker ticks every 10s, "
+        "on-page task reconciliation every 10min)."
     )
     return _scheduler
 

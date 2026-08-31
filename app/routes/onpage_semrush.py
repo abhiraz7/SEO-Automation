@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit, dataforseo_onpage, models, wordpress
 from ..database import get_db
+from ..onpage_task_maintenance import mark_stale_onpage_tasks
 from .links import store_links_for_task
 from .settings import get_site_audit_cooldown_hours, register_crawler_global
 
@@ -124,6 +125,9 @@ def instant_check(project_id: int, url: str = Form(...), db: Session = Depends(g
     return RedirectResponse(url=f"/projects/{project_id}/onpage", status_code=303)
 
 
+MAX_CRAWL_PAGES_CAP = 1000  # ceiling against a fat-fingered value billing a huge crawl by accident
+
+
 @router.post("/projects/{project_id}/onpage/site-audit/start")
 def start_site_audit(project_id: int, max_crawl_pages: int = Form(100), db: Session = Depends(get_db)):
     """Guarded on two fronts before ever calling DataForSEO (each billed):
@@ -134,7 +138,13 @@ def start_site_audit(project_id: int, max_crawl_pages: int = Form(100), db: Sess
     content/SEO metadata essentially never changes meaningfully faster than
     that. Both exist because of a real incident: a double-clicked "Refresh
     now" button with no submit-guard fired 13 billed crawls of the same 20
-    pages in 4 seconds -- see AgentLog for the debugging writeup."""
+    pages in 4 seconds -- see AgentLog for the debugging writeup.
+
+    max_crawl_pages is now user-chosen (see the refresh modal's page-count
+    field) instead of always 100, clamped here the same way
+    save_site_audit_cooldown clamps its input -- never trust a form value
+    as-is when it drives a billed external call."""
+    max_crawl_pages = max(1, min(max_crawl_pages, MAX_CRAWL_PAGES_CAP))
     project = _get_project(db, project_id)
 
     in_flight = (
@@ -143,10 +153,21 @@ def start_site_audit(project_id: int, max_crawl_pages: int = Form(100), db: Sess
         .first()
     )
     if in_flight:
-        return RedirectResponse(
-            url=f"/projects/{project_id}/onpage?refresh_blocked=A+crawl+is+already+in+progress+for+this+project+%28started+{in_flight.created_at.strftime('%Y-%m-%d %H:%M')}%29.+Wait+for+it+to+finish+before+starting+another.",
-            status_code=303,
-        )
+        # A task DataForSEO never finishes (crawl died on their end, account
+        # issue, etc.) never shows up in tasks_ready -- is_task_ready just
+        # keeps returning False forever, so without this it blocks every
+        # future crawl on this project permanently. Staleness check (and the
+        # scheduler's proactive version of the same check) lives in
+        # onpage_task_maintenance.py, not inline here -- see that module's
+        # docstring for why this used to be reactive-only and stay stuck for
+        # days.
+        if mark_stale_onpage_tasks(db, project_id=project_id):
+            db.commit()
+        else:
+            return RedirectResponse(
+                url=f"/projects/{project_id}/onpage?refresh_blocked=A+crawl+is+already+in+progress+for+this+project+%28started+{in_flight.created_at.strftime('%Y-%m-%d %H:%M')}%29.+Wait+for+it+to+finish+before+starting+another.",
+                status_code=303,
+            )
 
     cooldown_hours = get_site_audit_cooldown_hours(db)
     if cooldown_hours > 0:
@@ -183,6 +204,21 @@ def start_site_audit(project_id: int, max_crawl_pages: int = Form(100), db: Sess
     db.add(task)
     db.commit()
     return RedirectResponse(url=f"/projects/{project_id}/onpage", status_code=303)
+
+
+@router.post("/projects/{project_id}/onpage/site-audit/max-pages")
+def save_default_max_pages(project_id: int, max_crawl_pages: int = Form(...), db: Session = Depends(get_db)):
+    """Persists the Refresh modal's 'Max pages' value as this project's
+    default (migration 026), so it's remembered next time instead of
+    resetting to 100. Same clamp as start_site_audit -- a saved default is
+    still a value that ends up driving a billed call later, so it gets the
+    same never-trust-the-form-value treatment. JSON in/out (called via
+    fetch from the Save button, not a real form submit) since this doesn't
+    navigate anywhere."""
+    project = _get_project(db, project_id)
+    project.default_max_crawl_pages = max(1, min(max_crawl_pages, MAX_CRAWL_PAGES_CAP))
+    db.commit()
+    return {"default_max_crawl_pages": project.default_max_crawl_pages}
 
 
 @router.post("/projects/{project_id}/onpage/site-audit/{task_id}/check")
@@ -314,6 +350,8 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
         request, "onpage_semrush.html", {
             "project": project,
             "target": _target_domain(project),
+            "max_crawl_pages_cap": MAX_CRAWL_PAGES_CAP,
+            "default_max_crawl_pages": project.default_max_crawl_pages or 100,
             "pages": pages,
             "pages_by_id": pages_by_id,
             "grouped_issues": grouped_issues,

@@ -17,6 +17,10 @@ class Project(Base):
     base_url = Column(String, nullable=False)
     project_type = Column(String, default="manual")  # manual | connected
     created_at = Column(DateTime, default=_utcnow)
+    # Remembered "Max pages" value from the on-page Refresh modal (migration
+    # 026) so a user doesn't have to retype it every crawl. NULL means "never
+    # saved" -- routes fall back to 100, not 0, when this is unset.
+    default_max_crawl_pages = Column(Integer)
 
     pages = relationship("Page", back_populates="project", cascade="all, delete-orphan")
     business_profile = relationship(

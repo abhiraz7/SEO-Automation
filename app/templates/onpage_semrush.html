@@ -51,7 +51,7 @@
       Refresh
     </button>
     <form id="refresh-form" method="post" action="/projects/{{ project.id }}/onpage/site-audit/start" style="display:none;">
-      <input type="hidden" name="max_crawl_pages" value="100">
+      <input type="hidden" id="refresh-max-pages-field" name="max_crawl_pages" value="{{ default_max_crawl_pages }}">
     </form>
     <button onclick="openDrawer('instant-drawer')" title="Instant Check (1 URL)"
       style="font-size:12px;font-weight:600;color:#334155;padding:6px 10px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;white-space:nowrap;">
@@ -469,7 +469,16 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="1.5" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/></svg>
     </div>
     <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:6px;">This spends real API credit</div>
-    <div style="font-size:12px;color:#64748b;line-height:1.5;margin-bottom:18px;">DataForSEO will crawl up to <strong>100 pages</strong> of {{ target }} at <strong>~$0.00015/page</strong>. Continue?</div>
+    <div style="font-size:12px;color:#64748b;line-height:1.5;margin-bottom:10px;">DataForSEO will crawl up to the page count below for {{ target }} at <strong>~$0.00015/page</strong>. Continue?</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;">
+      <label for="refresh-max-pages-input" style="font-size:12px;color:#334155;font-weight:600;">Max pages</label>
+      <input type="number" id="refresh-max-pages-input" min="1" max="{{ max_crawl_pages_cap }}" value="{{ default_max_crawl_pages }}"
+        oninput="updateRefreshCostEstimate()"
+        style="width:90px;padding:6px 8px;border-radius:6px;border:1px solid #e2e8f0;font-size:13px;text-align:center;">
+      <button type="button" id="refresh-max-pages-save-btn" onclick="saveDefaultMaxPages(this)" title="Remember this value for {{ project.name }}"
+        style="padding:6px 10px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#4f46e5;font-size:11px;font-weight:700;cursor:pointer;">Save</button>
+    </div>
+    <div id="refresh-cost-estimate" style="font-size:11px;color:#94a3b8;margin-bottom:18px;">Estimated cost: ~$0.015</div>
     <div style="display:flex;gap:8px;">
       <button onclick="closeRefreshModal()" style="flex:1;padding:9px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;color:#64748b;font-size:13px;font-weight:600;cursor:pointer;">Cancel</button>
       <button id="refresh-confirm-btn" onclick="submitRefreshForm(this)" style="flex:1;padding:9px;border-radius:8px;border:none;background:linear-gradient(135deg,#4f46e5,#6d28d9);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Refresh now</button>
@@ -960,12 +969,42 @@ function fmRollback(suggId) {
 function openRefreshModal() {
   document.getElementById('refresh-modal-backdrop').style.display = 'block';
   document.getElementById('refresh-modal').style.display = 'block';
+  updateRefreshCostEstimate();
 }
 function closeRefreshModal() {
   document.getElementById('refresh-modal-backdrop').style.display = 'none';
   document.getElementById('refresh-modal').style.display = 'none';
 }
+function updateRefreshCostEstimate() {
+  var input = document.getElementById('refresh-max-pages-input');
+  var n = Math.max(1, Math.min(parseInt(input.value, 10) || 1, parseInt(input.max, 10) || 1000));
+  document.getElementById('refresh-cost-estimate').textContent = 'Estimated cost: ~$' + (n * 0.00015).toFixed(3);
+}
+function saveDefaultMaxPages(btn) {
+  var input = document.getElementById('refresh-max-pages-input');
+  var n = Math.max(1, Math.min(parseInt(input.value, 10) || 100, parseInt(input.max, 10) || 1000));
+  btn.disabled = true;
+  fetch('/projects/' + PROJECT_ID + '/onpage/site-audit/max-pages', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'max_crawl_pages=' + n,
+  })
+    .then(function(r) { if (!r.ok) throw new Error('Save failed'); return r.json(); })
+    .then(function() {
+      showToast('Saved ' + n + ' as default max pages for this project.');
+      document.getElementById('refresh-max-pages-field').value = n;
+    })
+    .catch(function(err) { showToast(err.message, 'error'); })
+    .finally(function() { btn.disabled = false; });
+}
 function submitRefreshForm(btn) {
+  // Clamp is re-applied here (not just server-side) so what the user
+  // confirmed in the modal is exactly what gets submitted -- the server
+  // clamp in start_site_audit is still the real guard, this just keeps
+  // the displayed estimate and the submitted value in sync.
+  var input = document.getElementById('refresh-max-pages-input');
+  var n = Math.max(1, Math.min(parseInt(input.value, 10) || 100, parseInt(input.max, 10) || 1000));
+  document.getElementById('refresh-max-pages-field').value = n;
   // Guards the exact incident this whole cooldown feature exists for: a
   // double/triple click here used to fire one billed DataForSEO crawl per
   // click, since a plain form submit has no built-in re-entrancy guard and
