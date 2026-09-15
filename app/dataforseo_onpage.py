@@ -12,6 +12,7 @@ parent app's app/dataforseo.py.
 import os
 
 import httpx
+from bs4 import BeautifulSoup
 
 DATAFORSEO_BASE = "https://api.dataforseo.com/v3"
 _TIMEOUT = 30.0
@@ -204,11 +205,41 @@ def issues_from_item(item: dict) -> list[dict]:
     return issues
 
 
+def fetch_image_alts(url: str) -> list[dict]:
+    """Best-effort per-image alt-text detail for the image_alt issue.
+
+    DataForSEO's on-page task response has no per-image list -- only
+    aggregate counters (images_count etc.) plus the checks.no_image_alt
+    boolean -- so there is no field to read this from. This fetches the
+    page's own HTML directly and parses <img> tags ourselves instead, the
+    same technique app/crawler.py._extract_page_data already uses for the
+    legacy crawler pipeline. A plain HTTP GET to the target site, not a
+    DataForSEO call -- no extra billing.
+
+    Never raises: this is supplementary detail for one report cell, not
+    something that should ever block storing the page's on-page result, so
+    any fetch/parse failure just means the report falls back to the
+    "N image(s) missing alt" count instead of per-image detail."""
+    try:
+        resp = httpx.get(url, timeout=_TIMEOUT, follow_redirects=True)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "lxml")
+    except Exception:
+        return []
+    return [{"src": img.get("src"), "alt": img.get("alt")} for img in soup.find_all("img")]
+
+
 def normalize_page(item: dict) -> dict:
     """Maps a raw DataForSEO on-page item (from instant_pages or pages) into
     the fields models.Page stores. Field names per DataForSEO's documented
     response shape: meta.title, meta.description, meta.canonical, meta.htags,
-    content.plain_text_word_count, onpage_score, checks."""
+    content.plain_text_word_count, onpage_score, checks.
+
+    image_alts is intentionally NOT read from `meta` here -- DataForSEO's
+    response has no per-image field to read (see fetch_image_alts above).
+    The caller (onpage_semrush.py._store_page_result) fills it in with a
+    live fetch_image_alts() call when checks.no_image_alt is set, since
+    that's the only case a per-image list is actually needed."""
     meta = item.get("meta") or {}
     htags = meta.get("htags") or {}
     content = item.get("content") or {}
@@ -222,7 +253,6 @@ def normalize_page(item: dict) -> dict:
         "canonical": meta.get("canonical"),
         "h1": htags.get("h1") or [],
         "h2": htags.get("h2") or [],
-        "image_alts": meta.get("images") or [],
         "og_title": social.get("og:title"),
         "og_description": social.get("og:description"),
         "twitter_card": social.get("twitter:card"),

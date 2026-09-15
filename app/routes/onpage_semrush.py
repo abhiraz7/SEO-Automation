@@ -15,10 +15,13 @@ Page.source == project's provider, so the retiring crawler+audit.py
 pipeline (Page.source == "crawler", the default) is completely invisible
 on this page while staying untouched everywhere else in the app.
 """
+import csv
+import io
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -101,16 +104,55 @@ def _store_page_result(db: Session, project: models.Project, item: dict, onpage_
         if field == "url":
             continue
         setattr(page, field, value)
+
+    # DataForSEO's on-page response has no per-image alt-text list (only the
+    # checks.no_image_alt boolean) -- see dataforseo_onpage.fetch_image_alts.
+    # Only fetch when the check actually flagged something, so a clean page
+    # never costs an extra HTTP request against the target site.
+    if normalized.get("checks", {}).get("no_image_alt"):
+        page.image_alts = dataforseo_onpage.fetch_image_alts(url)
+    else:
+        page.image_alts = []
+
     page.onpage_task_id = onpage_task_id
     page.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(page)
 
-    # Replace this page's issues wholesale on every fresh fetch -- a stale
-    # issue that DataForSEO no longer flags must not linger in the list.
-    db.query(models.Issue).filter(models.Issue.page_id == page.id).delete(synchronize_session=False)
+    # Reconcile by (category, rule) instead of wiping and recreating every
+    # Issue row on each fetch. An Issue's id is what every Suggestion is
+    # anchored to (issue_id FK), including accepted/edited/deployed ones --
+    # the V6 learning dataset (see suggestions.py's DECIDED_STATUSES). The
+    # old delete-all-then-insert-all wiped every Issue row on every refresh,
+    # so a fresh crawl that still (or again) flagged the same problem got a
+    # brand-new Issue.id with no suggestions attached -- the fix modal showed
+    # "No suggestions yet" for a fix that had already been deployed, which
+    # looked exactly like the deploy had silently reverted even when
+    # WordPress still had the deployed value live. This keeps a still-present
+    # issue's row (and its suggestion/deploy history) stable across refreshes.
+    existing_by_key = {
+        (i.category, i.rule): i
+        for i in db.query(models.Issue).filter(models.Issue.page_id == page.id).all()
+    }
+    seen_keys = set()
     for issue_dict in dataforseo_onpage.issues_from_item(item):
-        db.add(models.Issue(project_id=project.id, page_id=page.id, **issue_dict))
+        key = (issue_dict["category"], issue_dict["rule"])
+        seen_keys.add(key)
+        existing = existing_by_key.get(key)
+        if existing:
+            existing.severity = issue_dict["severity"]
+            existing.message = issue_dict["message"]
+        else:
+            db.add(models.Issue(project_id=project.id, page_id=page.id, **issue_dict))
+
+    # Only issues DataForSEO no longer flags at all get removed -- via ORM
+    # delete (not a bulk query.delete()) so Issue.suggestions' cascade="all,
+    # delete-orphan" actually fires, since the issue is genuinely resolved
+    # here, not just re-detected under a new row.
+    for key, issue in existing_by_key.items():
+        if key not in seen_keys:
+            db.delete(issue)
+
     db.commit()
     return page
 
@@ -164,8 +206,22 @@ def start_site_audit(project_id: int, max_crawl_pages: int = Form(100), db: Sess
         if mark_stale_onpage_tasks(db, project_id=project_id):
             db.commit()
         else:
+            # Give a concrete wait estimate instead of an open-ended "wait for
+            # it to finish" -- DataForSEO's task API has no progress percentage,
+            # so this is the same rough elapsed/usually-takes heuristic the
+            # audit-status-bar already shows while a crawl is in flight
+            # (onpage_semrush.html's auditStatusText()), just computed here too
+            # since a user who clicks Refresh again never sees that bar's text.
+            elapsed_min = max(0, round((datetime.utcnow() - in_flight.created_at).total_seconds() / 60))
+            est_min = max(1, round((in_flight.max_crawl_pages or 100) / 90))
+            message = (
+                f"A crawl is already in progress for this project (started "
+                f"{in_flight.created_at.strftime('%Y-%m-%d %H:%M')}, {elapsed_min}m ago). "
+                f"Usually takes about {est_min}m for up to {in_flight.max_crawl_pages or 100} pages -- "
+                f"check back shortly, or wait here and it'll finish on its own."
+            )
             return RedirectResponse(
-                url=f"/projects/{project_id}/onpage?refresh_blocked=A+crawl+is+already+in+progress+for+this+project+%28started+{in_flight.created_at.strftime('%Y-%m-%d %H:%M')}%29.+Wait+for+it+to+finish+before+starting+another.",
+                url=f"/projects/{project_id}/onpage?refresh_blocked={quote(message)}",
                 status_code=303,
             )
 
@@ -274,6 +330,62 @@ def check_site_audit(project_id: int, task_id: int, db: Session = Depends(get_db
     return {"status": "fetched", "pages_crawled": task.pages_crawled}
 
 
+# ── Export ────────────────────────────────────────────────────────────
+
+@router.get("/projects/{project_id}/onpage/export")
+def export_onpage_report(project_id: int, db: Session = Depends(get_db)):
+    """One row per page, mirroring what onpage_view shows on screen --
+    same active_provider filter, so a client only ever exports the
+    provider actually powering their view (never crawler-sourced rows)."""
+    project = _get_project(db, project_id)
+    active_provider = project_provider(project, db)
+
+    pages = (
+        db.query(models.Page)
+        .filter(models.Page.project_id == project.id, models.Page.source == active_provider)
+        .order_by(models.Page.updated_at.desc())
+        .all()
+    )
+    page_ids = [p.id for p in pages]
+    issues_by_page: dict[int, list[models.Issue]] = {pid: [] for pid in page_ids}
+    if page_ids:
+        for issue in db.query(models.Issue).filter(models.Issue.page_id.in_(page_ids)).all():
+            issues_by_page[issue.page_id].append(issue)
+
+    buf = io.StringIO()
+    buf.write("﻿")  # BOM so Excel opens non-ASCII titles/URLs as UTF-8, not mojibake
+    writer = csv.writer(buf)
+    writer.writerow([
+        "Page URL", "Status Code", "On-Page Score", "Word Count",
+        "Title", "Meta Description", "H1", "Canonical",
+        "Errors", "Warnings", "Issues", "Last Checked",
+    ])
+    for page in pages:
+        page_issues = issues_by_page.get(page.id, [])
+        writer.writerow([
+            page.url,
+            page.status_code,
+            page.onpage_score,
+            page.word_count,
+            page.title or "",
+            page.meta_description or "",
+            "; ".join(page.h1) if page.h1 else "",
+            page.canonical or "",
+            sum(1 for i in page_issues if i.severity == "error"),
+            sum(1 for i in page_issues if i.severity == "warning"),
+            "; ".join(f"[{i.category}] {i.message}" for i in page_issues),
+            page.updated_at.strftime("%Y-%m-%d %H:%M") if page.updated_at else "",
+        ])
+    buf.seek(0)
+
+    filename = f"onpage-report-{_target_domain(project)}.csv"
+    return StreamingResponse(
+        buf,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 # ── View ──────────────────────────────────────────────────────────────
 
 @router.get("/projects/{project_id}/onpage")
@@ -330,6 +442,20 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
     )
     total_pages = len(pages)
 
+    def _missing_alt_images(issue: models.Issue) -> list[dict] | None:
+        # Only image_alt issues carry per-image detail (see
+        # dataforseo_onpage.fetch_image_alts) -- every other category
+        # returns None so the fix modal knows not to render an image list.
+        if issue.category != "image_alt":
+            return None
+        page = pages_by_id.get(issue.page_id)
+        images = (page.image_alts if page else None) or []
+        return [
+            {"src": img.get("src"), "alt": img.get("alt")}
+            for img in images
+            if not (img.get("alt") or "").strip()
+        ]
+
     issues_js = {
         issue.id: {
             "id": issue.id,
@@ -340,6 +466,7 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             "severity": issue.severity,
             "message": issue.message,
             "url": pages_by_id.get(issue.page_id).url if pages_by_id.get(issue.page_id) else "",
+            "missing_alt_images": _missing_alt_images(issue),
             "suggestions": [
                 {
                     "id": s.id,

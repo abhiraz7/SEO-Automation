@@ -1,4 +1,3 @@
-import os
 from collections import defaultdict
 from datetime import datetime
 from math import ceil
@@ -10,7 +9,6 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import audit, backlinks_provider, models, schemas
-from ..semrush import fetch_domain_metrics
 from ..database import get_db
 from .settings import is_crawler_enabled, register_crawler_global
 
@@ -285,9 +283,6 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
         .order_by(models.Page.url)
         .all()
     )
-    semrush_connected = bool(os.environ.get("SEMRUSH_API_KEY", "").strip())
-    semrush_data = fetch_domain_metrics(project.base_url) if semrush_connected else {}
-
     page_data = []
     for page in pages:
         issues = (
@@ -362,8 +357,6 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
             "pages": pages,
             "page_data": page_data,
             "grouped_issues": grouped_issues,
-            "semrush_connected": semrush_connected,
-            "semrush_data": semrush_data,
             "last_crawled_ago": last_crawled_ago,
             "profile": profile,
             "crawl_settings": _crawl_settings_out(crawl_schedule),

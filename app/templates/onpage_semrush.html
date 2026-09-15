@@ -44,6 +44,11 @@
       {% endif %}
       WordPress
     </button>
+    <a href="/projects/{{ project.id }}/onpage/export" title="Export full on-page report as CSV"
+      style="display:flex;align-items:center;gap:5px;padding:6px 10px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export Report
+    </a>
     {% if active_provider == 'dataforseo' %}
     <button type="button" onclick="openRefreshModal()" title="Refresh from DataForSEO — ~$0.00015/page"
       style="display:flex;align-items:center;gap:5px;padding:6px 10px;border-radius:6px;border:none;background:linear-gradient(135deg,#4f46e5,#6d28d9);color:#fff;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 1px 4px rgba(79,70,229,0.25);white-space:nowrap;">
@@ -83,7 +88,7 @@
 {% set health = 100 if total_pages == 0 else [0, 100 - (error_count * 4) - ([warning_count, 40] | min)] | max %}
 
 <style>
-  .kpi-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; position:relative; overflow:hidden; transition:transform .2s ease, box-shadow .2s ease; }
+  .kpi-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; position:relative; overflow:hidden; transition:transform .2s ease, box-shadow .2s ease; cursor:pointer; }
   .kpi-card:hover { transform:translateY(-3px); box-shadow:0 8px 24px rgba(0,0,0,0.08); }
   .kpi-number { font-size:28px; font-weight:800; line-height:1; margin:8px 0 4px; letter-spacing:-0.02em; }
   .kpi-label { font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.07em; }
@@ -127,7 +132,7 @@
 <div style="padding:18px 24px 20px;border-bottom:1px solid #e2e8f0;background:#fff;">
   <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;">
 
-    <div class="kpi-card" style="border-left:4px solid #16a34a;background:linear-gradient(135deg,#fff 60%,#f0fdf4);">
+    <div class="kpi-card" onclick="filterIssues('all')" style="border-left:4px solid #16a34a;background:linear-gradient(135deg,#fff 60%,#f0fdf4);">
       <div class="kpi-label">Site Health</div>
       <div class="kpi-number" style="color:{% if health >= 80 %}#15803d{% elif health >= 50 %}#a16207{% else %}#dc2626{% endif %};">{{ health }}%</div>
       <div class="kpi-sub">derived from DataForSEO checks</div>
@@ -136,31 +141,31 @@
       </div>
     </div>
 
-    <div class="kpi-card" style="border-left:4px solid #0284c7;background:linear-gradient(135deg,#fff 60%,#f0f9ff);">
+    <div class="kpi-card" onclick="filterIssues('all')" style="border-left:4px solid #0284c7;background:linear-gradient(135deg,#fff 60%,#f0f9ff);">
       <div class="kpi-label">Pages Checked</div>
       <div class="kpi-number" style="color:#0284c7;">{{ total_pages }}</div>
       <div class="kpi-sub">instant + site audit</div>
     </div>
 
-    <div class="kpi-card" style="border-left:4px solid #d97706;background:linear-gradient(135deg,#fff 60%,#fffbeb);">
+    <div class="kpi-card" onclick="filterIssues('all')" style="border-left:4px solid #d97706;background:linear-gradient(135deg,#fff 60%,#fffbeb);">
       <div class="kpi-label">Total Issues</div>
       <div class="kpi-number" style="color:{% if total_issues > 0 %}#b45309{% else %}#15803d{% endif %};">{{ total_issues }}</div>
       <div class="kpi-sub">on-page, via DataForSEO</div>
     </div>
 
-    <div class="kpi-card" style="border-left:4px solid #dc2626;background:linear-gradient(135deg,#fff 60%,#fef2f2);">
+    <div class="kpi-card" onclick="filterIssues('error')" style="border-left:4px solid #dc2626;background:linear-gradient(135deg,#fff 60%,#fef2f2);">
       <div class="kpi-label">Critical Errors</div>
       <div class="kpi-number" style="color:{% if error_count > 0 %}#dc2626{% else %}#15803d{% endif %};">{{ error_count }}</div>
       <div class="kpi-sub">need fix now</div>
     </div>
 
-    <div class="kpi-card" style="border-left:4px solid #ea580c;background:linear-gradient(135deg,#fff 60%,#fff7ed);">
+    <div class="kpi-card" onclick="filterIssues('warning')" style="border-left:4px solid #ea580c;background:linear-gradient(135deg,#fff 60%,#fff7ed);">
       <div class="kpi-label">Warnings</div>
       <div class="kpi-number" style="color:{% if warning_count > 0 %}#c2410c{% else %}#15803d{% endif %};">{{ warning_count }}</div>
       <div class="kpi-sub">worth fixing soon</div>
     </div>
 
-    <div class="kpi-card" style="border-left:4px solid #7c3aed;background:linear-gradient(135deg,#fff 60%,#faf5ff);">
+    <div class="kpi-card" onclick="filterIssues('suggestions')" style="border-left:4px solid #7c3aed;background:linear-gradient(135deg,#fff 60%,#faf5ff);">
       <div class="kpi-label">AI Suggestions</div>
       <div class="kpi-number" style="color:#7c3aed;">{{ suggestion_count }}</div>
       <div class="kpi-sub">generated so far</div>
@@ -267,7 +272,7 @@
 {% endif %}
 
 {% if grouped_issues %}
-<div style="padding:20px 24px 32px;">
+<div id="issues-section" style="padding:20px 24px 32px;scroll-margin-top:16px;">
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
     <div style="width:28px;height:28px;border-radius:8px;background:#eef2ff;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
       <svg viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="1.5" width="15" height="15"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z"/></svg>
@@ -275,6 +280,11 @@
     <span style="font-size:15px;font-weight:700;color:#0f172a;">🗂️ Issues by category</span>
     <span style="font-size:11px;background:#eef2ff;color:#4f46e5;padding:2px 9px;border-radius:10px;font-weight:700;">{{ grouped_issues.values()|select|list|length }} of {{ grouped_issues|length }} with issues</span>
     <span style="font-size:11px;color:#94a3b8;margin-left:auto;">{{ total_issues }} total on-page issues across {{ total_pages }} pages</span>
+  </div>
+
+  <div id="issues-filter-banner" style="display:none;align-items:center;gap:8px;margin-bottom:14px;padding:8px 12px;border-radius:8px;background:#eef2ff;border:1px solid #e0e7ff;">
+    <span style="font-size:12px;color:#4338ca;font-weight:600;">Showing: <span id="issues-filter-label"></span></span>
+    <button type="button" onclick="filterIssues('all')" style="margin-left:auto;font-size:11px;font-weight:700;color:#4f46e5;background:none;border:none;cursor:pointer;padding:0;">Clear filter ✕</button>
   </div>
 
   {% for category, cat_issues in grouped_issues.items() %}
@@ -307,7 +317,7 @@
       <tbody>
         {% for issue in cat_issues %}
         {% set page = pages_by_id.get(issue.page_id) %}
-        <tr onclick="openFixModal({{ issue.id }})" style="cursor:pointer;" data-issue-row="{{ issue.id }}">
+        <tr onclick="openFixModal({{ issue.id }})" style="cursor:pointer;" data-issue-row="{{ issue.id }}" data-severity="{{ issue.severity }}" data-has-sugg="{{ '1' if issues_js[issue.id].suggestions else '0' }}">
           <td style="font-size:11px;color:#64748b;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ page.url if page else '' }}">{{ page.url if page else '—' }}</td>
           <td style="font-size:11px;color:#0f172a;">
             {{ issue.message }}
@@ -333,7 +343,7 @@
 </div>
 
 {% else %}
-<div style="padding:64px 24px;text-align:center;">
+<div id="issues-section" style="padding:64px 24px;text-align:center;scroll-margin-top:16px;">
   <div style="max-width:380px;margin:0 auto;">
     <div style="font-size:48px;margin-bottom:16px;">🔄</div>
     <div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:6px;">No data yet</div>
@@ -772,6 +782,49 @@ var ISSUES_JS = {{ issues_js | tojson }};
 var DEPLOYABLE_CATEGORIES = {{ deployable_categories | tojson }};
 var fmCurrentIssueId = null;
 
+var FILTER_LABELS = { all: 'All issues', error: 'Critical errors only', warning: 'Warnings only', suggestions: 'Pages with AI suggestions' };
+function filterIssues(kind) {
+  var section = document.getElementById('issues-section');
+  if (!section) return;
+  section.scrollIntoView({ behavior: 'smooth' });
+
+  var rows = section.querySelectorAll('tr[data-issue-row]');
+  if (!rows.length) return; // empty-state page has no table to filter
+
+  var detailsCounts = new Map();
+  rows.forEach(function(row) {
+    var show = kind === 'all'
+      || (kind === 'error' && row.dataset.severity === 'error')
+      || (kind === 'warning' && row.dataset.severity === 'warning')
+      || (kind === 'suggestions' && row.dataset.hasSugg === '1');
+    row.style.display = show ? '' : 'none';
+    var details = row.closest('details');
+    if (details) {
+      detailsCounts.set(details, (detailsCounts.get(details) || 0) + (show ? 1 : 0));
+    }
+  });
+  detailsCounts.forEach(function(count, details) {
+    details.style.display = (kind === 'all' || count > 0) ? '' : 'none';
+    if (kind !== 'all') details.open = count > 0;
+  });
+  // "Clean" categories (no rows at all, e.g. zero H1 issues) aren't in
+  // detailsCounts since they never had a data-issue-row -- hide those too
+  // when a specific filter is active, since a clean category can never
+  // contain the errors/warnings/suggestions being filtered for.
+  section.querySelectorAll('details.ig').forEach(function(details) {
+    if (!detailsCounts.has(details)) {
+      details.style.display = kind === 'all' ? '' : 'none';
+    }
+  });
+
+  var banner = document.getElementById('issues-filter-banner');
+  var label = document.getElementById('issues-filter-label');
+  if (banner && label) {
+    if (kind === 'all') { banner.style.display = 'none'; }
+    else { label.textContent = FILTER_LABELS[kind] || kind; banner.style.display = 'flex'; }
+  }
+}
+
 function fmEsc(s) {
   return (s == null ? '' : String(s)).replace(/[&<>"']/g, function(c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -828,12 +881,30 @@ function fmSuggestionCard(issue, s) {
     actions + '</div></div>';
 }
 
+function fmImageListHtml(issue) {
+  // Only image_alt issues carry this (see onpage_semrush.py's
+  // _missing_alt_images) -- null for every other category.
+  var images = issue.missing_alt_images;
+  if (!images) return '';
+  if (!images.length) {
+    return '<div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">Could not read this page\'s images directly (fetch failed) -- the count above is DataForSEO\'s only, no per-image detail available.</div>';
+  }
+  return '<div style="margin-bottom:14px;">' +
+    '<label style="display:block;font-size:11px;font-weight:600;color:#64748b;margin-bottom:6px;">' + images.length + ' image(s) missing alt text</label>' +
+    '<div style="max-height:140px;overflow-y:auto;border:1px solid #f1f5f9;border-radius:6px;">' +
+    images.map(function(img) {
+      return '<div style="padding:6px 10px;font-size:11px;color:#374151;border-bottom:1px solid #f8fafc;word-break:break-all;">' + fmEsc(img.src || '(no src)') + '</div>';
+    }).join('') +
+    '</div></div>';
+}
+
 function renderFixModal(issue) {
   var body = document.getElementById('fix-modal-body');
   var suggHtml = (issue.suggestions || []).map(function(s) { return fmSuggestionCard(issue, s); }).join('')
     || '<div style="text-align:center;padding:14px 0;color:#94a3b8;font-size:11px;">No suggestions yet for this issue.</div>';
 
   body.innerHTML =
+    fmImageListHtml(issue) +
     '<div id="fm-sugg-list">' + suggHtml + '</div>' +
     '<button id="fm-generate-btn" onclick="fmGenerate()" style="width:100%;font-size:11px;font-weight:700;padding:7px 10px;border-radius:7px;border:none;background:#4f46e5;color:#fff;cursor:pointer;margin-top:4px;">' +
     ((issue.suggestions || []).length ? '↻ Regenerate' : '✦ Generate AI Suggestion') + '</button>' +
@@ -884,21 +955,37 @@ async function fmSave() {
   var issue = ISSUES_JS[fmCurrentIssueId];
   var ta = document.getElementById('fm-textarea');
   var saveBtn = document.getElementById('fm-save-btn');
-  if (!issue || !ta || !ta.dataset.suggId) { showToast('Pick "Use in editor" on a suggestion first, or generate one.', 'error'); return; }
+  if (!issue || !ta) { return; }
   var value = ta.value.trim();
   if (!value) { showToast('Suggestion text cannot be empty.', 'error'); return; }
-  var id = parseInt(ta.dataset.suggId, 10);
-  var changed = value !== ta.dataset.suggOriginal;
   saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
   try {
-    var resp = changed
-      ? await fetch('/suggestions/' + id + '/edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: value }) })
-      : await fetch('/suggestions/' + id + '/accept', { method: 'POST' });
+    var resp;
+    var isNew = !ta.dataset.suggId;
+    if (isNew) {
+      // No suggestion picked via "Use in editor" -- the user typed their own
+      // fix from scratch, so create a brand-new (manual) suggestion row
+      // instead of erroring out and forcing them through AI generation first.
+      resp = await fetch('/api/suggestions/manual?project_id=' + issue.project_id + '&page_id=' + issue.page_id + '&issue_id=' + issue.id,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: value }) });
+    } else {
+      var id = parseInt(ta.dataset.suggId, 10);
+      var changed = value !== ta.dataset.suggOriginal;
+      resp = changed
+        ? await fetch('/suggestions/' + id + '/edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: value }) })
+        : await fetch('/suggestions/' + id + '/accept', { method: 'POST' });
+    }
     if (!resp.ok) { var d = await resp.json().catch(function(){return {};}); throw new Error(d.detail || ('HTTP ' + resp.status)); }
     var s = await resp.json();
-    fmMergeSuggestion(issue, s);
+    if (isNew) {
+      issue.suggestions = issue.suggestions || [];
+      var idx = issue.suggestions.findIndex(function(x){ return x.id === s.id; });
+      if (idx === -1) issue.suggestions.push(s); else issue.suggestions[idx] = s;
+    } else {
+      fmMergeSuggestion(issue, s);
+    }
     renderFixModal(issue);
-    showToast(changed ? 'Suggestion edited and saved.' : 'Suggestion accepted.');
+    showToast(isNew ? 'Suggestion saved.' : (value !== ta.dataset.suggOriginal ? 'Suggestion edited and saved.' : 'Suggestion accepted.'));
   } catch (err) {
     showToast('Could not save: ' + err.message, 'error');
   } finally {

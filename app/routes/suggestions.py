@@ -143,6 +143,61 @@ def generate(project_id: int, page_id: int, issue_id: int, db: Session = Depends
     return RedirectResponse(url=f"/projects/{project_id}/pages/{page_id}", status_code=303)
 
 
+class SuggestionEditIn(BaseModel):
+    content: str
+
+
+@router.post("/api/suggestions/manual")
+def create_manual_suggestion(
+    project_id: int,
+    page_id: int,
+    issue_id: int,
+    payload: SuggestionEditIn,
+    db: Session = Depends(get_db),
+):
+    """Lets the user type a fix straight into the editor without generating
+    an AI suggestion first -- the fix-modal's textarea previously required
+    picking 'Use in editor' on an existing row, so a user who already knew
+    the fix had no way to save it. Stored as status 'edited' (no separate
+    'manual' status exists) with edited_content == content, since that's
+    the same shape edit_suggestion() produces and it dedupes/displays the
+    same way."""
+    content = payload.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="content is required")
+    h = content_hash(content)
+
+    existing = db.query(models.Suggestion).filter(
+        models.Suggestion.issue_id == issue_id,
+        models.Suggestion.content_hash == h,
+    ).first()
+    if existing:
+        if existing.status == "deployed":
+            raise HTTPException(status_code=409, detail="Already deployed -- roll it back before changing its status.")
+        existing.status = "edited"
+        existing.edited_content = content
+        existing.accepted_at = datetime.now(timezone.utc)
+        db.commit()
+        return _suggestion_out(existing)
+
+    max_rank = db.query(models.Suggestion).filter(models.Suggestion.issue_id == issue_id).count()
+    row = models.Suggestion(
+        project_id=project_id,
+        page_id=page_id,
+        issue_id=issue_id,
+        content=content,
+        content_hash=h,
+        rank=max_rank + 1,
+        status="edited",
+        edited_content=content,
+        accepted_at=datetime.now(timezone.utc),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _suggestion_out(row)
+
+
 @router.post("/api/suggest")
 def generate_json(
     project_id: int,
@@ -156,10 +211,6 @@ def generate_json(
 
 
 # ── Acceptance tracking (V6 / Task 3.1) ─────────────────────────────────
-
-
-class SuggestionEditIn(BaseModel):
-    content: str
 
 
 def _get_suggestion(db: Session, suggestion_id: int) -> models.Suggestion:
