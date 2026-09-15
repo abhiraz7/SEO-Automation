@@ -236,6 +236,18 @@ def check_site_audit(project_id: int, task_id: int, db: Session = Depends(get_db
     if task.status == "fetched":
         return {"status": "fetched", "pages_crawled": task.pages_crawled}
 
+    # A task can already be 'error' here without this request having done
+    # anything -- onpage_task_maintenance.mark_stale_onpage_tasks (run by the
+    # scheduler, see app/scheduler.py) marks tasks 'error' in the background
+    # after STALE_TASK_HOURS. Before this check existed, that background
+    # update was invisible to the poller: it fell through to is_task_ready()
+    # again, which keeps returning False for a dead task, so the frontend
+    # (onpage_semrush.html's pollSiteAuditTasks) never saw anything but
+    # 'posted' and spun forever even after the backend knew the task had
+    # failed.
+    if task.status == "error":
+        return {"status": "error", "error": task.error}
+
     if not dataforseo_onpage.is_task_ready(task.dataforseo_task_id):
         return {"status": "posted"}
 
