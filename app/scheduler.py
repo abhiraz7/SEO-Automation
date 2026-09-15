@@ -256,6 +256,42 @@ def reconcile_stale_onpage_tasks() -> None:
         db.close()
 
 
+STALE_QUEUED_JOB_HOURS = 6  # a light job normally finishes in well under LIGHT_JOB_TIMEOUT_SECONDS (3min); a crawl in well under JOB_TIMEOUT_SECONDS (15min)
+
+
+def reconcile_stale_jobs() -> None:
+    """Proactive counterpart to _recover_interrupted_jobs, which only clears
+    stuck 'running' jobs once at app startup. A job that never leaves
+    'queued' -- its lane's tick errored, it named a job_type not in
+    JOB_HANDLERS, or the process was killed before ever reaching
+    _run_next_queued_job_in_lane -- had no recovery path at all: it just sat
+    'queued' forever. index.html's dashboard treats any queued/running Job
+    as is_fetching=True and auto-reloads every 8s with no timeout, so a
+    stuck queued Job made the dashboard "spin" indefinitely with no visible
+    cause -- same failure shape as the on-page task issue reconciled above.
+    Runs every 10 minutes, same cadence as reconcile_stale_onpage_tasks."""
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=STALE_QUEUED_JOB_HOURS)
+        stale = (
+            db.query(models.Job)
+            .filter(models.Job.status == "queued", models.Job.created_at < cutoff)
+            .all()
+        )
+        for job in stale:
+            job.status = "failed"
+            job.error = f"Marked stale after {STALE_QUEUED_JOB_HOURS}h stuck in queue."
+            job.finished_at = datetime.now(timezone.utc)
+        if stale:
+            db.commit()
+            logger.warning("Reconciled %d stale queued job(s): %s", len(stale), [j.id for j in stale])
+    except Exception:
+        db.rollback()
+        logger.exception("reconcile_stale_jobs failed")
+    finally:
+        db.close()
+
+
 def _backfill_next_run_at() -> None:
     """On startup: any Schedule row saved before it had a next_run_at (or
     freshly created without one) gets one computed now, so it isn't
@@ -281,6 +317,7 @@ def start() -> BackgroundScheduler:
     _recover_interrupted_jobs()
     _backfill_next_run_at()
     reconcile_stale_onpage_tasks()
+    reconcile_stale_jobs()
     _scheduler = BackgroundScheduler()
     _scheduler.add_job(
         dispatch_due_schedules, "interval", seconds=60,
@@ -298,10 +335,14 @@ def start() -> BackgroundScheduler:
         reconcile_stale_onpage_tasks, "interval", seconds=600,
         id="reconcile_stale_onpage_tasks", max_instances=1, coalesce=True,
     )
+    _scheduler.add_job(
+        reconcile_stale_jobs, "interval", seconds=600,
+        id="reconcile_stale_jobs", max_instances=1, coalesce=True,
+    )
     _scheduler.start()
     logger.info(
         "Scheduler started (dispatch every 60s, crawl lane + light lane worker ticks every 10s, "
-        "on-page task reconciliation every 10min)."
+        "on-page task + queued-job reconciliation every 10min)."
     )
     return _scheduler
 

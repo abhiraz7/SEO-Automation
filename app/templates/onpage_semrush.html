@@ -68,9 +68,14 @@
 
 {% block status_bar %}
 {% set in_flight_tasks = tasks | selectattr('status', 'equalto', 'posted') | list if tasks else [] %}
-<div id="audit-status-bar" style="display:{{ 'flex' if in_flight_tasks else 'none' }};align-items:center;gap:8px;padding:6px 20px;background:#eef2ff;border-bottom:1px solid #e2e8f0;font-size:12px;color:#4338ca;flex-shrink:0;">
-  <span style="width:12px;height:12px;border:2px solid #c7d2fe;border-top-color:#4f46e5;border-radius:50%;display:inline-block;animation:vtx-spin 0.8s linear infinite;"></span>
-  <span id="audit-status-text">Site audit in progress…</span>
+<div id="audit-status-bar" style="display:{{ 'flex' if in_flight_tasks else 'none' }};flex-direction:column;gap:6px;padding:8px 20px;background:#eef2ff;border-bottom:1px solid #e2e8f0;font-size:12px;color:#4338ca;flex-shrink:0;">
+  <div style="display:flex;align-items:center;gap:8px;">
+    <span style="width:12px;height:12px;border:2px solid #c7d2fe;border-top-color:#4f46e5;border-radius:50%;display:inline-block;animation:vtx-spin 0.8s linear infinite;"></span>
+    <span id="audit-status-text">Site audit in progress…</span>
+  </div>
+  <div style="height:4px;background:#c7d2fe;border-radius:2px;overflow:hidden;">
+    <div id="audit-progress-fill" style="height:100%;width:0%;background:#4f46e5;transition:width 1s linear;"></div>
+  </div>
 </div>
 {% endblock %}
 
@@ -537,29 +542,54 @@ function auditStatusText() {
   return 'Site audit in progress — ' + elapsedMin + 'm elapsed (usually takes about ' + estMin + 'm for up to ' + AUDIT_TASK_MAX_PAGES + ' pages)';
 }
 
-function pollSiteAuditTasks() {
-  if (!IN_FLIGHT_TASKS.length) return;
-  var bar = document.getElementById('audit-status-bar');
-  var text = document.getElementById('audit-status-text');
-  if (bar) bar.style.display = 'flex';
-  if (text) text.textContent = auditStatusText();
+// Percentage is purely a local time-based estimate (elapsed / usually-takes)
+// -- DataForSEO's task API has no real progress fraction to read (see the
+// comment above IN_FLIGHT_TASKS). Capped at 95% so the bar never claims
+// "done" on its own; only an actual "fetched" result does that.
+function auditProgressPercent() {
+  if (!AUDIT_TASK_STARTED_AT) return 5;
+  var elapsedMs = Date.now() - new Date(AUDIT_TASK_STARTED_AT).getTime();
+  var estMs = Math.max(1, Math.round(AUDIT_TASK_MAX_PAGES / 90)) * 60000;
+  return Math.max(5, Math.min(95, Math.round((elapsedMs / estMs) * 100)));
+}
 
+function renderAuditStatus() {
+  var text = document.getElementById('audit-status-text');
+  var fill = document.getElementById('audit-progress-fill');
+  if (text) text.textContent = auditStatusText();
+  if (fill) fill.style.width = auditProgressPercent() + '%';
+}
+
+// One-shot check against the backend, NOT a repeating poll -- see
+// AgentLog for why the old setTimeout(pollSiteAuditTasks, 6000) loop was
+// removed: it re-called itself forever on a stuck/errored task with no
+// upper bound, which is what caused the site to appear to "spin" for
+// days. Now: check once when the page loads: if the crawl already
+// finished (or errored) in the meantime, reload to show the result. If
+// it's still running, just render the progress bar (renderAuditStatus,
+// on a local timer below -- no further network calls) and let the user
+// leave and come back; the next page load repeats this same one-shot
+// check, same as a normal page always showing its current data.
+function checkSiteAuditOnce() {
+  if (!IN_FLIGHT_TASKS.length) return;
   Promise.all(IN_FLIGHT_TASKS.map(function(taskId) {
     return fetch('/projects/' + PROJECT_ID + '/onpage/site-audit/' + taskId + '/check', { method: 'POST' })
       .then(function(r) { return r.json(); })
-      .catch(function() { return { status: 'posted' }; }); // network hiccup -- keep polling, don't treat as done
+      .catch(function() { return { status: 'posted' }; });
   })).then(function(results) {
     var stillWaiting = results.some(function(r) { return r.status === 'posted'; });
-    if (!stillWaiting) {
-      // At least one task resolved (fetched or error) -- reload to show the
-      // fresh audit results, same end behavior as the old button's redirect.
-      location.reload();
-      return;
-    }
-    setTimeout(pollSiteAuditTasks, 6000);
+    if (!stillWaiting) location.reload();
   });
 }
-if (IN_FLIGHT_TASKS.length) pollSiteAuditTasks();
+
+if (IN_FLIGHT_TASKS.length) {
+  renderAuditStatus();
+  checkSiteAuditOnce();
+  // Cosmetic only -- re-renders the elapsed-time text and progress bar
+  // width from local Date.now() math every 15s. No fetch() here, so this
+  // never hits the server and cannot loop forever the way the old poll did.
+  setInterval(renderAuditStatus, 15000);
+}
 
 {% if refresh_blocked %}
 {# request.query_params already decodes +/%XX to real text (Starlette's

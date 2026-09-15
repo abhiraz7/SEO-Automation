@@ -207,10 +207,16 @@ document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeNewProject();
 });
 
-// Auto-refresh while any project has a crawl/audit in progress, so the
-// spinner clears and real numbers show up without a manual reload.
-if (document.querySelector('.fetch-spinner')) {
-  setTimeout(function() { location.reload(); }, 8000);
-}
+// Deliberately no auto-reload here (previously setTimeout(reload, 8000)
+// while any project had a crawl/audit in progress). That looked like a
+// one-shot timer but wasn't: since is_fetching is computed fresh on every
+// server render, each reload just re-entered this same script and
+// scheduled another one -- an unbounded reload loop with no way to stop if
+// the underlying Job/OnPageTask ever got stuck (see scheduler.py's
+// reconcile_stale_jobs/reconcile_stale_onpage_tasks, which now guarantee
+// that stuck state clears within a few hours on its own). The spinner is
+// now a static "still fetching" indicator; revisiting or manually
+// refreshing this page shows whatever the latest state is, same as any
+// normal page.
 </script>
 {% endblock %}
