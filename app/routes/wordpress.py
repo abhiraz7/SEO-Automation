@@ -5,30 +5,35 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import models, wordpress
-from ..database import get_db
+from ..database import SessionLocal, get_db
 
 router = APIRouter()
 
-_PLUGIN_ZIP_PATH = Path(__file__).resolve().parent.parent / "downloads" / "claude-wp-mcp.zip"
+_PLUGIN_ZIP_PATH = Path(__file__).resolve().parent.parent / "downloads" / "vtechseo-agent.zip"
 
 
-@router.get("/downloads/claude-wp-mcp")
+@router.get("/downloads/vtechseo-agent")
 def download_wp_plugin():
-    """Serves the claude-wp-mcp WordPress plugin zip -- the connection drawer
-    links here so a user can install it on their site before saving a
-    connection above."""
+    """Serves the VtechSEO Agent WordPress plugin zip -- the connection
+    drawer links here so a user can install it on their site before saving
+    a connection above. Replaces the earlier general-purpose claude-wp-mcp
+    dev plugin for this flow: VtechSEO Agent is scoped to content/seo/media/
+    site-info only (see vtechseo-agent/README.md), no page-builder control,
+    no plugin management, no PHP execution -- safer to hand to every client
+    site by default. claude-wp-mcp still exists for internal, one-off
+    engagement work, just no longer linked from this popup."""
     if not _PLUGIN_ZIP_PATH.exists():
         raise HTTPException(status_code=404, detail="Plugin package not found on server.")
     return FileResponse(
         _PLUGIN_ZIP_PATH,
         media_type="application/zip",
-        filename="claude-wp-mcp.zip",
+        filename="vtechseo-agent.zip",
     )
 
 # Politeness delay between resolve_post_id_by_url calls when resolving a
@@ -36,6 +41,21 @@ def download_wp_plugin():
 # target site (plus one more for the homepage's get_options), so a 25-page
 # project without this would fire a burst of 25-50 requests at once.
 _RESOLVE_PAGE_DELAY_SECONDS = 0.3
+
+# In-flight guard for the background resolve sweep, keyed by project_id --
+# same shape of fix as onpage_semrush.py's start_site_audit in-flight check
+# (born from a real incident there: a double-clicked button with no guard
+# fired 13 billed crawls of the same pages in 4 seconds). Without this,
+# several people opening "Test connection" for the same project from
+# different browsers/devices within the same few minutes each schedule
+# their own full page-resolution sweep -- duplicate HTTP request bursts
+# against the target site (risking the client's own rate-limiter/WAF) and
+# concurrent SQLite writes to the same Page rows (this app's DB only
+# tolerates one writer at a time -- see AgentLog's stuck-task fix for the
+# same underlying constraint). Process-local only: covers the common
+# single-process deployment this app currently runs as; would need a
+# DB-backed flag instead if ever run behind multiple worker processes.
+_active_resolve_sweeps: set[int] = set()
 
 
 # ── Field deploy registry (Task 3.5) ─────────────────────────────────────
@@ -220,7 +240,14 @@ def save_wordpress_connection(project_id: int, payload: WordPressConnectionIn, d
 
 
 @router.post("/projects/{project_id}/wordpress/test")
-def test_wordpress_connection(project_id: int, db: Session = Depends(get_db)):
+def test_wordpress_connection(project_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Was a real design bug until now: on a project with many pages, this
+    used to run the full _resolve_all_pages sweep (0.3s + 1-2 HTTP requests
+    PER page) synchronously before ever responding -- a 138-page project
+    took 3-6 minutes to say "connected", when a connection test should be a
+    few-hundred-millisecond ping. The ping itself now returns immediately;
+    page resolution still happens automatically after a passing test (same
+    as before), just as a background task the caller doesn't wait on."""
     conn = db.query(models.WordPressConnection).filter(models.WordPressConnection.project_id == project_id).first()
     if not conn:
         raise HTTPException(status_code=404, detail="No WordPress connection saved for this project yet")
@@ -238,11 +265,15 @@ def test_wordpress_connection(project_id: int, db: Session = Depends(get_db)):
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error or "Connection test failed")
 
-    # A connection just (re-)verified successfully means every page in this
-    # project can now potentially resolve its WordPress post ID -- do it now
-    # rather than making every page wait for its next individual crawl.
-    resolve_summary = _resolve_all_pages(db, project_id, conn, token)
-    return {"ok": True, "site": result.data, "resolved_pages": resolve_summary}
+    if project_id in _active_resolve_sweeps:
+        # Another test-connection click (this or a different browser/device)
+        # already has a sweep running for this project -- don't stack a
+        # second one on top of it, just let the one in flight finish.
+        return {"ok": True, "site": result.data, "resolved_pages": "sweep already in progress, skipped duplicate"}
+
+    _active_resolve_sweeps.add(project_id)
+    background_tasks.add_task(_resolve_all_pages_in_background, project_id, conn.site_url, token)
+    return {"ok": True, "site": result.data, "resolved_pages": "scheduled in background"}
 
 
 @router.post("/projects/{project_id}/wordpress/resolve-pages")
@@ -253,7 +284,7 @@ def resolve_wordpress_pages(project_id: int, db: Session = Depends(get_db)):
     but pages crawled after that (or added since) won't have been covered
     yet, so this lets a user force a fresh pass on demand."""
     conn, token = _connected_or_error(db, project_id)
-    return _resolve_all_pages(db, project_id, conn, token)
+    return _resolve_all_pages(db, project_id, conn.site_url, token)
 
 
 @router.post("/projects/{project_id}/pages/{page_id}/resolve-wp-post")
@@ -265,7 +296,7 @@ def resolve_single_page_wp_post(project_id: int, page_id: int, db: Session = Dep
     if not page or page.project_id != project_id:
         raise HTTPException(status_code=404, detail="Page not found")
     conn, token = _connected_or_error(db, project_id)
-    summary = _resolve_all_pages(db, project_id, conn, token, only_page_id=page_id)
+    summary = _resolve_all_pages(db, project_id, conn.site_url, token, only_page_id=page_id)
     db.refresh(page)
     return {**summary, "wp_post_id": page.wp_post_id, "wp_post_type": page.wp_post_type}
 
@@ -322,12 +353,18 @@ def _resolve_wp_post_id(db: Session, suggestion: models.Suggestion, conn: models
     )
 
 
-def _resolve_all_pages(db: Session, project_id: int, conn: models.WordPressConnection, token: str, only_page_id: int | None = None) -> dict:
-    """Shared by POST /wordpress/resolve-pages (bulk) and the auto-trigger
-    right after a connection is saved/re-verified, plus the single-page
-    'Resolve now' modal action (only_page_id). Politely rate-limited --
-    see _RESOLVE_PAGE_DELAY_SECONDS -- since this can fire one to a few
-    HTTP requests per page against the target site."""
+def _resolve_all_pages(db: Session, project_id: int, site_url: str, token: str, only_page_id: int | None = None) -> dict:
+    """Shared by POST /wordpress/resolve-pages (bulk), the single-page
+    'Resolve now' modal action (only_page_id), and the background sweep
+    scheduled after a connection test passes (see
+    _resolve_all_pages_in_background). Politely rate-limited -- see
+    _RESOLVE_PAGE_DELAY_SECONDS -- since this can fire one to a few HTTP
+    requests per page against the target site.
+
+    Takes site_url as a plain string rather than the WordPressConnection
+    row itself so a caller running this in a background task (its own
+    freshly-opened db session) never touches an ORM object bound to a
+    different, already-closed session."""
     query = db.query(models.Page).filter(models.Page.project_id == project_id, models.Page.wp_post_id.is_(None))
     if only_page_id is not None:
         query = query.filter(models.Page.id == only_page_id)
@@ -338,7 +375,7 @@ def _resolve_all_pages(db: Session, project_id: int, conn: models.WordPressConne
     for i, page in enumerate(pages):
         if i > 0:
             time.sleep(_RESOLVE_PAGE_DELAY_SECONDS)
-        result = wordpress.resolve_post_id_by_url(conn.site_url, page.url, token=token)
+        result = wordpress.resolve_post_id_by_url(site_url, page.url, token=token)
         if result.ok:
             page.wp_post_id = result.data.get("post_id")
             page.wp_post_type = result.data.get("post_type")
@@ -347,6 +384,22 @@ def _resolve_all_pages(db: Session, project_id: int, conn: models.WordPressConne
             failures.append({"url": page.url, "reason": result.data.get("reason") or result.error})
     db.commit()
     return {"resolved": resolved, "failed": len(failures), "failures": failures}
+
+
+def _resolve_all_pages_in_background(project_id: int, site_url: str, token: str) -> None:
+    """Runs after the HTTP response for /wordpress/test has already been
+    sent -- the request's own `db` session is closed by then (see
+    database.get_db's finally block), so this opens a fresh one instead of
+    reusing anything request-scoped. Best-effort: resolve_post_id_by_url
+    already never raises, and any DB error here just means this sweep's
+    results are lost, not that the connection test itself is affected --
+    the user already got their ok/error answer before this ever runs."""
+    db = SessionLocal()
+    try:
+        _resolve_all_pages(db, project_id, site_url, token)
+    finally:
+        db.close()
+        _active_resolve_sweeps.discard(project_id)
 
 
 def _revision_out(r: models.SuggestionRevision) -> dict:

@@ -442,6 +442,24 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
     )
     total_pages = len(pages)
 
+    # SPIKE: cross-page grouping for missing-alt images (test before keeping --
+    # revert this block + the also_on bit below if it doesn't hold up).
+    # A single image (logo, banner, template asset) is often reused across
+    # many pages, so DataForSEO/the crawler flags it as "missing alt" once
+    # per page it appears on -- with no signal that it's actually one fix,
+    # not N. This indexes every already-fetched page's images by resolved
+    # src so the fix modal can say "also missing alt on these other pages",
+    # telling the SEO team a single CMS/media-library edit will cover all of
+    # them. Built once from data already in memory (pages_by_id, populated
+    # by dataforseo_onpage.fetch_image_alts during ingestion) -- no new DB
+    # query, no new HTTP call.
+    image_src_to_pages: dict[str, set[str]] = {}
+    for page in pages:
+        for img in (page.image_alts or []):
+            src = img.get("src")
+            if src and not (img.get("alt") or "").strip():
+                image_src_to_pages.setdefault(src, set()).add(page.url)
+
     def _missing_alt_images(issue: models.Issue) -> list[dict] | None:
         # Only image_alt issues carry per-image detail (see
         # dataforseo_onpage.fetch_image_alts) -- every other category
@@ -450,11 +468,25 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             return None
         page = pages_by_id.get(issue.page_id)
         images = (page.image_alts if page else None) or []
-        return [
-            {"src": img.get("src"), "alt": img.get("alt")}
-            for img in images
-            if not (img.get("alt") or "").strip()
-        ]
+        current_url = page.url if page else None
+        result = []
+        for img in images:
+            if (img.get("alt") or "").strip():
+                continue
+            src = img.get("src")
+            also_on = sorted(image_src_to_pages.get(src, set()) - {current_url}) if src else []
+            result.append({
+                "src": src,
+                "alt": img.get("alt"),
+                "also_on": also_on,
+                # Editor-inserted images carry this straight from the HTML
+                # (see html_extract._wp_media_id) -- theme-level images
+                # (logo, header/footer) have none, since WordPress doesn't
+                # stamp a class on those. None here means "no one-click
+                # fix path yet" until the URL-lookup plugin tool exists.
+                "media_id": img.get("media_id"),
+            })
+        return result
 
     issues_js = {
         issue.id: {
@@ -471,6 +503,7 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
                 {
                     "id": s.id,
                     "status": s.status,
+                    "image_src": s.image_src,
                     "content": s.content,
                     "edited_content": s.edited_content,
                     "source": "claude",

@@ -162,6 +162,10 @@ class Suggestion(Base):
     page_id = Column(Integer, ForeignKey("pages.id"), nullable=False)
     issue_id = Column(Integer, ForeignKey("issues.id"), nullable=False)
     understanding_id = Column(Integer, ForeignKey("page_understanding.id"), nullable=True)
+    # Scopes a suggestion to one specific image within a multi-image
+    # image_alt issue (migration 027) -- NULL for every other category,
+    # where the issue itself is already the single thing being fixed.
+    image_src = Column(Text)
     content = Column(Text, nullable=False)
     # sha256 of content, normalized (trim/collapse-whitespace/casefold) --
     # see routes/suggestions.py.content_hash(). Backed by a unique index on
@@ -268,8 +272,8 @@ class SavedKeyword(Base):
 
 
 class WordPressConnection(Base):
-    """Connection to a project's WordPress site via the claude-wp-mcp plugin
-    (POST {site_url}/wp-json/cwpm/v1/tool, Bearer auth). api_token is Fernet-
+    """Connection to a project's WordPress site via the VtechSEO Agent plugin
+    (POST {site_url}/wp-json/vtseo/v1/tool, Bearer auth). api_token is Fernet-
     encrypted at rest (app/wordpress.py owns encrypt/decrypt; nothing else
     should touch the raw token). is_staging defaults True on purpose: deploys
     go to staging until someone deliberately flips a connection to live."""

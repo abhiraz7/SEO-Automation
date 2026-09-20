@@ -24,6 +24,8 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai.content_filter_strategy import PruningContentFilter
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
+from .html_extract import extract_image_alts
+
 USER_AGENT = "VTechSEO-Crawler/1.0"
 HEADERS = {"User-Agent": USER_AGENT}
 REQUEST_TIMEOUT = 15
@@ -123,9 +125,7 @@ def _extract_page_data(url: str, html: str, status_code: int, crawl_result=None)
             {"tag": h.name, "text": h.get_text(strip=True)}
             for h in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
         ],
-        "image_alts": [
-            {"src": img.get("src"), "alt": img.get("alt")} for img in soup.find_all("img")
-        ],
+        "image_alts": extract_image_alts(soup, url),
         "domain_schema": domain_schema,
         "page_schemas": page_schemas,
         "canonical": canonical_tag.get("href") if canonical_tag else None,

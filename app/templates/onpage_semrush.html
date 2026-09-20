@@ -379,9 +379,9 @@
     <button onclick="closeDrawer('wp-drawer')" style="width:28px;height:28px;border-radius:6px;border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer;">×</button>
   </div>
   <div class="drawer-body">
-    <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Connects via the claude-wp-mcp plugin so accepted suggestions can deploy straight to the site.</div>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Connects via the VtechSEO Agent plugin so accepted suggestions can deploy straight to the site.</div>
     <div style="display:flex;gap:8px;margin-bottom:14px;">
-      <a href="/downloads/claude-wp-mcp" style="flex:1;text-align:center;padding:7px;background:#eef2ff;color:#4f46e5;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none;">⬇ Download plugin (.zip)</a>
+      <a href="/downloads/vtechseo-agent" style="flex:1;text-align:center;padding:7px;background:#eef2ff;color:#4f46e5;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none;">⬇ Download plugin (.zip)</a>
       <a href="https://github.com/abhiraz7/SEO-Automation/blob/main/docs/wordpress-plugin-guide.md" target="_blank" style="flex:1;text-align:center;padding:7px;background:#f1f5f9;color:#334155;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none;">Setup guide</a>
     </div>
     {% if wp_conn %}
@@ -464,7 +464,7 @@
 
 <!-- Fix on Page modal -->
 <div id="fix-modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:900;" onclick="closeFixModal()"></div>
-<div id="fix-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(620px,92vw);max-height:86vh;overflow-y:auto;background:#fff;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.28);z-index:901;">
+<div id="fix-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(760px,92vw);max-height:86vh;overflow-y:auto;background:#fff;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.28);z-index:901;">
   <div style="position:sticky;top:0;background:#fff;border-bottom:1px solid #e2e8f0;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-radius:14px 14px 0 0;">
     <div style="min-width:0;">
       <div style="font-size:13px;font-weight:700;color:#0f172a;">Fix on Page</div>
@@ -762,9 +762,22 @@ function testWordPressConnection() {
   var result = document.getElementById('wp-test-result');
   result.style.color = '#64748b';
   result.textContent = 'Testing…';
-  fetch('/projects/' + PROJECT_ID + '/wordpress/test', { method: 'POST' })
+
+  // The backend's own ping call is capped at 20s (wordpress.py's _TIMEOUT),
+  // so a healthy round-trip always resolves well under that. This client-
+  // side timeout exists for everything OUTSIDE that -- a wedged server
+  // process, a stalled network connection that never cleanly errors, a
+  // dead proxy -- so "Testing…" can never sit there indefinitely with no
+  // way out except reloading the page. 25s gives the backend's 20s cap a
+  // little headroom before this fires.
+  var controller = new AbortController();
+  var timedOut = false;
+  var timer = setTimeout(function() { timedOut = true; controller.abort(); }, 25000);
+
+  fetch('/projects/' + PROJECT_ID + '/wordpress/test', { method: 'POST', signal: controller.signal })
     .then(function(res) { return res.json().then(function(d){ return { ok: res.ok, body: d }; }); })
     .then(function(r) {
+      clearTimeout(timer);
       if (r.ok) {
         result.style.color = '#16a34a';
         result.textContent = '✅ Connected — ' + (r.body.site && r.body.site.plugin ? r.body.site.plugin + ' v' + r.body.site.version : 'plugin responded');
@@ -774,13 +787,24 @@ function testWordPressConnection() {
         result.textContent = '❌ ' + (r.body.detail || 'Connection test failed');
       }
     })
-    .catch(function(err) { result.style.color = '#dc2626'; result.textContent = '❌ ' + err.message; });
+    .catch(function(err) {
+      clearTimeout(timer);
+      result.style.color = '#dc2626';
+      result.textContent = timedOut
+        ? '❌ Timed out waiting for a response (25s). The site may be slow, unreachable, or the plugin isn\'t installed at this URL yet.'
+        : '❌ ' + err.message;
+    });
 }
 
 // ── Fix on Page modal (identical flow to SEO-AUTOMATION-LITE's prototype) ──
 var ISSUES_JS = {{ issues_js | tojson }};
 var DEPLOYABLE_CATEGORIES = {{ deployable_categories | tojson }};
 var fmCurrentIssueId = null;
+// Which per-image "Fix Now" panels are expanded, keyed by index into the
+// current issue's missing_alt_images -- renderFixModal() runs on every
+// suggestion decide/generate/save, so this has to live outside that
+// function or the panel a user just opened would collapse on its own action.
+var fmExpandedImages = {};
 
 var FILTER_LABELS = { all: 'All issues', error: 'Critical errors only', warning: 'Warnings only', suggestions: 'Pages with AI suggestions' };
 function filterIssues(kind) {
@@ -843,6 +867,7 @@ function openFixModal(issueId) {
   var issue = ISSUES_JS[issueId];
   if (!issue) return;
   fmCurrentIssueId = issueId;
+  fmExpandedImages = {};
   document.getElementById('fix-modal-message').textContent = issue.message || '';
   document.getElementById('fix-modal-url').textContent = issue.url || '';
   renderFixModal(issue);
@@ -891,28 +916,200 @@ function fmImageListHtml(issue) {
   }
   return '<div style="margin-bottom:14px;">' +
     '<label style="display:block;font-size:11px;font-weight:600;color:#64748b;margin-bottom:6px;">' + images.length + ' image(s) missing alt text</label>' +
-    '<div style="max-height:140px;overflow-y:auto;border:1px solid #f1f5f9;border-radius:6px;">' +
-    images.map(function(img) {
-      return '<div style="padding:6px 10px;font-size:11px;color:#374151;border-bottom:1px solid #f8fafc;word-break:break-all;">' + fmEsc(img.src || '(no src)') + '</div>';
+    '<div id="fm-img-scroll" style="max-height:420px;overflow-y:auto;border:1px solid #f1f5f9;border-radius:6px;">' +
+    images.map(function(img, i) {
+      // Placeholder markup is identical for "no src at all" and "src set but
+      // failed to load" (onerror below just swaps the <img> for this same
+      // sibling div) -- one visual language for "nothing to show here"
+      // either way, rather than two different broken-looking states.
+      // Bumped from a 44px cropped square to a bigger box with object-fit:
+      // contain (not cover) -- contain shows the WHOLE image letterboxed
+      // inside the box instead of cropping it to fill a square, since the
+      // point here is "let the SEO team actually see what this image is",
+      // not a tidy uniform grid.
+      // Stacked layout (image on top, full row width, description below)
+      // instead of a side-by-side thumbnail -- a fixed-height row box caps
+      // how big the image can render even with object-fit:contain; putting
+      // it on its own line lets it use the full modal width so large
+      // images are actually readable instead of squeezed into a corner.
+      var placeholder = '<div style="width:100%;height:260px;border-radius:6px;background:#f1f5f9;color:#94a3b8;font-size:11px;display:flex;align-items:center;justify-content:center;text-align:center;">No image</div>';
+      var srcEsc = img.src ? fmEsc(img.src) : '';
+      var thumb = srcEsc
+        ? '<img src="' + srcEsc + '" loading="lazy" ' +
+          'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';" ' +
+          'style="width:100%;max-height:260px;object-fit:contain;border-radius:6px;background:#f1f5f9;">' +
+          '<div style="display:none;width:100%;height:260px;border-radius:6px;background:#f1f5f9;color:#94a3b8;font-size:11px;align-items:center;justify-content:center;text-align:center;">No image</div>'
+        : placeholder;
+      // SPIKE: also_on (see onpage_semrush.py's _missing_alt_images) -- list
+      // of other page URLs where this same image src is also missing alt
+      // text, so a non-SEO user knows one CMS/media-library fix covers all
+      // of them instead of editing page by page. Collapsed behind <details>
+      // by default -- a template image can repeat across 90+ pages, and the
+      // raw URL list is noise for the actual decision (fix this one image);
+      // the count alone conveys "fix once, applies everywhere", the list is
+      // only for someone who wants to double-check which pages. Revert with
+      // the backend bit if this doesn't hold up under real data.
+      var alsoOn = img.also_on || [];
+      var alsoOnHtml = alsoOn.length
+        ? '<details style="margin-top:4px;">' +
+          '<summary style="font-size:10px;color:#b45309;cursor:pointer;">Also missing alt on ' + alsoOn.length + ' other page(s)</summary>' +
+          '<div style="margin-top:4px;max-height:120px;overflow-y:auto;">' +
+          alsoOn.map(function(u) { return '<div style="font-size:10px;word-break:break-all;color:#92400e;padding:2px 0;">' + fmEsc(u) + '</div>'; }).join('') +
+          '</div></details>'
+        : '';
+      return '<div style="padding:10px;border-bottom:1px solid #f8fafc;">' +
+        thumb +
+        '<div style="min-width:0;margin-top:8px;">' +
+          '<div style="font-size:11px;color:#374151;word-break:break-all;">' + fmEsc(img.src || '(no src)') + '</div>' +
+          '<div style="font-size:10px;color:#94a3b8;margin-top:2px;">Current ALT: Missing' +
+            (img.media_id ? ' &middot; WP media #' + img.media_id : ' &middot; no WordPress media_id found (theme/logo image)') +
+          '</div>' +
+          alsoOnHtml +
+        '</div>' +
+        fmImageFixPanelHtml(issue, img, i) +
+      '</div>';
     }).join('') +
     '</div></div>';
 }
 
+// Per-image "Fix Now" panel -- lets the user pick EITHER their own typed alt
+// text OR an AI-generated one for this ONE image, scoped by image_src
+// (migration 027 / prompt_builder.build_suggestion_context's image param) so
+// a page with several missing-alt images never mixes up which suggestion is
+// for which image, unlike the old page-wide generate button.
+function fmImageFixPanelHtml(issue, img, idx) {
+  var expanded = !!fmExpandedImages[idx];
+  var suggs = (issue.suggestions || []).filter(function(s) { return s.image_src === img.src; });
+  var suggHtml = suggs.map(function(s) { return fmSuggestionCard(issue, s); }).join('')
+    || '<div style="font-size:10px;color:#94a3b8;padding:4px 0;">No AI suggestions generated for this image yet.</div>';
+  return '<div style="margin-top:8px;">' +
+    '<button onclick="fmToggleImageFix(' + idx + ')" style="font-size:11px;font-weight:700;padding:6px 10px;border-radius:6px;border:1px solid #c7d2fe;background:' + (expanded ? '#eef2ff' : '#fff') + ';color:#4f46e5;cursor:pointer;">' +
+      (expanded ? '▾' : '▸') + ' Fix Now' +
+    '</button>' +
+    (expanded ?
+      '<div style="margin-top:8px;padding:10px;background:#f8fafc;border-radius:8px;border:1px solid #f1f5f9;">' +
+        '<div id="fm-img-sugg-' + idx + '">' + suggHtml + '</div>' +
+        '<input id="fm-img-guidance-' + idx + '" type="text" maxlength="200" placeholder="Optional: a preference for the AI, e.g. \'keep it short\' (Image Alt hardening Part 5 -- cannot override accuracy rules)" style="width:100%;box-sizing:border-box;padding:6px 9px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;font-family:inherit;margin-top:4px;margin-bottom:6px;">' +
+        '<button id="fm-img-gen-btn-' + idx + '" onclick="fmGenerateForImage(' + idx + ')" style="width:100%;font-size:11px;font-weight:700;padding:7px 10px;border-radius:7px;border:none;background:#4f46e5;color:#fff;cursor:pointer;">' +
+          (suggs.length ? '↻ Regenerate' : '✦ Generate AI Suggestion (sees the actual image)') +
+        '</button>' +
+        '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0;">' +
+          '<label style="display:block;font-size:11px;font-weight:600;color:#64748b;margin-bottom:5px;">Or write your own alt text</label>' +
+          '<textarea id="fm-img-manual-' + idx + '" rows="2" placeholder="Describe this image for screen readers…" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;"></textarea>' +
+          '<button id="fm-img-save-btn-' + idx + '" onclick="fmSaveManualForImage(' + idx + ')" style="margin-top:8px;font-size:11px;font-weight:700;padding:7px 14px;border-radius:7px;border:none;background:#0f172a;color:#fff;cursor:pointer;">Save</button>' +
+        '</div>' +
+      '</div>'
+      : '') +
+  '</div>';
+}
+
+function fmToggleImageFix(idx) {
+  fmExpandedImages[idx] = !fmExpandedImages[idx];
+  var issue = ISSUES_JS[fmCurrentIssueId];
+  if (issue) renderFixModal(issue);
+}
+
+async function fmGenerateForImage(idx) {
+  var issue = ISSUES_JS[fmCurrentIssueId];
+  if (!issue) return;
+  var img = (issue.missing_alt_images || [])[idx];
+  if (!img) return;
+  var guidanceEl = document.getElementById('fm-img-guidance-' + idx);
+  var guidance = guidanceEl ? guidanceEl.value.trim() : '';
+  var listEl = document.getElementById('fm-img-sugg-' + idx);
+  var btn = document.getElementById('fm-img-gen-btn-' + idx);
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+  if (listEl) {
+    listEl.innerHTML = '<div style="text-align:center;padding:12px 0;">' +
+      '<div style="font-size:20px;animation:spin 1s linear infinite;display:inline-block;">⚙️</div>' +
+      '<div style="font-size:10px;color:#94a3b8;margin-top:6px;">Analyzing the image…</div></div>';
+  }
+  try {
+    var url = '/api/suggest?project_id=' + issue.project_id + '&page_id=' + issue.page_id + '&issue_id=' + issue.id + '&image_src=' + encodeURIComponent(img.src || '')
+      + (guidance ? '&user_guidance=' + encodeURIComponent(guidance) : '');
+    var resp = await fetch(url, { method: 'POST' });
+    if (!resp.ok) { var d = await resp.json().catch(function(){return {};}); throw new Error(d.detail || ('HTTP ' + resp.status)); }
+    var data = await resp.json();
+    // Replace only THIS image's suggestions in the issue's flat list -- the
+    // server already scoped generation to image_src, this just keeps the
+    // client-side cache (ISSUES_JS) in sync without touching other images'.
+    issue.suggestions = (issue.suggestions || []).filter(function(s) { return s.image_src !== img.src; }).concat(data.suggestions || []);
+    fmExpandedImages[idx] = true;
+    renderFixModal(issue);
+    showToast('Suggestions generated.');
+  } catch (err) {
+    if (listEl) listEl.innerHTML = '<div style="font-size:10px;color:#dc2626;padding:4px 0;">Failed to generate: ' + fmEsc(err.message) + '</div>';
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate AI Suggestion'; }
+  }
+}
+
+async function fmSaveManualForImage(idx) {
+  var issue = ISSUES_JS[fmCurrentIssueId];
+  if (!issue) return;
+  var img = (issue.missing_alt_images || [])[idx];
+  var ta = document.getElementById('fm-img-manual-' + idx);
+  var saveBtn = document.getElementById('fm-img-save-btn-' + idx);
+  if (!img || !ta) return;
+  var value = ta.value.trim();
+  if (!value) { showToast('Alt text cannot be empty.', 'error'); return; }
+  saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+  try {
+    var resp = await fetch('/api/suggestions/manual?project_id=' + issue.project_id + '&page_id=' + issue.page_id + '&issue_id=' + issue.id + '&image_src=' + encodeURIComponent(img.src || ''),
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: value }) });
+    if (!resp.ok) { var d = await resp.json().catch(function(){return {};}); throw new Error(d.detail || ('HTTP ' + resp.status)); }
+    var s = await resp.json();
+    issue.suggestions = issue.suggestions || [];
+    var existingIdx = issue.suggestions.findIndex(function(x){ return x.id === s.id; });
+    if (existingIdx === -1) issue.suggestions.push(s); else issue.suggestions[existingIdx] = s;
+    fmExpandedImages[idx] = true;
+    renderFixModal(issue);
+    showToast('Alt text saved.');
+  } catch (err) {
+    showToast('Could not save: ' + err.message, 'error');
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+  }
+}
+
 function renderFixModal(issue) {
   var body = document.getElementById('fix-modal-body');
-  var suggHtml = (issue.suggestions || []).map(function(s) { return fmSuggestionCard(issue, s); }).join('')
-    || '<div style="text-align:center;padding:14px 0;color:#94a3b8;font-size:11px;">No suggestions yet for this issue.</div>';
+  // A page-wide image_alt issue with real per-image detail is fixed entirely
+  // through fmImageListHtml's per-image "Fix Now" panels now -- the old
+  // single shared generate/textarea block below would generate ambiguous
+  // "alt text for one of several images, unclear which" suggestions (see the
+  // gap this whole feature was built to close). Falls back to the old
+  // generic block when there's no per-image detail to work with (fetch
+  // failed -- missing_alt_images is [] not null, see fmImageListHtml) or for
+  // every non-image_alt category, unaffected by any of this.
+  var hasPerImageFix = issue.category === 'image_alt' && (issue.missing_alt_images || []).length > 0;
 
-  body.innerHTML =
-    fmImageListHtml(issue) +
-    '<div id="fm-sugg-list">' + suggHtml + '</div>' +
-    '<button id="fm-generate-btn" onclick="fmGenerate()" style="width:100%;font-size:11px;font-weight:700;padding:7px 10px;border-radius:7px;border:none;background:#4f46e5;color:#fff;cursor:pointer;margin-top:4px;">' +
-    ((issue.suggestions || []).length ? '↻ Regenerate' : '✦ Generate AI Suggestion') + '</button>' +
-    '<div style="margin-top:14px;padding-top:14px;border-top:1px solid #f1f5f9;">' +
-    '<label style="display:block;font-size:11px;font-weight:600;color:#64748b;margin-bottom:5px;">Edit &amp; save</label>' +
-    '<textarea id="fm-textarea" rows="3" placeholder="Click \'Use in editor\' on a suggestion above, or type your own fix here…" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;"></textarea>' +
-    '<button id="fm-save-btn" onclick="fmSave()" style="margin-top:8px;font-size:11px;font-weight:700;padding:7px 14px;border-radius:7px;border:none;background:#0f172a;color:#fff;cursor:pointer;">Save</button>' +
-    '</div>';
+  // The images list is its own scrollable box, fully torn down and rebuilt
+  // on every re-render (toggle/generate/save/decide all end up here) -- a
+  // plain innerHTML swap resets its scrollTop to 0, so a click on a
+  // below-the-fold image's "Fix Now" visually snapped the list back to the
+  // top instead of staying put. Save/restore across the swap fixes it.
+  var prevScrollEl = document.getElementById('fm-img-scroll');
+  var prevScrollTop = prevScrollEl ? prevScrollEl.scrollTop : 0;
+
+  var genericHtml = '';
+  if (!hasPerImageFix) {
+    var suggHtml = (issue.suggestions || []).map(function(s) { return fmSuggestionCard(issue, s); }).join('')
+      || '<div style="text-align:center;padding:14px 0;color:#94a3b8;font-size:11px;">No suggestions yet for this issue.</div>';
+    genericHtml =
+      '<div id="fm-sugg-list">' + suggHtml + '</div>' +
+      '<button id="fm-generate-btn" onclick="fmGenerate()" style="width:100%;font-size:11px;font-weight:700;padding:7px 10px;border-radius:7px;border:none;background:#4f46e5;color:#fff;cursor:pointer;margin-top:4px;">' +
+      ((issue.suggestions || []).length ? '↻ Regenerate' : '✦ Generate AI Suggestion') + '</button>' +
+      '<div style="margin-top:14px;padding-top:14px;border-top:1px solid #f1f5f9;">' +
+      '<label style="display:block;font-size:11px;font-weight:600;color:#64748b;margin-bottom:5px;">Edit &amp; save</label>' +
+      '<textarea id="fm-textarea" rows="3" placeholder="Click \'Use in editor\' on a suggestion above, or type your own fix here…" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;"></textarea>' +
+      '<button id="fm-save-btn" onclick="fmSave()" style="margin-top:8px;font-size:11px;font-weight:700;padding:7px 14px;border-radius:7px;border:none;background:#0f172a;color:#fff;cursor:pointer;">Save</button>' +
+      '</div>';
+  }
+
+  body.innerHTML = fmImageListHtml(issue) + genericHtml;
+
+  var newScrollEl = document.getElementById('fm-img-scroll');
+  if (newScrollEl) newScrollEl.scrollTop = prevScrollTop;
 }
 
 async function fmGenerate() {
@@ -943,7 +1140,15 @@ function fmUseSuggestion(suggId) {
   if (!issue) return;
   var s = (issue.suggestions || []).find(function(x){ return x.id === suggId; });
   if (!s) return;
-  var ta = document.getElementById('fm-textarea');
+  // Per-image suggestions (image_src set) load into that image's own
+  // "write your own" textarea instead of the shared #fm-textarea, which
+  // only exists for issues without per-image detail (see renderFixModal).
+  var taId = 'fm-textarea';
+  if (s.image_src) {
+    var imgIdx = (issue.missing_alt_images || []).findIndex(function(img){ return img.src === s.image_src; });
+    if (imgIdx !== -1) taId = 'fm-img-manual-' + imgIdx;
+  }
+  var ta = document.getElementById(taId);
   if (ta) {
     ta.value = s.edited_content || s.content;
     ta.dataset.suggId = s.id;

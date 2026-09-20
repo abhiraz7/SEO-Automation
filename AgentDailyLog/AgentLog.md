@@ -1267,3 +1267,145 @@ only the first addressed above:
 - `/version` endpoint and the datetime-helper cleanup are both proposed,
   not started -- candidates for a follow-up session per the task-list-
   workflow rule (one task at a time, verify, then push before the next).
+
+## 2026-09-17 — Session: Image Alt Text fix-modal spike — thumbnails, cross-page grouping, media_id groundwork
+
+### Done
+- Spiked a shared `extract_image_alts()` helper (`app/html_extract.py`),
+  used by both `app/crawler.py` and `app/dataforseo_onpage.py`'s
+  `fetch_image_alts()`, replacing two near-identical inline `<img>`
+  scrapers. Resolves relative `src` to absolute via `urljoin`.
+- Fix modal (on-page -> Image Alt Text issue) now renders an actual image
+  preview per missing-alt image (was a bare `src` string list before),
+  stacked layout, `object-fit: contain` so nothing gets cropped, modal
+  widened 620px -> 760px.
+- **Cross-page grouping**: a single image (logo, header/footer asset)
+  reused across many pages was showing as N disconnected "missing alt"
+  facts, one per page, with no signal it's actually one fix.
+  `onpage_semrush.py`'s `onpage_view` now builds a project-wide
+  `image_src -> {page urls}` index (in-memory, from data already loaded,
+  no new query/API call) and attaches `also_on` per image. Verified live:
+  `vseo.vtraffic.io`'s logo (`vtlogo991.png`) is missing alt on 91 pages --
+  collapsed behind a `<details>` toggle by default after the raw ~90-URL
+  list was flagged as unreadable noise.
+- Root-caused why the feature initially showed nothing: not a code bug --
+  all 297 existing `dataforseo`-sourced `Page` rows had `image_alts=[]`,
+  stored before/without a working fetch, never refreshed since
+  `image_alts` is only (re)written at ingestion time, not computed live.
+  Confirmed `fetch_image_alts()` itself works correctly against a live URL.
+- Confirmed "fix once, applies everywhere" is not yet automated:
+  `image_alt` is not in `DEPLOYABLE_CATEGORIES`, so there's no Deploy
+  button for these AI suggestions yet -- today it's still a manual
+  WordPress edit. Real blocker: we only have the scraped image `src`, not
+  WordPress's internal `media_id`, and the plugin's `update_media_meta`
+  tool requires `media_id`.
+- Partial fix implemented: WordPress stamps editor-inserted images with a
+  `wp-image-{ID}` CSS class -- confirmed live on `vseo.vtraffic.io`.
+  `extract_image_alts()` now parses this and returns `media_id` for free,
+  no extra request, for any image inserted via the block/classic editor.
+  Theme-level images (logo, header/footer) carry no such class -- stays
+  `None` for those; fix modal now shows "WP media #N" or "no WordPress
+  media_id found (theme/logo image)" per image.
+- Full inventory compiled of every API call in the on-page flow
+  (DataForSEO's `instant_pages`/`task_post`/`tasks_ready`/`pages`/`links`,
+  plus the one plain-HTTP non-billed call `fetch_image_alts` makes
+  directly to the target site; SEMrush on-page confirmed still dormant).
+
+### Files changed
+`app/html_extract.py` (new + `_wp_media_id()`), `app/crawler.py`,
+`app/dataforseo_onpage.py`, `app/routes/onpage_semrush.py`,
+`app/templates/onpage_semrush.html`. All marked `SPIKE:` in comments,
+nothing committed yet -- plain `git checkout` reverts cleanly.
+
+**Not yet verified**: `wp-image-N` class parsing tested against one live
+site only -- not confirmed across other client sites/themes/page builders.
+
+### MCP Plugin Backlog (scoped, not built)
+Needed to turn "also missing on 72 other pages" into a one-click fix
+instead of a manual WordPress edit. Full table with rationale in
+`AgentDailyLog/2026-09-17.md`. Summary:
+1. New `update_media_alt_by_url` tool in `claude-wp-mcp`'s
+   `handler-media.php` -- resolves URL -> `media_id` via WordPress core's
+   `attachment_url_to_postid()`, the only path for theme-level images.
+   Must fail loud (not silently no-op) when the lookup returns 0.
+2. Matching `update_media_alt_by_url()` wrapper in `app/wordpress.py`.
+3. Add `image_alt` to `DEPLOYABLE_CATEGORIES`; Deploy path branches on
+   whether `media_id` is already known (class-parsed) vs. needs the new
+   URL-lookup tool.
+4. `fmDeploy()` front-end plumbing to match.
+Open decision: should Deploy re-verify/re-flag every `also_on` page after
+a WordPress-side fix, or trust the attachment-level write propagates?
+
+### Next
+- Re-run a Site Audit on a project with real `image_alt` issues to
+  confirm `media_id` populates correctly end-to-end from fresh ingestion.
+- Build MCP backlog items 1-4 above, one at a time per the task-list-
+  workflow rule.
+- Revisit whether `fetch_image_alts`'s sequential per-page HTTP calls
+  during `_store_page_result`'s ingestion loop should be concurrent --
+  flagged as a real slowness contributor to Site Audit refresh time, not
+  yet fixed.
+
+## 2026-09-18 — Session: VtechSEO Agent plugin built; WordPress connection test — perf, concurrency, and leak investigation
+
+### Done
+- Built `vtechseo-agent/`, a new lean WordPress plugin replacing
+  `claude-wp-mcp` in the app's connection popup -- 4 tool groups / 23
+  tools (`content`, `seo`, `media`, `site`), down from 11 groups / 67.
+  Elementor, Divi, WooCommerce, plugin management, theme switching, user
+  management, search-replace, and `php_exec` don't exist in this
+  plugin's codebase at all. Includes `update_media_alt_by_url` (scoped
+  2026-09-17, built now) and a `get_site_info` that reports the detected
+  SEO plugin (Yoast/RankMath/AIOSEO/SEOPress). Same token-generation
+  mechanism preserved (`add_option()`-based, no-op on repeat activation
+  -- confirmed plugin updates can't reset an existing site's token).
+  README.md written for the client, explaining the trust/revocation
+  model. Full file-by-file rationale in `AgentDailyLog/2026-09-18.md`.
+- Caught a real bug before it shipped: `app/wordpress.py` was still
+  hardcoded to the OLD plugin's REST namespace (`cwpm/v1`) after the new
+  plugin registered under `vtseo/v1` -- would have silently broken both
+  live connections (`vseo.vtraffic.io`, `examnotespdf.in`). Fixed.
+- Diagnosed three issues reported against "Test connection," in order:
+  1. Full trace of the connection-test call path found no code path that
+     puts the raw token into any response/log/error -- **could not
+     confirm this from static review**, asked user for the actual
+     Network-tab response body rather than guess further. Still open.
+  2. Root-caused the up-to-5-minute stall: `_resolve_all_pages` was
+     running synchronously inline before the route ever responded (138
+     pages × 0.3s delay + 1-2 HTTP round-trips each, in the request's own
+     thread). Fixed by decoupling the resolver from the request's ORM
+     session and running it via `BackgroundTasks` with its own fresh
+     `SessionLocal()` -- the ping now returns immediately.
+  3. What N concurrent testers from different browsers/devices would do:
+     stack independent full-project sweeps -- duplicate request bursts
+     against the client's site (risking their WAF/rate-limiter) plus
+     concurrent SQLite writes to the same rows. Fixed with
+     `_active_resolve_sweeps`, a process-local in-flight guard keyed by
+     project_id -- same shape as the existing site-audit in-flight guard,
+     same root incident class (the "13 billed crawls in 4 seconds" bug).
+  4. Re-examined the 30-minute version against a slow/unresponsive target
+     site (not the happy path) -- fully plausible pre-fix given
+     `resolve_post_id_by_url`'s per-post-type 20s timeout ceiling. Also
+     found and fixed a genuinely separate gap: the frontend `fetch()` had
+     no timeout of its own, so a wedged server or a silently-stalled
+     network connection could leave "Testing…" stuck forever with no
+     recovery but a page reload. Added a 25s client-side
+     `AbortController` timeout with a specific, actionable error message.
+
+### Files changed
+New: `vtechseo-agent/` (11 files + README + zip). Changed:
+`app/wordpress.py`, `app/models.py`, `app/routes/wordpress.py`,
+`app/templates/onpage_semrush.html`, `app/templates/project_detail.html`.
+
+**Not yet verified**: no PHP CLI available to lint the new plugin --
+brace/paren balance checked mechanically (clean), nothing run against a
+real WordPress install yet.
+
+### Next
+- Install `vtechseo-agent` on both live sites, reconnect with new
+  tokens, confirm `test_connection` actually works end-to-end.
+- Token-leak question is still open -- waiting on the user's Network-tab
+  response body before assuming it's resolved.
+- `image_alt` still isn't in `DEPLOYABLE_CATEGORIES` -- the tool exists
+  end-to-end now, but nothing calls it from the Deploy button yet,
+  deliberately deferred as a separate, live-write UI change.

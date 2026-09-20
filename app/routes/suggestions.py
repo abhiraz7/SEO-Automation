@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,10 +9,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import ai_provider, models, prompt_builder
+from ..ai_errors import AIGenerationError, ImageFetchError
 from ..database import get_db
 from ..services import context_builder
 
 router = APIRouter()
+logger = logging.getLogger("image_alt")
 
 # Statuses that represent a real user decision. Regeneration must never
 # delete these -- they're the learning dataset (V6). Only undecided/refused
@@ -31,7 +34,10 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(_normalize_content(text).encode("utf-8")).hexdigest()
 
 
-def _generate_and_store(db: Session, project_id: int, page_id: int, issue_id: int) -> list[models.Suggestion]:
+def _generate_and_store(
+    db: Session, project_id: int, page_id: int, issue_id: int,
+    image_src: str | None = None, user_guidance: str | None = None,
+) -> list[models.Suggestion]:
     page = db.get(models.Page, page_id)
     issue = db.get(models.Issue, issue_id)
     if not page or not issue:
@@ -40,7 +46,10 @@ def _generate_and_store(db: Session, project_id: int, page_id: int, issue_id: in
     # Fetch/create the page's understanding (cached per crawl snapshot) before
     # generating, so the prompt gets the distilled JSON instead of raw fit_markdown.
     # None for pages with no crawl snapshot (DataForSEO/SEMrush-sourced) --
-    # generation still works, just without that extra context.
+    # generation still works, just without that extra context. For image_alt
+    # specifically, prompt_builder.build_suggestion_context also pulls
+    # page_title/page_meta_description straight off models.Page regardless of
+    # this -- see that function's docstring (Image Alt hardening Part 4).
     understanding_row = context_builder.build_page_understanding(db, page)
 
     profile = (
@@ -51,12 +60,20 @@ def _generate_and_store(db: Session, project_id: int, page_id: int, issue_id: in
     context = prompt_builder.build_suggestion_context(
         page, issue, business_profile=profile,
         understanding=understanding_row.understanding_json if understanding_row else None,
+        image={"src": image_src} if image_src else None,
+        user_guidance=user_guidance,
     )
+
+    # Suggestions are scoped by (issue_id, image_src) so a multi-image
+    # image_alt issue keeps each image's suggestions independent -- an
+    # image_alt issue with no image_src (single-image or pre-migration-027
+    # rows) still behaves exactly as before, scoped to the whole issue.
+    scope_filter = [models.Suggestion.issue_id == issue_id, models.Suggestion.image_src == image_src]
 
     # Only replace rows nobody has decided on -- accepted/edited/deployed
     # suggestions are recorded user decisions and must survive regeneration.
     db.query(models.Suggestion).filter(
-        models.Suggestion.issue_id == issue_id,
+        *scope_filter,
         models.Suggestion.status.notin_(DECIDED_STATUSES),
     ).delete(synchronize_session=False)
     db.commit()
@@ -68,12 +85,40 @@ def _generate_and_store(db: Session, project_id: int, page_id: int, issue_id: in
     decided_hashes = {
         content_hash(s.edited_content or s.content)
         for s in db.query(models.Suggestion).filter(
-            models.Suggestion.issue_id == issue_id,
+            *scope_filter,
             models.Suggestion.status.in_(DECIDED_STATUSES),
         )
     }
 
-    texts = ai_provider.generate_suggestions(db, context)
+    if issue.category == "image_alt":
+        # Image Alt AI hardening pass: real vision input + structured JSON,
+        # not the text-only numbered-list path every other category still
+        # uses -- see ai_provider.generate_image_alt_suggestions. Errors are
+        # NOT swallowed into an empty suggestion list -- Part 1 requires the
+        # "couldn't actually see the image" case to surface, not silently
+        # degrade to a filename-only guess, so both failure modes propagate
+        # as real exceptions for the route to turn into an HTTP error.
+        try:
+            items = ai_provider.generate_image_alt_suggestions(db, context, image_src)
+        except ImageFetchError:
+            logger.warning("image_alt: could not fetch image for visual analysis: %r", image_src)
+            raise
+        except AIGenerationError:
+            logger.warning("image_alt: provider returned unparseable suggestions for image %r", image_src)
+            raise
+        # reason/confidence are logged for now rather than persisted --
+        # Suggestion has no columns for them and Part 7 says not to add
+        # columns unless absolutely necessary; the UI doesn't need them to
+        # render the existing accept/reject/edit flow, only the content text.
+        for item in items:
+            logger.info(
+                "image_alt suggestion (image=%r, confidence=%.2f): %s -- %s",
+                image_src, item.get("confidence", 0.0), item["alt_text"], item.get("reason", ""),
+            )
+        texts = [item["alt_text"] for item in items]
+    else:
+        texts = ai_provider.generate_suggestions(db, context)
+
     rows = []
     seen_hashes = set(decided_hashes)  # also guards against dupes *within* this same batch
     rank = 0
@@ -87,6 +132,7 @@ def _generate_and_store(db: Session, project_id: int, page_id: int, issue_id: in
             project_id=project_id,
             page_id=page_id,
             issue_id=issue_id,
+            image_src=image_src,
             understanding_id=understanding_row.id if understanding_row else None,
             content=text,
             content_hash=h,
@@ -123,6 +169,7 @@ def _suggestion_out(s: models.Suggestion) -> dict:
     return {
         "id": s.id,
         "status": s.status,
+        "image_src": s.image_src,
         "content": s.content,
         "edited_content": s.edited_content,
         # Hardcoded -- Suggestion has no source column, so this doesn't
@@ -153,6 +200,7 @@ def create_manual_suggestion(
     page_id: int,
     issue_id: int,
     payload: SuggestionEditIn,
+    image_src: str | None = None,
     db: Session = Depends(get_db),
 ):
     """Lets the user type a fix straight into the editor without generating
@@ -161,7 +209,9 @@ def create_manual_suggestion(
     the fix had no way to save it. Stored as status 'edited' (no separate
     'manual' status exists) with edited_content == content, since that's
     the same shape edit_suggestion() produces and it dedupes/displays the
-    same way."""
+    same way. image_src scopes this to one image within a multi-image
+    image_alt issue (migration 027) -- the same "type your own alt text"
+    path the AI-generate option sits next to in the fix modal."""
     content = payload.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="content is required")
@@ -169,6 +219,7 @@ def create_manual_suggestion(
 
     existing = db.query(models.Suggestion).filter(
         models.Suggestion.issue_id == issue_id,
+        models.Suggestion.image_src == image_src,
         models.Suggestion.content_hash == h,
     ).first()
     if existing:
@@ -185,6 +236,7 @@ def create_manual_suggestion(
         project_id=project_id,
         page_id=page_id,
         issue_id=issue_id,
+        image_src=image_src,
         content=content,
         content_hash=h,
         rank=max_rank + 1,
@@ -203,10 +255,23 @@ def generate_json(
     project_id: int,
     page_id: int,
     issue_id: int,
+    image_src: str | None = None,
+    user_guidance: str | None = None,
     db: Session = Depends(get_db),
 ):
-    """Generate AI suggestions (count set by prompt_builder.SUGGESTION_COUNT) and return as JSON for the inline optimize panel, including each row's id/status so the UI can act on a specific suggestion afterward."""
-    rows = _generate_and_store(db, project_id, page_id, issue_id)
+    """Generate AI suggestions (count set by prompt_builder.SUGGESTION_COUNT) and return as JSON for the inline optimize panel, including each row's id/status so the UI can act on a specific suggestion afterward. image_src scopes generation to one image within a multi-image image_alt issue (migration 027) -- omitted for every other category. user_guidance is an optional free-text preference (image_alt only, Image Alt hardening Part 5) -- ignored by every other category's prompt."""
+    try:
+        rows = _generate_and_store(db, project_id, page_id, issue_id, image_src=image_src, user_guidance=user_guidance)
+    except ImageFetchError as e:
+        # 422: the request was well-formed but the image genuinely couldn't
+        # be visually analyzed (unreachable, wrong content-type, too large) --
+        # a controlled, visible failure per Part 1, not a silent text-only
+        # fallback pretending visual analysis happened.
+        raise HTTPException(status_code=422, detail=f"Couldn't load this image for AI analysis: {e}")
+    except AIGenerationError as e:
+        # 502: our request was fine, the upstream provider's response wasn't
+        # usable even after one retry.
+        raise HTTPException(status_code=502, detail=f"AI provider returned an unusable response: {e}")
     return {"suggestions": [_suggestion_out(r) for r in rows]}
 
 

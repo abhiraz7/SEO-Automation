@@ -2,6 +2,7 @@
 Thin Claude API client. All prompt construction lives in app/prompt_builder.py —
 this module only sends prompts and parses responses.
 """
+import base64
 import os
 import anthropic
 
@@ -48,6 +49,34 @@ def generate_suggestions(context: dict) -> list[str]:
                 suggestions.append(line[len(prefix):].strip())
                 break
     return suggestions[:prompt_builder.SUGGESTION_COUNT]
+
+
+def image_alt_completion(user_text: str, image_bytes: bytes, media_type: str, max_tokens: int = 1024, temperature: float = 0.4) -> str:
+    """Provider-specific half of the image_alt pipeline (Part 1/8) -- sends
+    the actual image bytes as a vision content block, plus user_text (built
+    by prompt_builder.build_image_alt_user_text) as a second content block in
+    the same user turn. IMAGE_ALT_TASK_RULES goes in the real `system`
+    parameter, not the user turn -- the one part of this call untrusted page/
+    user content can never edit merely by looking like an instruction. All
+    SEO/prompt logic lives in prompt_builder.py; this function only knows
+    Anthropic's message/content-block shape. JSON parsing + schema validation
+    + retry live in ai_provider.py, shared with gemini.py's identical
+    counterpart -- see that module's generate_image_alt_suggestions."""
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    message = _get_client().messages.create(
+        model=MODEL,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        system=prompt_builder.IMAGE_ALT_TASK_RULES,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                {"type": "text", "text": user_text},
+            ],
+        }],
+    )
+    return message.content[0].text.strip()
 
 
 def generate_meta_optimization(context: dict) -> dict:
