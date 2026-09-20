@@ -60,6 +60,35 @@ def generate_suggestions(context: dict) -> list[str]:
     return suggestions[:prompt_builder.SUGGESTION_COUNT]
 
 
+def image_alt_completion(user_text: str, image_bytes: bytes, media_type: str, max_tokens: int = 1024, temperature: float = 0.4) -> str:
+    """Provider-specific half of the image_alt pipeline (Part 1/8) -- mirrors
+    claude.py.image_alt_completion's contract exactly: same trusted system
+    instruction (prompt_builder.IMAGE_ALT_TASK_RULES), same untrusted user
+    text, same image bytes, same expected JSON-object response. Only the SDK
+    shape differs -- Gemini takes the image as a types.Part alongside the
+    text in `contents`, and the system instruction is a GenerateContentConfig
+    field rather than a top-level API parameter. JSON parsing + schema
+    validation + retry live in ai_provider.py, shared with claude.py's
+    counterpart, so neither provider module contains its own SEO/parsing logic."""
+    response = _get_client().models.generate_content(
+        model=MODEL,
+        contents=[
+            types.Part.from_bytes(data=image_bytes, mime_type=media_type),
+            user_text,
+        ],
+        config=types.GenerateContentConfig(
+            max_output_tokens=max_tokens,
+            temperature=temperature,
+            system_instruction=prompt_builder.IMAGE_ALT_TASK_RULES,
+            # Same reasoning-token trap noted on _complete() above -- a
+            # structured JSON reply is direct output, not something that
+            # benefits from burning the token budget on hidden reasoning.
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+        ),
+    )
+    return response.text.strip()
+
+
 def generate_meta_optimization(context: dict) -> dict:
     """Optimized meta title + description for a page."""
     raw = _complete(prompt_builder.build_meta_optimization_prompt(context), max_tokens=256)

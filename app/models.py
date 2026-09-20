@@ -162,6 +162,10 @@ class Suggestion(Base):
     page_id = Column(Integer, ForeignKey("pages.id"), nullable=False)
     issue_id = Column(Integer, ForeignKey("issues.id"), nullable=False)
     understanding_id = Column(Integer, ForeignKey("page_understanding.id"), nullable=True)
+    # Scopes a suggestion to one specific image within a multi-image
+    # image_alt issue (migration 027) -- NULL for every other category,
+    # where the issue itself is already the single thing being fixed.
+    image_src = Column(Text)
     content = Column(Text, nullable=False)
     # sha256 of content, normalized (trim/collapse-whitespace/casefold) --
     # see routes/suggestions.py.content_hash(). Backed by a unique index on

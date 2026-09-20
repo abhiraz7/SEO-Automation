@@ -14,6 +14,8 @@ import os
 import httpx
 from bs4 import BeautifulSoup
 
+from .html_extract import extract_image_alts
+
 DATAFORSEO_BASE = "https://api.dataforseo.com/v3"
 _TIMEOUT = 30.0
 
@@ -211,10 +213,11 @@ def fetch_image_alts(url: str) -> list[dict]:
     DataForSEO's on-page task response has no per-image list -- only
     aggregate counters (images_count etc.) plus the checks.no_image_alt
     boolean -- so there is no field to read this from. This fetches the
-    page's own HTML directly and parses <img> tags ourselves instead, the
-    same technique app/crawler.py._extract_page_data already uses for the
-    legacy crawler pipeline. A plain HTTP GET to the target site, not a
-    DataForSEO call -- no extra billing.
+    page's own HTML directly and parses <img> tags via the shared
+    html_extract.extract_image_alts() helper -- also used by
+    app/crawler.py._extract_page_data for the legacy crawler pipeline. A
+    plain HTTP GET to the target site, not a DataForSEO call -- no extra
+    billing.
 
     Never raises: this is supplementary detail for one report cell, not
     something that should ever block storing the page's on-page result, so
@@ -226,7 +229,7 @@ def fetch_image_alts(url: str) -> list[dict]:
         soup = BeautifulSoup(resp.text, "lxml")
     except Exception:
         return []
-    return [{"src": img.get("src"), "alt": img.get("alt")} for img in soup.find_all("img")]
+    return extract_image_alts(soup, url)
 
 
 def normalize_page(item: dict) -> dict:

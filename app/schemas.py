@@ -103,6 +103,22 @@ class PageUnderstandingResult(BaseModel):
     context_confidence: float
 
 
+class ImageAltSuggestionItem(BaseModel):
+    """One structured image_alt suggestion (Image Alt AI hardening pass).
+    Replaces the old "1. ...\\n2. ...\\n3. ..." text-list parsing used by every
+    other suggestion category (see claude.py/gemini.py.generate_suggestions) --
+    image_alt gets real schema validation instead, since a malformed response
+    here should be rejected and retried, not silently dropped into an empty
+    suggestion list."""
+    alt_text: str
+    reason: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class ImageAltSuggestionsResult(BaseModel):
+    suggestions: list[ImageAltSuggestionItem]
+
+
 class WorthIt(BaseModel):
     """Actionability verdict computed from the metrics (keyword_scoring.py) --
     the number users actually want instead of raw KD. factors is the
