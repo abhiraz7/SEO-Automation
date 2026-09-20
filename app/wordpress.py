@@ -1,8 +1,14 @@
 """
-WordPress adapter -- talks to the claude-wp-mcp plugin's REST tool dispatcher
-(POST {site_url}/wp-json/cwpm/v1/tool, Bearer auth), not the WordPress core
+WordPress adapter -- talks to the VtechSEO Agent plugin's REST tool dispatcher
+(POST {site_url}/wp-json/vtseo/v1/tool, Bearer auth), not the WordPress core
 REST API directly. Mirrors semrush.py/dataforseo.py's role for keywords:
 nothing outside this file should know the plugin's request/response shape.
+
+VtechSEO Agent replaced the earlier general-purpose claude-wp-mcp dev plugin
+for this connection (different REST namespace: vtseo/v1, not cwpm/v1) --
+any site still running only claude-wp-mcp will fail every call here with a
+connection/404-style error until it installs the new plugin from
+/downloads/vtechseo-agent and reconnects. See vtechseo-agent/README.md.
 
 Every public function returns an explicit ok/no_data/error result (see
 WordPressResult below) -- same three-outcome discipline as the keyword
@@ -25,7 +31,7 @@ import httpx
 from cryptography.fernet import Fernet, InvalidToken
 
 WP_TOKEN_KEY_ENV = "WP_TOKEN_KEY"
-_TOOL_PATH = "/wp-json/cwpm/v1/tool"
+_TOOL_PATH = "/wp-json/vtseo/v1/tool"
 _TIMEOUT = 20.0
 
 
@@ -224,7 +230,7 @@ def resolve_post_id_by_url(site_url: str, page_url: str, token: str | None = Non
 def test_connection(site_url: str, token: str) -> WordPressResult:
     """Hits the plugin's /ping REST route (not the generic /tool dispatcher --
     ping is a plain GET, no tool call semantics)."""
-    url = site_url.rstrip("/") + "/wp-json/cwpm/v1/ping"
+    url = site_url.rstrip("/") + "/wp-json/vtseo/v1/ping"
     try:
         resp = httpx.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=_TIMEOUT)
     except httpx.RequestError as e:
@@ -259,6 +265,18 @@ def update_post_content(site_url: str, token: str, post_id: int, **fields) -> Wo
 
 def update_media_alt_text(site_url: str, token: str, media_id: int, alt: str) -> WordPressResult:
     return _call_tool(site_url, token, "update_media_meta", {"media_id": media_id, "alt": alt})
+
+
+def update_media_alt_by_url(site_url: str, token: str, image_url: str, alt: str) -> WordPressResult:
+    """For images with no known media_id (see html_extract._wp_media_id --
+    theme-level images like a logo carry no wp-image-N class to read one
+    from). Calls the plugin's update_media_alt_by_url tool, which resolves
+    image_url to a real attachment via WordPress's own
+    attachment_url_to_postid() before writing. Fails as a normal 'error'
+    WordPressResult (not an exception) when the image isn't in this site's
+    own media library -- hotlinked/CDN images genuinely can't be fixed
+    this way, and the caller needs that surfaced, not swallowed."""
+    return _call_tool(site_url, token, "update_media_alt_by_url", {"url": image_url, "alt": alt})
 
 
 def get_post(site_url: str, token: str, post_id: int) -> WordPressResult:

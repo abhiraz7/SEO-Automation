@@ -272,8 +272,8 @@ class SavedKeyword(Base):
 
 
 class WordPressConnection(Base):
-    """Connection to a project's WordPress site via the claude-wp-mcp plugin
-    (POST {site_url}/wp-json/cwpm/v1/tool, Bearer auth). api_token is Fernet-
+    """Connection to a project's WordPress site via the VtechSEO Agent plugin
+    (POST {site_url}/wp-json/vtseo/v1/tool, Bearer auth). api_token is Fernet-
     encrypted at rest (app/wordpress.py owns encrypt/decrypt; nothing else
     should touch the raw token). is_staging defaults True on purpose: deploys
     go to staging until someone deliberately flips a connection to live."""
