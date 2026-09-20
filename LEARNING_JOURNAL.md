@@ -653,3 +653,44 @@ WordPress's plugin installer only unwraps **one** level of zip nesting looking f
 - Why does a FastAPI app need an explicit route to serve a static file, unlike a plain web server?
 - What's the actual failure mode when a zip's plugin folder is nested one level too deep, and why does "it looks like the same files" not catch it?
 - When is a file-organization task also a security review?
+
+## 2026-09-17 — Same defect, N reports: deduplicating "missing alt text" across pages
+
+### One flaky-test-report analogy for the whole feature
+A shared header logo missing alt text was being reported as 91 separate, unrelated "failures" — once per page it appears on — with nothing pointing out it's actually one root cause. Same shape as a flaky test failing identically across 91 CI runs: N failure reports, 1 real defect. The fix wasn't new detection logic, it was an aggregation pass over data already collected: index every page's images by resolved `src`, and for each missing-alt image, list which *other* pages share it. Zero new queries, zero new API calls — the data was already sitting in memory from the page load.
+
+### "It shows nothing" was a data problem, not a code problem
+Before debugging the feature, I checked the actual DB rows: all 297 stored `dataforseo`-sourced pages had `image_alts=[]`. The code path (`fetch_image_alts()`) worked fine when called directly and fetched 37 real images live — but stored rows only get rewritten at *ingestion time* (a Site Audit/Instant Check run), never retroactively. A feature can be 100% correct and still show nothing if the stored data predates it. Testing analogy: a bug report that says "the dashboard shows zero" often means "nothing populated the table," not "the query is wrong" — check the data before the code.
+
+### Reused API call, not a new one
+"Why call DataForSEO/SEMrush's API for images?" — we don't. `fetch_image_alts()` was already a plain `httpx.get()` straight to the target site (DataForSEO's response has no per-image field at all, only an aggregate boolean). Worth stating explicitly to a non-engineer: "calling an API" and "fetching a URL directly" are different costs and different risk profiles, and conflating them leads to worrying about billing that doesn't apply here.
+
+### Free data hiding in markup you already fetch
+WordPress stamps every editor-inserted image with a `wp-image-{attachment ID}` CSS class in the rendered HTML — e.g. `class="attachment-full size-full wp-image-4842"`. That ID is exactly what the WordPress plugin's `update_media_meta` tool needs to fix alt text via API, and it's already present in HTML being scraped for a different reason. Same principle as the SEMrush `phrase_this` trend-series discovery from 2026-07-18: before adding a new lookup/API call, check whether the answer is already sitting unused in a response you already have. It only covers content images, though — theme-level images (logo, header/footer, Customizer-set) carry no such class since they're not editor-managed attachments, so that half still needs a real `attachment_url_to_postid()` lookup in the plugin.
+
+### Collapse detail behind a click when the count is the finding, not the list
+Initial version rendered all ~90 "also affected" URLs inline — technically correct, practically unreadable to a non-SEO user. The insight that matters is the *count plus the propagation claim* ("fix once, applies to all of these"); the individual URLs are backup detail for someone who wants to double-check, not the headline. Used a native `<details>`/`<summary>` element — no JS, browser-native collapse, defaults closed.
+
+### Interview questions this session answers
+- Why is "the feature shows nothing" often a stale-data question rather than a broken-code question, and what's the fastest way to tell which one it is?
+- What's the practical difference between "calling a third-party API" and "fetching a page directly with an HTTP client," and why does that distinction matter for cost/risk?
+- Where does WordPress store an attachment's alt text, and why can't a raw HTML scrape always recover the ID needed to change it?
+
+## 2026-09-18 — A button that quietly does two jobs, and what breaks when N people click it
+
+### "Test connection" was actually "test connection, then do 5 minutes of unrelated work"
+The button promised a fast sanity check but silently also ran a full project-wide page-resolution sweep before ever responding -- for 138 pages, that's minutes of the request thread just sitting there. The lesson generalizes: when an endpoint's name describes one cheap thing but its body does an expensive second thing "while we're at it," the cheap thing inherits the expensive thing's latency and failure modes. The fix wasn't optimizing the sweep -- it was recognizing the sweep doesn't belong in the response path at all, and moving it to `BackgroundTasks` so the two jobs stop sharing a deadline.
+
+### A background task can't borrow the request's database session
+FastAPI's `Depends(get_db)` session is closed (`db.close()`) as part of the request's own teardown -- but `BackgroundTasks` run *after* the response is sent, which is after that teardown. Reusing the request's `db` (or an ORM object loaded from it) inside a background task is a use-after-close bug waiting to happen the first time it matters. The fix: the background function opens its own `SessionLocal()` and takes plain values (a `site_url` string, not a `WordPressConnection` row) as arguments -- nothing ORM-bound crosses the boundary between "this request's session" and "whatever runs later."
+
+### The same incident shape recurs — recognize it, don't re-diagnose it from scratch
+This codebase already has one documented incident: a double-clicked button with no submit-guard fired 13 billed crawls in 4 seconds. Asking "what if 4 people click Test Connection from different devices" is the exact same shape of question, just a different button. Recognizing that let the fix be copy the existing pattern (an in-flight guard keyed by the resource being acted on) instead of inventing a new mechanism -- consistency here isn't just tidiness, it's fewer distinct failure modes to reason about later.
+
+### A network call with no client-side timeout has an unbounded worst case
+The backend's own HTTP client call was capped at 20s, but the *browser's* `fetch()` calling our own backend had no cap at all -- so "the server is capped" didn't actually cap the user's experience, because a wedged server process or a silently-dead connection doesn't necessarily produce an HTTP error, it can just produce nothing. `AbortController` with a timeout slightly longer than the known server-side cap turns "possibly forever" into "definitely resolves within N seconds, one way or another." Testing analogy: an assertion with no timeout doesn't fail on a hang, it just hangs the test runner -- the fix is never "make the thing under test faster," it's "give the watcher a deadline of its own."
+
+### Interview questions this session answers
+- Why can't a FastAPI background task safely reuse the SQLAlchemy session that was injected into the route via `Depends`?
+- What's the actual failure mode of an endpoint that does one fast thing and one slow thing in the same request, and why doesn't "optimize the slow part" fully fix it?
+- Why does capping a server-side HTTP call's timeout not automatically cap how long a browser waits for that server's own response?
