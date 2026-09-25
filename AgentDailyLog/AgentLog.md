@@ -1474,3 +1474,17 @@ real WordPress install yet.
 - Re-point the platform from `vtseo/v1` to `aiseoc/v1`, then the alias can be retired.
 - Open hardening: SSRF IPv6 / DNS rebinding in `handler-media.php`; `vtseo_*` options never deleted
   on upgrade.
+
+## 2026-09-25 — Session: Minimal plugin settings screen + monorepo sync
+
+### What changed
+- New branch `ui/minimal-settings-screen` on `abhiraz7/AI-SEO-Connector` (from plugin `main`, v1.4.0): settings screen rebuilt as a flat, native-WordPress page (Connection / Permissions / Tools). No gradients, glow, animation or custom accent schemes; uses core `.button`/`.wrap`.
+- `admin/dashboard.php` rewritten (markup + CSS; element IDs and AJAX wiring unchanged). `admin/class-admin.php`: removed `$scheme_accents`, `hex_to_rgb`, the `aiseoc-screen` body-class filter; menu status dot is flat.
+- `CHANGELOG.md`: "Unreleased" entry, no version bump.
+- Monorepo `ai-seo-connector/` synced to that branch (was behind: it held uncommitted 1.3.0 work, snapshotted in its own commit first, so nothing was lost). Now includes `uninstall.php` and all 1.4.0 fixes.
+
+### Not verified
+- Screen not opened in a browser (no test bed rebuilt): layout, mobile width and non-default admin color schemes unchecked. Only `php -l` run.
+
+### Next
+- Screenshot check on a throwaway WP 7.1.2, then open a PR on the plugin repo. Tag `v1.4.0` (or a new version) is still the user's call.

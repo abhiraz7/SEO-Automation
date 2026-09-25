@@ -738,3 +738,15 @@ The real cache plugins weren't available, so the test used stand-ins that record
 - Why is checking a rate limit *before* authenticating a problem behind a shared proxy IP?
 - Why does `str_word_count` report 0 for Hindi, and what does `\p{M}` change in a word regex?
 - Why remove an unused setting rather than implement it?
+
+## 2026-09-25 — Let the platform's own look do the work
+
+### Native beats bespoke inside someone else's UI
+A settings page inside wp-admin never loads the site's front-end theme, so "match the theme" is really "match wp-admin". The lightest way is to use core classes (`.button`, `.wrap`, `.description`) and inherit colors instead of hardcoding a dark gradient design: admin-styling plugins and color schemes then restyle it for free, and ~160 lines of CSS became ~40. QA analogy: asserting on stable semantic selectors instead of pixel positions.
+
+### Snapshot before you overwrite
+The monorepo copy held uncommitted work that was superseded by the plugin repo. Committing it first, then syncing in a second commit, made the overwrite reversible.
+
+### Interview questions this session answers
+- Why does an admin settings page not inherit the front-end theme, and what should it inherit instead?
+- What is the safest way to replace a working-tree copy that has uncommitted changes?

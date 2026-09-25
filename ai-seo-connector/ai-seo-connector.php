@@ -3,7 +3,7 @@
  * Plugin Name: AI SEO Connector
  * Plugin URI:  https://github.com/abhiraz7/AI-SEO-Connector
  * Description: Lets your SEO platform read on-page SEO data and apply approved fixes (meta tags, image alt text, content) on this site. Scoped to content/SEO/media only -- no page-builder control, no plugin management, no raw PHP execution.
- * Version:     1.3.0
+ * Version:     1.4.0
  * Requires at least: 5.6
  * Requires PHP: 7.4
  * Author:      AI SEO Connector
@@ -14,7 +14,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'AISEOC_VERSION',    '1.3.0' );
+define( 'AISEOC_VERSION',    '1.4.0' );
 define( 'AISEOC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AISEOC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'AISEOC_SLUG',       'ai-seo-connector' );
@@ -24,6 +24,7 @@ require_once AISEOC_PLUGIN_DIR . 'includes/class-auth.php';
 require_once AISEOC_PLUGIN_DIR . 'includes/class-router.php';
 require_once AISEOC_PLUGIN_DIR . 'includes/class-mcp.php';
 require_once AISEOC_PLUGIN_DIR . 'includes/class-logger.php';
+require_once AISEOC_PLUGIN_DIR . 'includes/class-cache.php';
 require_once AISEOC_PLUGIN_DIR . 'includes/class-status.php';
 require_once AISEOC_PLUGIN_DIR . 'includes/class-doctor.php';
 require_once AISEOC_PLUGIN_DIR . 'mcp-handlers/handler-content.php';
@@ -54,16 +55,7 @@ require_once AISEOC_PLUGIN_DIR . 'admin/class-admin.php';
  * cycle -- are not guaranteed to fire the activation hook first).
  */
 function aiseoc_migrate_legacy_options(): void {
-    $map = [
-        'vtseo_api_token'      => 'aiseoc_api_token',
-        'vtseo_enabled'        => 'aiseoc_enabled',
-        'vtseo_log_level'      => 'aiseoc_log_level',
-        'vtseo_allowed_actions'=> 'aiseoc_allowed_actions',
-        'vtseo_app_username'   => 'aiseoc_app_username',
-        // Activity log isn't part of auth/connection state, but carrying it
-        // over avoids a client seeing their history vanish for no reason.
-        'vtseo_activity_log'   => 'aiseoc_activity_log',
-    ];
+    $map = require AISEOC_PLUGIN_DIR . 'includes/legacy-options.php';
 
     foreach ( $map as $old_key => $new_key ) {
         // Use a strict false/'' check here rather than empty() -- 'aiseoc_enabled'
@@ -96,7 +88,6 @@ register_activation_hook( __FILE__, function () {
     $token = bin2hex( random_bytes( 32 ) );
     add_option( 'aiseoc_api_token', $token );
     add_option( 'aiseoc_enabled',   '1' );
-    add_option( 'aiseoc_log_level', 'info' );
     add_option( 'aiseoc_allowed_actions', json_encode( [
         'content', 'seo', 'media', 'site',
     ] ) );
