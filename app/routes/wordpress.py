@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -15,26 +15,27 @@ from ..database import SessionLocal, get_db
 
 router = APIRouter()
 
-_PLUGIN_ZIP_PATH = Path(__file__).resolve().parent.parent / "downloads" / "vtechseo-agent.zip"
+# The plugin lives in its own repo (github.com/abhiraz7/AI-SEO-Connector) and is
+# released there. "releases/latest/download/<asset>" always resolves to the
+# newest release's zip, so this platform never carries its own copy that can
+# drift out of date.
+PLUGIN_DOWNLOAD_URL = (
+    "https://github.com/abhiraz7/AI-SEO-Connector/releases/latest/download/ai-seo-connector.zip"
+)
 
 
+# The old path is kept so existing links and bookmarks still land on the plugin.
+@router.get("/downloads/ai-seo-connector")
 @router.get("/downloads/vtechseo-agent")
 def download_wp_plugin():
-    """Serves the VtechSEO Agent WordPress plugin zip -- the connection
-    drawer links here so a user can install it on their site before saving
-    a connection above. Replaces the earlier general-purpose claude-wp-mcp
-    dev plugin for this flow: VtechSEO Agent is scoped to content/seo/media/
-    site-info only (see vtechseo-agent/README.md), no page-builder control,
-    no plugin management, no PHP execution -- safer to hand to every client
-    site by default. claude-wp-mcp still exists for internal, one-off
-    engagement work, just no longer linked from this popup."""
-    if not _PLUGIN_ZIP_PATH.exists():
-        raise HTTPException(status_code=404, detail="Plugin package not found on server.")
-    return FileResponse(
-        _PLUGIN_ZIP_PATH,
-        media_type="application/zip",
-        filename="vtechseo-agent.zip",
-    )
+    """Sends the user to the latest AI SEO Connector release zip -- the
+    connection drawer links here so a user can install the plugin on their
+    site before saving a connection. It is a redirect, not a file we serve:
+    the previous bundled zip had gone stale (it was the old VtechSEO Agent
+    plugin), and a copy inside this repo will always drift from the real one.
+    The plugin is scoped to content/SEO/media/site-info only, no page-builder
+    control, no plugin management, no PHP execution."""
+    return RedirectResponse(PLUGIN_DOWNLOAD_URL, status_code=302)
 
 # Politeness delay between resolve_post_id_by_url calls when resolving a
 # whole project's pages in one pass -- each call is 1-2 HTTP requests to the
