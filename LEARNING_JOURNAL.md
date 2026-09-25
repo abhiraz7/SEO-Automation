@@ -694,3 +694,47 @@ The backend's own HTTP client call was capped at 20s, but the *browser's* `fetch
 - Why can't a FastAPI background task safely reuse the SQLAlchemy session that was injected into the route via `Depends`?
 - What's the actual failure mode of an endpoint that does one fast thing and one slow thing in the same request, and why doesn't "optimize the slow part" fully fix it?
 - Why does capping a server-side HTTP call's timeout not automatically cap how long a browser waits for that server's own response?
+
+## 2026-09-24 — Reviewing a plugin: the bug is often in what the framework does *around* your call
+
+### Changing one field can re-save the whole record
+`wp_update_post(['ID'=>5, 'post_title'=>'New'])` looks like "update the title." Under the hood WordPress loads the entire post, merges your field in, and re-saves everything through `wp_insert_post` — including its content filters. Because the plugin's Bearer-token requests run as "no user" (user 0), WordPress applies its HTML sanitizer (kses) to the *existing* body too, which can quietly strip iframes/scripts. Lesson: when a write API takes a partial payload, check whether it's a true partial update or a load-merge-save of the whole object. Testing analogy: a test that only asserts the field you changed will pass while an untouched field got corrupted — assert the neighbours too.
+
+### Two doors into the same room need the same lock
+`/tool` and MCP `tools/call` both go through `call_tool`, which checks the enabled tool groups. But MCP `resources/read` was a third door that skipped `call_tool` entirely — so turning off "Content" didn't stop post reads. Lesson: when a permission check lives in one shared function, list every entry point and confirm each one actually passes through it.
+
+### Deny-lists age badly; allow-lists stay honest
+`get_options` blocks a fixed list of "sensitive" keys — but every plugin a site installs can add new secrets the list has never heard of. The platform only ever needs two keys, so an allow-list of exactly those is smaller and can't go stale. Same idea as asserting the exact expected response vs. asserting "doesn't contain known-bad strings."
+
+### Interview questions this session answers
+- Why can a "title-only" update in WordPress change a post's content, and how would you prove it with a test?
+- What's the risk of implementing an authorization check inside one dispatcher function when there are several entry points?
+- When is an allow-list preferable to a deny-list for protecting configuration data?
+
+
+## 2026-09-24 (later) — Reproduce first, then fix: what a real test site taught that reading the code didn't
+
+### A success response can hide a broken default
+`schedule_post` looked fine until a test showed it published a draft *immediately*. WordPress silently throws away a new date on drafts unless `edit_date` is set. It had been wrong on the old code too. Lesson: an API that returns success proves nothing about the state it left behind -- assert on the resulting record (status and date), not on the response.
+
+### Test the bug you fixed, and the code next to it
+The HTML-stripping fix was checked three ways: the same iframe page (content unchanged), a caller who *sends* a script (still sanitized), and `schedule_post` (which shares the code path). The third check is what exposed the scheduling bug. QA analogy: after a bug fix you run the regression for the bug and for its neighbours.
+
+### Two symptoms, one cause
+The rate limiter locked out a valid token because the limit was checked before the credentials. Reordering (credentials first, count only failures) fixed that, and also cut the log writes from one per request to one per window.
+
+### Deny-list vs allow-list, with a number on it
+`get_options` went from "blocks 12 known-bad keys" to "returns 9 known-good keys". The platform only ever read 2. Smaller surface, and it can't go stale when another plugin invents a new secret.
+
+### Unicode is a data-shape problem, not a locale problem
+`strlen` on a 45-character Hindi title said 125 (bytes); `str_word_count` said a 640-word page had 0 words. Devanagari vowel signs are combining marks, so a word pattern of just letters splits words apart; the fix needed marks (`\p{M}`) inside the word. The test itself was wrong at first too: the Windows console turned Hindi into `?` before it reached the plugin, so non-ASCII test data has to be sent from UTF-8 files.
+
+### Say what you couldn't prove
+The real cache plugins weren't available, so the test used stand-ins that record each purge call. That proves we call their documented API correctly, not that the plugins behave. The PR said so. Same for the release workflow: its shell step ran locally against the real files (4 pass/fail cases), but the workflow has not run on GitHub.
+
+### Interview questions this session answers
+- Why can `wp_update_post()` with only a title change the post's content, and how do you regression-test that?
+- What does it mean that a cache plugin "purges on save_post", and why doesn't a direct `update_post_meta()` trigger it?
+- Why is checking a rate limit *before* authenticating a problem behind a shared proxy IP?
+- Why does `str_word_count` report 0 for Hindi, and what does `\p{M}` change in a word regex?
+- Why remove an unused setting rather than implement it?

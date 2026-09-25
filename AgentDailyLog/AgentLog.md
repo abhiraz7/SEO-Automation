@@ -1409,3 +1409,68 @@ real WordPress install yet.
 - `image_alt` still isn't in `DEPLOYABLE_CATEGORIES` -- the tool exists
   end-to-end now, but nothing calls it from the Deploy button yet,
   deliberately deferred as a separate, live-write UI change.
+
+## 2026-09-24 — Session: AI SEO Connector plugin (v1.2.2) full code review — no code changes
+
+### Done
+- Read every non-vendored file of `ai-seo-connector/` (bootstrap, auth, router, MCP, logger,
+  4 handlers, admin/dashboard, release.yml, README, CHANGELOG) plus the platform call sites in
+  `app/wordpress.py` / `app/routes/wordpress.py`.
+- Wrote the full review + reference map to
+  `prompts/AI-SEO-Connector-Plugin-Review-2026-09-24.md` (kept out of `ai-seo-connector/` on
+  purpose — that folder ships in the public repo and the client zip).
+- Key facts: platform uses only 7 of 23 tools; platform still calls the legacy `vtseo/v1`
+  namespace (alias can't be removed yet).
+- Top findings: (1) Bearer requests run as user 0 → `update_post {title}` (the H1 deployer)
+  re-saves post_content through kses and can strip iframes/scripts; (2) MCP resources/* bypass
+  tool-group toggles and return unfiltered meta for any post type; (3) `get_options` deny-list
+  incomplete (and doc claims `active_plugins` is blocked — it isn't); (4) README claims uninstall
+  cleanup that doesn't exist + generic 500s vs "clear specific errors"; (5) stale "Yoast-only"
+  text in MCP instructions/dashboard; (6) RankMath `noindex:"false"` → ON; (7) GET /mcp SSE
+  holds a PHP worker 5 min; (8) unauthenticated requests cause unbounded option writes.
+
+### Not verified
+- Static review only — no PHP CLI here, nothing run on a live WordPress site. Yoast
+  indexable refresh after direct meta writes and page-cache visibility still need a live test.
+
+### Next
+- Fix #1 (kses) first — state the change, wait for approval, then implement.
+- Live deploy + rollback verification on `vseo.vtraffic.io`.
+
+
+## 2026-09-24 (later) — Session: plugin review findings filed as GitHub issues and fixed, one PR each
+
+### Done
+- Findings from the review were filed on `abhiraz7/AI-SEO-Connector` as issues #4-#9 (human-written,
+  grouped by kind of fix). Installed and signed in to `gh` (as `abhiraz7`).
+- Shipped the uncommitted 1.3.0 work first (PR #10) so the fixes build on it, then fixed each issue
+  in its own PR, reproduced on a throwaway WordPress 7.1.2 before and re-tested after, merged and
+  closed one at a time: #4 -> PR #11 (kses stripping page HTML; draft scheduling), #5 -> PR #12
+  (page caches), #6 -> PR #13 (resources/get_options/meta/rate limiter), #7 -> PR #14 (uninstall.php,
+  error responses, Yoast-only wording), #8 -> PR #15 (noindex booleans, retired sitemap ping,
+  Unicode audit), #9 -> PR #16 (GET /mcp 405, release version check, one tool registry,
+  notifications, log_level).
+- PR #17 prepares v1.4.0 (version bump + CHANGELOG entry used as the release notes). NOT tagged.
+- Ran the platform's own `app/wordpress.py` against the fixed plugin end to end (all calls OK) and
+  its 28 mocked-HTTP tests (pass).
+- Torn down the test bed (stopped php + mysqld, deleted its folders). Full result table and a
+  rebuild recipe are in `prompts/AI-SEO-Connector-Plugin-Review-2026-09-24.md`.
+
+### Decisions / flags
+- All findings were published as PUBLIC issues at the user's choice (the repo is public), while
+  client sites still ran the unfixed code until a release is tagged.
+- `yoast_sitemap_ping` removed rather than replaced with IndexNow (needs a key file at the site
+  root; no Google support).
+- Tag `v1.4.0` is left to the user: it is what pushes the update to every connected site.
+
+### Not verified
+- Real cache plugins (tested with recording stubs of their purge APIs), RankMath front-end output,
+  the multisite branch of `uninstall.php`, and the new release workflow (its shell step was run
+  locally; the workflow itself first runs on the next tag).
+
+### Next
+- User decides when to tag `v1.4.0`, and whether to sync the monorepo `ai-seo-connector/` copy to
+  plugin-repo `main` (overwrites its uncommitted files).
+- Re-point the platform from `vtseo/v1` to `aiseoc/v1`, then the alias can be retired.
+- Open hardening: SSRF IPv6 / DNS rebinding in `handler-media.php`; `vtseo_*` options never deleted
+  on upgrade.
