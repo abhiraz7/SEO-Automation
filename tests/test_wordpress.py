@@ -203,3 +203,18 @@ def test_resolve_homepage_get_options_error_propagates():
         result = wordpress.resolve_post_id_by_url("https://site.com", "https://site.com/", token="bad-tok")
     assert result.status == "error"
     assert "Authentication rejected" in result.error
+
+
+def test_plugin_download_redirects_to_latest_release():
+    # The platform must not bundle its own copy of the plugin: the download
+    # route sends users to the newest GitHub release, on both the new path
+    # and the legacy one.
+    from app.routes import wordpress as routes
+
+    resp = routes.download_wp_plugin()
+    assert resp.status_code == 302
+    assert resp.headers["location"] == (
+        "https://github.com/abhiraz7/AI-SEO-Connector/releases/latest/download/ai-seo-connector.zip"
+    )
+    paths = {r.path for r in routes.router.routes}
+    assert {"/downloads/ai-seo-connector", "/downloads/vtechseo-agent"} <= paths
