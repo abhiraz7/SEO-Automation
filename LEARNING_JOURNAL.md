@@ -750,3 +750,30 @@ The monorepo copy held uncommitted work that was superseded by the plugin repo. 
 ### Interview questions this session answers
 - Why does an admin settings page not inherit the front-end theme, and what should it inherit instead?
 - What is the safest way to replace a working-tree copy that has uncommitted changes?
+
+## 2026-09-25 (later) — Shipping is more than merging
+
+### Two repos, one folder: the cost of a copy
+The plugin lived in the monorepo AND its own repo. Every symptom this session came from that: the copy fell behind, a PR opened against the wrong base, and the platform served a stale bundled zip. One source of truth (link to the release, don't copy the file) removed a whole class of drift.
+
+### A default branch is a setting that shapes every PR
+The plugin repo's default branch was an old feature branch, so GitHub's "compare & pull request" pointed at it and produced conflicts that weren't real. When conflicts look absurd, check the base branch before resolving anything.
+
+### Merged is not deployed, deployed is not verified
+A merge to `main` triggers the deploy; then confirm on the live URL (HEAD on a GET-only route gives a misleading 405, so use GET). QA analogy: the pipeline going green is a smoke signal, the live check is the actual assertion.
+
+### A red pipeline can be a lying assertion
+`aws ssm wait` gives up after ~100s and the script treats "InProgress" as failure, so slow-but-fine deploys look broken. A check that fails for the wrong reason trains people to ignore red.
+
+### Rolling back means rolling forward
+Update checkers only offer versions newer than installed. Deleting a bad release doesn't downgrade sites that already updated; you publish a higher version with the old code. Also: deleting a plugin can run its uninstall and wipe the token, so "replace in place" is the safe manual path.
+
+### HTTP vs HTTPS is a product problem, not a browser quirk
+Chrome blocking the download was a symptom: the platform, which handles logins and API tokens, is served over plain HTTP.
+
+### Interview questions this session answers
+- Why can deleting a release not roll back installed clients, and what does?
+- How can a default branch cause phantom merge conflicts?
+- Why might a CI deploy report failure while the deploy succeeds, and how do you fix the wait logic?
+- Why is "merged" not the same as "released" or "verified"?
+- Why redirect to a release asset instead of bundling a copy of a dependency?

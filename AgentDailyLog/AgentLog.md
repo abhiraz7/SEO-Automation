@@ -1488,3 +1488,21 @@ real WordPress install yet.
 
 ### Next
 - Screenshot check on a throwaway WP 7.1.2, then open a PR on the plugin repo. Tag `v1.4.0` (or a new version) is still the user's call.
+
+## 2026-09-25 (later) — Session: Release 1.5.0, download link, deploy checks
+
+### What changed
+- Plugin: PR #19 merged, tag `v1.5.0` pushed, release workflow passed (its version check ran for the first time). Latest release = v1.5.0.
+- Plugin repo default branch was the stale `feature/ai-seo-connector-plugin`, which made GitHub's default PRs (#18, #20) conflict; user switched the default to `main`, #20 closed.
+- Platform PR #3 (`fix/plugin-download-link`): `/downloads/ai-seo-connector` (and legacy `/downloads/vtechseo-agent`) now 302-redirect to the plugin repo's latest release asset; both bundled zips removed; panel text renamed to AI SEO Connector. Merged to `main`, AWS deploy succeeded, verified live (302 + text).
+- Wrote `docs/release-notes-2026-09-20-to-2026-09-25.md` and `prompts/AI-SEO-Connector-Rollback-Runbook.md`.
+
+### Findings (not fixed)
+- Earlier deploy runs (#1, #2) showed red because `deploy.yml` waits ~100s (`aws ssm wait ... || true`) then reads status "InProgress" as failure; the SSM command keeps running. Fix = poll until a terminal status. Not done.
+- Platform is served over plain HTTP (`http://54.80.253.215`), so Chrome flags the plugin download as "insecure download blocked". Proper fix = domain + HTTPS. Left as is by user decision.
+- vseo.vtraffic.io connection shows "failed": likely still on the old VtechSEO Agent plugin; needs the new zip installed by hand + token re-pasted. Not verified.
+- Monorepo and plugin repo are separate projects sharing one folder; recommended splitting (plugin repo as sole source of truth). Not done; user has not decided.
+- "Awaiting connection" after upgrading from 1.2.2 is expected (contact recording was added in 1.3.0).
+
+### Not verified
+- New plugin settings screen never rendered in a browser; rollback runbook never exercised.
