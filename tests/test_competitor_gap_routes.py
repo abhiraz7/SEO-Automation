@@ -400,3 +400,18 @@ def test_the_detail_endpoint_returns_the_read_model(env):
     d = client.get(f"/projects/{p.id}/competitors/gap-analysis/{run.id}").json()
     assert d["id"] == run.id and d["keyword"] == "b ed admission" and len(d["snapshots"]) == 3
     assert d["plan"]["actions"][0]["draftable"] is True and d["gaps"][0]["label"] == "Eligibility criteria"
+
+
+def test_the_start_endpoint_can_gather_evidence_only_and_the_page_says_so(env):
+    client, db = env
+    p = make_project(db)
+    pages = {f"https://rival{i}.com/g": _page(["Eligibility criteria", "Fees"]) for i in range(1, 4)}
+    with patch.object(cg.serp_evidence, "fetch_serp_evidence", return_value=_serp()), \
+         patch.object(cg.page_evidence, "fetch_page_evidence", return_value=_page(["Overview"])), \
+         patch.object(cg.page_evidence, "fetch_pages_evidence", side_effect=lambda urls, *a, **k: {u: pages[u] for u in urls}), \
+         patch.object(cg.ai_provider, "generate_action_plan") as ai:
+        r = client.post(f"/projects/{p.id}/competitors/gap-analysis", data={**FORM, "with_plan": "false"})
+    assert r.status_code == 200 and r.json()["status"] == "ok"
+    ai.assert_not_called()
+    html = card(client.get(r.json()["url"]).text)
+    assert "An action plan was not requested for this analysis" in html and "Draft this" not in html

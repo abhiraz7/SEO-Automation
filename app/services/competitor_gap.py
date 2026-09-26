@@ -133,11 +133,17 @@ def _finish(db, run: models.CompetitorAnalysisRun, status: str, error: str | Non
     return run
 
 
-def run_analysis(db, project: models.Project, target_url: str, keyword: str, location: str, device: str) -> models.CompetitorAnalysisRun:
+def run_analysis(db, project: models.Project, target_url: str, keyword: str, location: str, device: str,
+                 with_plan: bool = True) -> models.CompetitorAnalysisRun:
     """Runs one analysis and returns the persisted run. Raises InputError for a bad
     request and BusyError if this project already has one running; everything else
     (a provider failure, a page that will not load, an unusable AI answer) ends up
-    recorded ON the run."""
+    recorded ON the run.
+
+    with_plan=False gathers the evidence only (SERP, competitor pages, gaps) and
+    skips the AI action-plan call, leaving plan_status 'not_run'. The Content
+    Optimizer uses that: it needs the evidence, not this feature's plan, and should
+    not pay for an AI call it will never show."""
     inputs = validate_inputs(project, target_url, keyword, location, device)
     with _running_lock:
         if project.id in _running:
@@ -155,7 +161,7 @@ def run_analysis(db, project: models.Project, target_url: str, keyword: str, loc
         db.refresh(run)
         run_id = run.id
         try:
-            _execute(db, run, project, page)
+            _execute(db, run, project, page, with_plan)
         except Exception as exc:  # noqa: BLE001 -- last resort: per-stage failures are handled inside _execute
             logger.exception("competitor gap analysis %s crashed", run_id)
             db.rollback()
@@ -168,7 +174,7 @@ def run_analysis(db, project: models.Project, target_url: str, keyword: str, loc
             _running.discard(project.id)
 
 
-def _execute(db, run: models.CompetitorAnalysisRun, project: models.Project, page: models.Page | None) -> None:
+def _execute(db, run: models.CompetitorAnalysisRun, project: models.Project, page: models.Page | None, with_plan: bool = True) -> None:
     # 1. the target page --------------------------------------------------------
     target = _target_from_page(page) if page else None
     if target is None:
@@ -258,7 +264,8 @@ def _execute(db, run: models.CompetitorAnalysisRun, project: models.Project, pag
         db.refresh(row)
 
     # 6. the AI plan (its failure never erases the gaps above) ------------------
-    _plan_stage(db, run, project, target, serp, rows, analysis)
+    if with_plan:
+        _plan_stage(db, run, project, target, serp, rows, analysis)
 
 
 def _gap_dict(row: models.CompetitorGap) -> dict:

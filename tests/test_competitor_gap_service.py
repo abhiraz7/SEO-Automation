@@ -558,3 +558,22 @@ def test_recent_runs_are_newest_first_limited_and_scoped_to_the_project(db):
     assert rows[0]["summary_line"] == "5 of 5 comparable competitors successfully analysed" and rows[0]["status"] == "ok"
     assert [r["keyword"] for r in cg.recent_runs(db, other.id)] == ["someone else's keyword"]
     assert cg.recent_runs(db, other.id)[0]["status"] == "error"
+
+
+def test_evidence_only_mode_gathers_everything_but_never_calls_the_ai(db):
+    project, _ = make_project(db)
+    with patch.object(cg.serp_evidence, "fetch_serp_evidence", return_value=serp_result(COMP_URLS)), \
+         patch.object(cg.page_evidence, "fetch_pages_evidence", side_effect=lambda urls, *a, **k: {u: full_results()[u] for u in urls}), \
+         patch.object(cg.ai_provider, "generate_action_plan") as ai:
+        out = cg.run_analysis(db, project, TARGET, KW, "IN", "desktop", with_plan=False)
+    ai.assert_not_called()
+    assert out.status == "ok" and out.plan_status == "not_run" and out.action_plan_json is None and out.plan_error is None
+    assert db.query(models.CompetitorGap).filter_by(analysis_run_id=out.id).count() > 0
+    assert cg.run_detail(db, out)["plan"]["status"] == "not_run"
+
+
+def test_the_default_still_asks_the_ai_for_a_plan(db):
+    project, _ = make_project(db)
+    out, _, _, ai = run(db, project)
+    ai.assert_called_once()
+    assert out.plan_status == "ok"

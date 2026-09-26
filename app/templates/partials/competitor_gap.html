@@ -203,6 +203,8 @@
     </div>
     {% elif plan.status == 'no_data' %}
     <div style="padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.5;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;">{{ plan.error }}</div>
+    {% elif plan.status == 'not_run' %}
+    <div style="padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.5;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;">An action plan was not requested for this analysis: it was gathered as evidence only. Run the analysis from this page to get one.</div>
     {% elif plan.status == 'ok' %}
     <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Each action cites the evidence above. Content-level drafts are proposals only: the built-in WordPress deploy handles just titles, meta descriptions, H1 and social/canonical fields, so text drafts are applied by you.</div>
     {% for prio in ['high', 'medium', 'low'] %}
