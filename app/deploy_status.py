@@ -16,9 +16,14 @@ live_status values (what the UI badges on):
                   SEO plugin's fields). NOT a success.
   unverified   -- we couldn't run the check (page unreachable, API error)
 """
+import logging
+
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from . import models
+
+logger = logging.getLogger("deploy_status")
 
 _LIVE_STATUS_BY_VERIFY = {
     "pending": "checking",
@@ -41,15 +46,25 @@ def live_status_for_suggestions(db: Session, suggestion_ids: list[int]) -> dict[
     use .get(). One query for the whole batch."""
     if not suggestion_ids:
         return {}
-    revisions = (
-        db.query(models.SuggestionRevision)
-        .filter(
-            models.SuggestionRevision.suggestion_id.in_(suggestion_ids),
-            models.SuggestionRevision.rolled_back_at.is_(None),
+    try:
+        revisions = (
+            db.query(models.SuggestionRevision)
+            .filter(
+                models.SuggestionRevision.suggestion_id.in_(suggestion_ids),
+                models.SuggestionRevision.rolled_back_at.is_(None),
+            )
+            .order_by(models.SuggestionRevision.id.desc())
+            .all()
         )
-        .order_by(models.SuggestionRevision.id.desc())
-        .all()
-    )
+    except SQLAlchemyError:
+        # A status badge must never take a whole page down. If this lookup
+        # fails (e.g. the database is missing the verify_* columns because a
+        # migration didn't apply -- which really happened in production), log
+        # it and return nothing: suggestion_live_fields then reports
+        # "unverified" for deployed suggestions, never "live".
+        logger.exception("live-status lookup failed; deployed suggestions will show as unverified")
+        db.rollback()
+        return {}
     out: dict[int, dict] = {}
     for rev in revisions:
         # Newest first, so the first one seen per suggestion is the one that counts.
