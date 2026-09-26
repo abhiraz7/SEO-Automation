@@ -130,9 +130,13 @@ def _store_page_result(db: Session, project: models.Project, item: dict, onpage_
     # looked exactly like the deploy had silently reverted even when
     # WordPress still had the deployed value live. This keeps a still-present
     # issue's row (and its suggestion/deploy history) stable across refreshes.
+    # AI Content Optimizer issues are not audit findings: DataForSEO never flags
+    # them, so they would look "resolved" and be deleted below -- taking the user's
+    # accepted / deployed suggestions with them via the cascade. Leave them out of
+    # this reconciliation entirely (see models.OPTIMIZER_RULE_PREFIX).
     existing_by_key = {
         (i.category, i.rule): i
-        for i in db.query(models.Issue).filter(models.Issue.page_id == page.id).all()
+        for i in db.query(models.Issue).filter(models.Issue.page_id == page.id, models.not_optimizer_issue()).all()
     }
     seen_keys = set()
     for issue_dict in dataforseo_onpage.issues_from_item(item):

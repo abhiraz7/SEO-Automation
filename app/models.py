@@ -138,6 +138,20 @@ class CrawlSnapshot(Base):
     page = relationship("Page", back_populates="snapshots")
 
 
+# Issues created by the AI Content Optimizer use a rule that starts with this.
+# They are NOT audit findings: an audit / on-page refresh re-derives the issue
+# list from the provider's answer and deletes whatever it does not re-flag, which
+# (through Issue.suggestions' cascade) would also delete the user's accepted /
+# edited / deployed decisions on them. Every code path that deletes Issues must
+# therefore leave rows with this prefix alone (see routes/onpage_semrush.py,
+# routes/audit.py, jobs/handlers/audit.py). Use is_optimizer_rule() to test one.
+OPTIMIZER_RULE_PREFIX = "opt_"
+
+
+def is_optimizer_rule(rule: str | None) -> bool:
+    return bool(rule) and rule.startswith(OPTIMIZER_RULE_PREFIX)
+
+
 class Issue(Base):
     __tablename__ = "issues"
 
@@ -152,6 +166,13 @@ class Issue(Base):
 
     page = relationship("Page", back_populates="issues")
     suggestions = relationship("Suggestion", back_populates="issue", cascade="all, delete-orphan")
+
+
+def not_optimizer_issue():
+    """SQL filter for code that deletes or replaces AUDIT findings: everything except
+    the optimizer's Issues. autoescape matters: '_' is a LIKE wildcard, so without it
+    'opt_' would also match an unrelated audit rule such as 'optimized_title'."""
+    return ~Issue.rule.startswith(OPTIMIZER_RULE_PREFIX, autoescape=True)
 
 
 class Suggestion(Base):
@@ -689,4 +710,56 @@ class CompetitorGap(Base):
     evidence_json = Column(JSON)                    # which competitors / headings / signals back this up
     confidence = Column(String)                     # high | medium | low
     recommended_action = Column(String)             # add | expand | rewrite | restructure | leave_unchanged | separate_page (filled from the validated plan)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+# ── AI Content Optimizer ─────────────────────────────────────────────────
+# Two NEW tables (created by Base.metadata.create_all at startup -- no
+# migration). The approval / deploy / rollback trail stays in the EXISTING
+# Suggestion + SuggestionRevision tables: an optimizer suggestion IS a Suggestion
+# (under an Issue whose rule starts with OPTIMIZER_RULE_PREFIX). These tables hold
+# only what a Suggestion has no columns for: the evidence and validation behind
+# it, and the outcome of a run that produced nothing (a run with no suggestions
+# must still be visible as "no change" / "no data" / "error", never as a blank).
+
+class ContentOptimizationRun(Base):
+    """One 'optimize this page for this keyword' run."""
+    __tablename__ = "content_optimization_runs"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    page_id = Column(Integer, ForeignKey("pages.id"), nullable=True)
+    target_url = Column(String, nullable=False)
+    keyword = Column(String, nullable=False)
+    location = Column(String)
+    device = Column(String, default="desktop")
+    evidence_run_id = Column(Integer, ForeignKey("competitor_analysis_runs.id"), nullable=True)
+    evidence_reused = Column(Boolean, default=False)   # a stored analysis was reused instead of paying for a fresh one
+    status = Column(String, nullable=False, default="error")  # ok | no_change | no_data | error
+    error = Column(Text)                                # why, for no_data / error
+    notes = Column(JSON)                                # {"discarded": [{"id","reason"}], "warnings": [...], "no_change_reason": str|None}
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class SuggestionOptimization(Base):
+    """The optimizer-specific detail of ONE Suggestion (one row per suggestion)."""
+    __tablename__ = "suggestion_optimizations"
+
+    id = Column(Integer, primary_key=True)
+    suggestion_id = Column(Integer, ForeignKey("suggestions.id"), nullable=False, unique=True)
+    run_id = Column(Integer, ForeignKey("content_optimization_runs.id"), nullable=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    page_id = Column(Integer, ForeignKey("pages.id"), nullable=False)
+    suggestion_type = Column(String, nullable=False)   # add_section | expand_section | rewrite_section | improve_heading | improve_title | improve_meta_description | add_faq | improve_internal_link
+    target_ref = Column(String)                        # title | meta_description | h1 | sec_NN | new
+    target_label = Column(Text)                        # what the user sees: 'Title', 'Section: Eligibility', ...
+    priority = Column(String)                          # high | medium | low
+    problem = Column(Text)
+    evidence_json = Column(JSON)                       # rebuilt by the APPLICATION from its own data, never taken from the model
+    before_content = Column(Text)                      # the current text, resolved by the application; NULL for a new section
+    confidence = Column(String)
+    requires_fact_check = Column(Boolean, default=False)
+    claims_to_verify = Column(JSON)
+    validation_status = Column(String)                 # ok | warning | needs_human_verification | blocked | error
+    validation_json = Column(JSON)                     # {"status", "checks": [{"name", "status", "message"}]}
     created_at = Column(DateTime, default=_utcnow)

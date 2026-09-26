@@ -42,6 +42,10 @@ def _generate_and_store(
     issue = db.get(models.Issue, issue_id)
     if not page or not issue:
         raise HTTPException(status_code=404)
+    if models.is_optimizer_rule(issue.rule):
+        # Generating here would delete the optimizer's undecided suggestions for this
+        # issue and replace them with generic ones written without its evidence.
+        raise HTTPException(status_code=409, detail="These suggestions are managed by the AI Content Optimizer. Regenerate them from the optimizer, not from here.")
 
     # Fetch/create the page's understanding (cached per crawl snapshot) before
     # generating, so the prompt gets the distilled JSON instead of raw fit_markdown.
