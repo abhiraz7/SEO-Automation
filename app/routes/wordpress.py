@@ -3,6 +3,7 @@ WordPress connection + deploy/rollback routes (Tasks 3.2-3.5).
 """
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import httpx
@@ -265,6 +266,48 @@ FIELD_DEPLOYERS = {
 }
 
 
+# ── Taxonomy TERM deployers ──────────────────────────────────────────────
+# Archive pages such as /subject/hindi/ are terms, not posts: the post tools
+# would write to whatever unrelated post happens to have that number. These use
+# the plugin's seo_get_term_meta / seo_set_term_meta (plugin 1.6.0+, RankMath
+# only -- on any other SEO plugin the plugin itself refuses with a clear
+# message, which is passed straight through). Only the two fields the plugin
+# supports for terms are wired; every other category is refused with a reason
+# rather than silently doing nothing. Signature differs from FIELD_DEPLOYERS:
+# read(site, token, taxonomy, term_id) / write(site, token, taxonomy, term_id, value).
+def _read_term_seo(site_url: str, token: str, taxonomy: str, term_id: int) -> wordpress.WordPressResult:
+    return wordpress.get_term_seo(site_url, token, taxonomy, term_id)
+
+
+def _write_term_title(site_url: str, token: str, taxonomy: str, term_id: int, value: str) -> wordpress.WordPressResult:
+    return wordpress.set_term_seo(site_url, token, taxonomy, term_id, seo_title=value)
+
+
+def _write_term_meta_description(site_url: str, token: str, taxonomy: str, term_id: int, value: str) -> wordpress.WordPressResult:
+    return wordpress.set_term_seo(site_url, token, taxonomy, term_id, meta_description=value)
+
+
+TERM_FIELD_DEPLOYERS = {
+    "title": {"read": _read_term_seo, "read_key": "seo_title", "write": _write_term_title, "tool": "seo_set_term_meta"},
+    "meta_description": {"read": _read_term_seo, "read_key": "meta_description", "write": _write_term_meta_description, "tool": "seo_set_term_meta"},
+}
+TERM_DEPLOYED_VIA = "seo_set_term_meta"
+
+
+@dataclass
+class _Target:
+    """What a page URL points at in WordPress: a post (id) or a taxonomy term
+    (taxonomy + id). Never store a term id where a post id is expected."""
+    kind: str  # "post" | "term"
+    post_id: int | None = None
+    taxonomy: str | None = None
+    term_id: int | None = None
+
+    @property
+    def object_id(self) -> int:
+        return self.post_id if self.kind == "post" else self.term_id
+
+
 class WordPressConnectionIn(BaseModel):
     site_url: str
     api_token: str
@@ -400,7 +443,18 @@ class DeployIn(BaseModel):
     wp_post_id: int | None = None
 
 
-def _resolve_wp_post_id(db: Session, suggestion: models.Suggestion, conn: models.WordPressConnection, token: str, explicit: int | None) -> int:
+def _resolve_target(db: Session, suggestion: models.Suggestion, conn: models.WordPressConnection, token: str, explicit: int | None) -> _Target:
+    """Decides what this suggestion's page IS in WordPress. Order matters:
+      1. an explicit id from the user (always a POST id -- the manual prompt has
+         no way to say "term"), remembered on the page;
+      2. the post id already cached on the page;
+      3. URLs that can never be deployed to (query strings, pagination, media,
+         feeds) -> 422 with the reason, before any lookup that could mis-match;
+      4. a live post lookup, then the homepage-is-a-blog-roll reason;
+      5. a live TERM lookup (taxonomy archive). Term ids are NOT cached on the
+         page row: pages.wp_post_id is a post id and mixing the two would risk
+         writing to the wrong object.
+    Anything still unresolved is a 400 that asks the user for a post id."""
     if explicit is not None:
         if explicit <= 0:
             raise HTTPException(status_code=400, detail="wp_post_id must be a positive integer.")
@@ -410,21 +464,25 @@ def _resolve_wp_post_id(db: Session, suggestion: models.Suggestion, conn: models
         if page:
             page.wp_post_id = explicit
             db.commit()
-        return explicit
+        return _Target("post", post_id=explicit)
 
     page = db.get(models.Page, suggestion.page_id)
     if page and page.wp_post_id:
-        return page.wp_post_id
+        return _Target("post", post_id=page.wp_post_id)
 
-    # Cached value missing/stale -- try a live resolve before giving up, in
-    # case the connection was only just saved after this page was crawled.
     if page:
+        reason = wordpress.non_deployable_reason(page.url)
+        if reason:
+            raise HTTPException(status_code=422, detail={"message": wordpress.non_deployable_message(reason), "reason": reason})
+
+        # Cached value missing/stale -- try a live resolve before giving up, in
+        # case the connection was only just saved after this page was crawled.
         result = wordpress.resolve_post_id_by_url(conn.site_url, page.url, token=token)
         if result.ok:
             page.wp_post_id = result.data.get("post_id")
             page.wp_post_type = result.data.get("post_type")
             db.commit()
-            return page.wp_post_id
+            return _Target("post", post_id=page.wp_post_id)
         if result.data.get("reason") == "homepage_is_post_archive":
             # Not a "give me a number" situation -- no numeric ID would fix
             # this, so a distinct status lets the UI show the real reason
@@ -433,6 +491,10 @@ def _resolve_wp_post_id(db: Session, suggestion: models.Suggestion, conn: models
                 status_code=422,
                 detail={"message": result.error, "reason": "homepage_is_post_archive"},
             )
+
+        term = wordpress.resolve_term_by_url(conn.site_url, page.url)
+        if term.ok:
+            return _Target("term", taxonomy=term.data["taxonomy"], term_id=term.data["term_id"])
 
     raise HTTPException(
         status_code=400,
@@ -541,15 +603,26 @@ def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depen
         raise HTTPException(status_code=400, detail=f"No deploy support yet for field type {field_name!r}.")
 
     conn, token = _connected_or_error(db, suggestion.project_id)
-    wp_post_id = _resolve_wp_post_id(db, suggestion, conn, token, payload.wp_post_id)
+    target = _resolve_target(db, suggestion, conn, token, payload.wp_post_id)
 
-    read_result = deployer["read"](conn.site_url, token, wp_post_id)
+    if target.kind == "term":
+        deployer = TERM_FIELD_DEPLOYERS.get(field_name)
+        if not deployer:
+            raise HTTPException(status_code=422, detail={
+                "message": f"This page is a taxonomy archive ({target.taxonomy}). Only the SEO title and meta description can be deployed to it, not {field_name!r}.",
+                "reason": "term_field_unsupported",
+            })
+        object_args = (target.taxonomy, target.term_id)
+    else:
+        object_args = (target.post_id,)
+
+    read_result = deployer["read"](conn.site_url, token, *object_args)
     if not read_result.ok and read_result.status == "error":
         raise HTTPException(status_code=502, detail=f"Could not read current value from WordPress: {read_result.error}")
     before_value = read_result.data.get(deployer["read_key"]) if read_result.ok else None
 
     new_value = suggestion.edited_content or suggestion.content
-    write_result = deployer["write"](conn.site_url, token, wp_post_id, new_value)
+    write_result = deployer["write"](conn.site_url, token, *object_args, new_value)
     if not write_result.ok:
         raise HTTPException(status_code=502, detail=f"Deploy failed: {write_result.error or 'unknown error'}")
 
@@ -559,7 +632,9 @@ def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depen
         field_name=field_name,
         before_value=before_value,
         after_value=new_value,
-        wp_post_id=wp_post_id,
+        # For a term this holds the TERM id; deployed_via (seo_set_term_meta) and
+        # deploy_result_raw["taxonomy"] say so, and rollback reads them.
+        wp_post_id=target.object_id,
         deployed_via=deployer["tool"],
         deploy_result_raw=write_result.data,
     )
@@ -649,13 +724,23 @@ def rollback_revision(revision_id: int, db: Session = Depends(get_db)):
     if revision.rolled_back_at:
         raise HTTPException(status_code=409, detail="Already rolled back.")
 
-    deployer = FIELD_DEPLOYERS.get(revision.field_name)
-    if not deployer:
-        raise HTTPException(status_code=400, detail=f"No deploy support for field type {revision.field_name!r} -- cannot roll back.")
-
     conn, token = _connected_or_error(db, revision.project_id)
 
-    write_result = deployer["write"](conn.site_url, token, revision.wp_post_id, revision.before_value or "")
+    if revision.deployed_via == TERM_DEPLOYED_VIA:
+        # A taxonomy-term deploy: wp_post_id holds the TERM id and the plugin's
+        # reply recorded which taxonomy it belongs to. Without both we can't
+        # tell WHICH object to restore, so refuse rather than guess.
+        term_deployer = TERM_FIELD_DEPLOYERS.get(revision.field_name)
+        raw = revision.deploy_result_raw if isinstance(revision.deploy_result_raw, dict) else {}
+        taxonomy = raw.get("taxonomy")
+        if not term_deployer or not taxonomy:
+            raise HTTPException(status_code=400, detail="Cannot roll back this taxonomy deploy: the taxonomy wasn't recorded.")
+        write_result = term_deployer["write"](conn.site_url, token, taxonomy, revision.wp_post_id, revision.before_value or "")
+    else:
+        deployer = FIELD_DEPLOYERS.get(revision.field_name)
+        if not deployer:
+            raise HTTPException(status_code=400, detail=f"No deploy support for field type {revision.field_name!r} -- cannot roll back.")
+        write_result = deployer["write"](conn.site_url, token, revision.wp_post_id, revision.before_value or "")
     if not write_result.ok:
         raise HTTPException(status_code=502, detail=f"Rollback failed: {write_result.error or 'unknown error'}")
 
