@@ -221,3 +221,19 @@ def test_reverify_unknown_is_404(db):
     with pytest.raises(HTTPException) as ei:
         wp_routes.reverify_revision(424242, db)
     assert ei.value.status_code == 404
+
+
+def test_live_status_lookup_failure_never_raises_and_never_claims_live():
+    """Regression: production's DB lacked suggestion_revisions.verify_status, the
+    lookup raised OperationalError, and the whole on-page dashboard returned 500."""
+    from sqlalchemy.exc import OperationalError
+
+    db = mock.MagicMock()
+    db.query.side_effect = OperationalError("SELECT ...", {}, Exception("no such column: verify_status"))
+    assert deploy_status.live_status_for_suggestions(db, [1, 2]) == {}
+    db.rollback.assert_called_once()
+
+    suggestion = mock.MagicMock(id=1, status="deployed")
+    fields = deploy_status.suggestion_live_fields({}, suggestion)
+    assert fields["live_status"] == "unverified"
+
