@@ -167,3 +167,18 @@ Source: a design review pasted by the user (not written by us; its reading of th
 - Section 6 (plugin settings page redesign): all open.
 - Removing the plugin copy from this repo (single source of truth): decision pending.
 
+---
+
+## 8. To-do, in order
+
+- [ ] **1. Merge the PRs.** Each platform merge deploys to AWS, so merge one at a time and verify production after each (pages return 200, container logs show no tracebacks, the change is visible; do not trust the green check alone).
+  - [ ] Platform **#8**: deploy to taxonomy term pages (the core fix; merge first)
+  - [ ] Platform **#9**: automatic re-check of "not showing" deploys
+  - [ ] Platform **#10**: this docs update (no deploy risk)
+  - [ ] Plugin **#23**: refuse SEO writes on unsupported plugins; final 1.6.0 changelog (a plugin-repo merge does not deploy anything by itself)
+- [ ] **2. Tag `v1.6.0` on the plugin repo, after #23 merges.** Tag the merge commit. This is the step that lets the download button (`ai-seo-connector-1.6.0.zip`) and client sites' "update available" notice see 1.6.0. The release workflow checks the tag against the plugin header and `AISEOC_VERSION` and requires the CHANGELOG entry (all present).
+- [ ] **3. Then the loose ends:**
+  - [ ] **Migration 025 mystery.** It did not persist through the deploy and caused a production 500 (repaired by hand). Find the cause before the next schema change; hypothesis, unconfirmed: WAL mode plus migrations run in a separate container while the old app container is still running.
+  - [ ] **Type the CI/CD steps** from `prompts/CI-CD-Hardening-Steps.md`: the PR test workflow, the truthful deploy wait, the `.app_commit` line, and the `/version` smoke test (add the smoke test only after `/version` has been deployed once).
+- [ ] **4. (Added from a later question, not in the original list.)** Automatic plugin release on a version bump: the release workflow already builds and publishes when a `v*` tag is pushed, but creating the tag is still manual. Do this before 1.6.1, in the plugin repo's `release.yml`; it needs the release job to create the tag itself, because tags pushed with the built-in token do not start other workflows.
+
