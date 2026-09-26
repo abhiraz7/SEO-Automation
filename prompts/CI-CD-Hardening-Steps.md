@@ -81,17 +81,37 @@ done
 
 Why: it checks every 10 seconds, up to 15 minutes, and stops only at a final state. The existing lines below it (print the output, `exit 1` unless "Success") stay as they are.
 
-### 2c. Smoke test: does AWS serve this commit?
+### 2c. Stop the old app before running migrations (fixes the lost-migration bug)
+
+**Why (found 2026-09-27 from the deploy logs):** migration 025 printed `Added suggestion_revisions.verify_status` (and two more columns) on the Sep 25 deploy and again on the Sep 26 deploy, yet production lacked the columns afterwards, and a page that read them returned 500. The cause is inferred from that evidence, not reproduced: the migration runs in a *separate* container (`docker compose run --rm`) while the old app container still has the SQLite database open in WAL mode. When the migration's connection closes it cannot checkpoint the write-ahead file into the main database (another connection still holds it), so the change stays in a file inside the migration container, which is deleted when the container exits.
+
+**The fix:** make the migration the only connection to the database. In the `commands = [...]` list, add this line **after** the `docker compose ... build` line and **before** the `for f in /opt/seo-automation/migrations/*.py` loop:
+
+```python
+"sudo -u ec2-user docker compose -f /opt/seo-automation/docker-compose.yml stop app",
+```
+
+Order after the change: pull, build the new image (the old app is still serving), **stop the old app**, run the migrations, `up -d`. Stopping the old container closes its database connections cleanly, so its work is checkpointed, and the migration then runs alone. Cost: the site is down for the migration plus startup time (seconds to a minute), instead of never.
+
+If you later want zero downtime, the proper fix is to keep the database's `-wal` and `-shm` files on the host (mount the whole data directory instead of one file), so every container shares them. That is a bigger change to `docker-compose.yml` and the database path.
+
+### 2d. Smoke test: does AWS serve this commit, with a complete schema?
 
 Add a new step after "Deploy via SSM". First add a repository variable `APP_URL` (Settings, Secrets and variables, Actions, Variables) with your server address, for example `http://54.80.253.215`:
 
 ```yaml
-      - name: Confirm the new commit is live
+      - name: Confirm the new commit is live and the schema is complete
         run: |
           for i in $(seq 1 20); do
-            LIVE=$(curl -s --max-time 10 "${{ vars.APP_URL }}/version" | python3 -c "import sys,json; print(json.load(sys.stdin).get('commit',''))" 2>/dev/null || true)
-            echo "attempt $i: live=$LIVE expected=${{ github.sha }}"
-            [ "$LIVE" = "${{ github.sha }}" ] && exit 0
+            BODY=$(curl -s --max-time 10 "${{ vars.APP_URL }}/version" || true)
+            LIVE=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('commit',''))" 2>/dev/null || true)
+            SCHEMA_OK=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('schema',{}).get('ok'))" 2>/dev/null || true)
+            echo "attempt $i: live=$LIVE expected=${{ github.sha }} schema_ok=$SCHEMA_OK"
+            if [ "$LIVE" = "${{ github.sha }}" ]; then
+              [ "$SCHEMA_OK" = "True" ] && exit 0
+              echo "::error::The database is missing columns the code expects: $BODY"
+              exit 1
+            fi
             sleep 6
           done
           echo "::error::The server is not serving commit ${{ github.sha }}"
@@ -100,9 +120,14 @@ Add a new step after "Deploy via SSM". First add a repository variable `APP_URL`
 
 Why the retries: `docker compose up -d` returns before the app has finished starting, so the first calls may fail. That is normal, not an error.
 
-Verify: after the next merge the run should end green, and `curl http://<server>/version` should show the same hash as `git rev-parse origin/main`.
+What `schema.ok` means (the app's `/version` now reports it): `true` = every column the models expect exists; `false` = something is missing and `schema.missing` lists it; `null` = the check itself could not run. Only `true` passes.
 
-Note: `/version` only exists after the PR that adds it is merged and deployed once, so the first deploy after merging will fail step 2c. Merge the PR first, then add 2c. Do 2a and 2b in the same change as the merge.
+If a deploy fails on schema drift, repair by running the missing migration inside the **running** container (it shares that container's database state):
+`docker compose exec -T app python migrations/<NNN_name>.py`
+
+Verify: after the next merge the run should end green, `curl http://<server>/version` should show the same hash as `git rev-parse origin/main`, and `"schema":{"ok":true,...}`.
+
+Note: `/version` reports the commit only after step 2a exists, and the `schema` field only exists after the pull request that adds it is deployed once. Merge that first, then add 2c and 2d.
 
 ---
 
