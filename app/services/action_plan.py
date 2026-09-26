@@ -131,6 +131,13 @@ def _forbidden_reason(*texts: str) -> str | None:
     return None
 
 
+# Public names for the AI Content Optimizer, which applies the same product rules
+# ("Google requires...", keyword-density / word-count targets, copying competitors)
+# and the same factual-statement detector, so both features stay in step.
+forbidden_reason = _forbidden_reason
+FACTUAL_PATTERN = _FACTUAL
+
+
 def validate_action_plan(parsed: schemas.ModelActionPlan, evidence: list[dict]) -> dict:
     """{"status": "ok"|"no_data", "actions": [...], "rejected": [{"id","reason"}], "warnings": [...]}.
     `actions` follow the product's plan shape, with every evidence item rebuilt from
