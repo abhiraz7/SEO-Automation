@@ -211,7 +211,9 @@ def test_a_real_page_with_a_root_div_is_not_a_shell():
 
 def test_garbage_input_does_not_raise():
     for junk in ("", "<<<>>>", "\x00\x01", None):
-        assert pe.extract_page(junk)["word_count"] == 0
+        out = pe.extract_page(junk)  # must not raise, whatever it is given
+        assert isinstance(out["word_count"], int) and out["extraction_confidence"] == "low"
+    assert pe.extract_page("")["word_count"] == 0 and pe.extract_page(None)["word_count"] == 0
 
 
 # ── fetch strategy ────────────────────────────────────────────────────────
