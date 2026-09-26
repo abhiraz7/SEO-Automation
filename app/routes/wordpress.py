@@ -35,7 +35,7 @@ _plugin_release_cache: dict = {"at": 0.0, "value": None}
 _SAFE_VERSION = re.compile(r"^\d+\.\d+\.\d+(?:[-.][0-9A-Za-z]+)*$")
 
 
-def _latest_plugin_release() -> tuple[str, str] | None:
+def _latest_plugin_release(timeout: float = 10) -> tuple[str, str] | None:
     """(version, asset download URL) of the newest AI SEO Connector release, or
     None if it can't be determined. Never raises: a slow or unreachable GitHub
     just means the caller falls back to the plain redirect."""
@@ -43,7 +43,7 @@ def _latest_plugin_release() -> tuple[str, str] | None:
     if _plugin_release_cache["value"] and now - _plugin_release_cache["at"] < _PLUGIN_RELEASE_CACHE_SECONDS:
         return _plugin_release_cache["value"]
     try:
-        resp = httpx.get(PLUGIN_LATEST_API, headers={"Accept": "application/vnd.github+json"}, timeout=10)
+        resp = httpx.get(PLUGIN_LATEST_API, headers={"Accept": "application/vnd.github+json"}, timeout=timeout)
         resp.raise_for_status()
         release = resp.json()
         version = str(release.get("tag_name", "")).lstrip("v")
@@ -59,6 +59,37 @@ def _latest_plugin_release() -> tuple[str, str] | None:
         return None
     _plugin_release_cache.update(at=now, value=(version, asset_url))
     return version, asset_url
+
+
+PLUGIN_NAME = "AI SEO Connector"
+
+
+def _version_tuple(version) -> tuple[int, int, int] | None:
+    """'1.5.0' -> (1, 5, 0); anything that isn't a plain x.y.z -> None, so an
+    odd version string means "can't tell", never a wrong claim."""
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)", str(version or "").strip())
+    return tuple(int(g) for g in m.groups()) if m else None
+
+
+def plugin_update_info(installed_name, installed_version) -> dict:
+    """Compares the plugin installed on a client site (from its /ping) with the
+    latest release, so the panel can say "update available" instead of leaving
+    a site on an old version unnoticed. Never raises and never guesses:
+      checked=False          -- GitHub couldn't be reached; nothing is claimed.
+      update_available=None  -- the versions couldn't be compared.
+    A site still running the old "VtechSEO Agent" plugin is a different plugin,
+    not an older version of this one, so it is flagged as a replacement."""
+    latest = _latest_plugin_release(timeout=3)  # short: this rides on a quick connection test
+    if not latest:
+        return {"checked": False}
+    latest_version = latest[0]
+    info = {"checked": True, "latest_version": latest_version, "installed_version": installed_version}
+    if installed_name != PLUGIN_NAME:
+        return {**info, "update_available": True, "reason": "different_plugin"}
+    installed, newest = _version_tuple(installed_version), _version_tuple(latest_version)
+    if installed is None or newest is None:
+        return {**info, "update_available": None}
+    return {**info, "update_available": installed < newest}
 
 
 # The old path is kept so existing links and bookmarks still land on the plugin.
@@ -319,15 +350,17 @@ def test_wordpress_connection(project_id: int, background_tasks: BackgroundTasks
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.error or "Connection test failed")
 
+    site = result.data if isinstance(result.data, dict) else {}
+
     if project_id in _active_resolve_sweeps:
         # Another test-connection click (this or a different browser/device)
         # already has a sweep running for this project -- don't stack a
         # second one on top of it, just let the one in flight finish.
-        return {"ok": True, "site": result.data, "resolved_pages": "sweep already in progress, skipped duplicate"}
+        return {"ok": True, "site": result.data, "plugin_update": plugin_update_info(site.get("plugin"), site.get("version")), "resolved_pages": "sweep already in progress, skipped duplicate"}
 
     _active_resolve_sweeps.add(project_id)
     background_tasks.add_task(_resolve_all_pages_in_background, project_id, conn.site_url, token)
-    return {"ok": True, "site": result.data, "resolved_pages": "scheduled in background"}
+    return {"ok": True, "site": result.data, "plugin_update": plugin_update_info(site.get("plugin"), site.get("version")), "resolved_pages": "scheduled in background"}
 
 
 @router.post("/projects/{project_id}/wordpress/resolve-pages")
