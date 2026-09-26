@@ -900,6 +900,9 @@ function fmLiveBadge(s) {
     unverified: ['background:#fee2e2;color:#dc2626;', "⚠ Couldn't verify"]
   };
   var m = map[st] || map.checking;
+  if (st === 'not_showing' && s.live_rechecking) {
+    m = ['background:#fef3c7;color:#b45309;', '⏳ Not showing yet — re-checking automatically'];
+  }
   var html = '<span title="' + fmEsc(s.live_detail) + '" style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;' + m[0] + '">' + m[1] + '</span>';
   var revId = parseInt(s.live_revision_id, 10);
   if (st !== 'live' && !isNaN(revId)) {
