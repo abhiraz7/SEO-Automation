@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from ... import dataforseo_onpage, models
+from ... import dataforseo_onpage, deploy_status, models
 
 
 def _utcnow():
@@ -90,6 +90,11 @@ def run_verify_deploy_job(db: Session, job: models.Job) -> None:
                 if _norm(live_value) == _norm(revision.after_value):
                     revision.verify_status = "verified"
                     revision.verify_detail = live_value
+                    # Only now -- with proof the public page shows it -- does
+                    # our own Page copy ("Current" in the UI) take the new value.
+                    deploy_status.apply_verified_value_to_page(
+                        db, page.id, revision.field_name, revision.after_value
+                    )
                 else:
                     revision.verify_status = "mismatch"
                     revision.verify_detail = live_value or "(empty/not found on the live page)"

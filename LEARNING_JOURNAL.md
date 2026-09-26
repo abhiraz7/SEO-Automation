@@ -694,3 +694,102 @@ The backend's own HTTP client call was capped at 20s, but the *browser's* `fetch
 - Why can't a FastAPI background task safely reuse the SQLAlchemy session that was injected into the route via `Depends`?
 - What's the actual failure mode of an endpoint that does one fast thing and one slow thing in the same request, and why doesn't "optimize the slow part" fully fix it?
 - Why does capping a server-side HTTP call's timeout not automatically cap how long a browser waits for that server's own response?
+
+## 2026-09-24 — Reviewing a plugin: the bug is often in what the framework does *around* your call
+
+### Changing one field can re-save the whole record
+`wp_update_post(['ID'=>5, 'post_title'=>'New'])` looks like "update the title." Under the hood WordPress loads the entire post, merges your field in, and re-saves everything through `wp_insert_post` — including its content filters. Because the plugin's Bearer-token requests run as "no user" (user 0), WordPress applies its HTML sanitizer (kses) to the *existing* body too, which can quietly strip iframes/scripts. Lesson: when a write API takes a partial payload, check whether it's a true partial update or a load-merge-save of the whole object. Testing analogy: a test that only asserts the field you changed will pass while an untouched field got corrupted — assert the neighbours too.
+
+### Two doors into the same room need the same lock
+`/tool` and MCP `tools/call` both go through `call_tool`, which checks the enabled tool groups. But MCP `resources/read` was a third door that skipped `call_tool` entirely — so turning off "Content" didn't stop post reads. Lesson: when a permission check lives in one shared function, list every entry point and confirm each one actually passes through it.
+
+### Deny-lists age badly; allow-lists stay honest
+`get_options` blocks a fixed list of "sensitive" keys — but every plugin a site installs can add new secrets the list has never heard of. The platform only ever needs two keys, so an allow-list of exactly those is smaller and can't go stale. Same idea as asserting the exact expected response vs. asserting "doesn't contain known-bad strings."
+
+### Interview questions this session answers
+- Why can a "title-only" update in WordPress change a post's content, and how would you prove it with a test?
+- What's the risk of implementing an authorization check inside one dispatcher function when there are several entry points?
+- When is an allow-list preferable to a deny-list for protecting configuration data?
+
+
+## 2026-09-24 (later) — Reproduce first, then fix: what a real test site taught that reading the code didn't
+
+### A success response can hide a broken default
+`schedule_post` looked fine until a test showed it published a draft *immediately*. WordPress silently throws away a new date on drafts unless `edit_date` is set. It had been wrong on the old code too. Lesson: an API that returns success proves nothing about the state it left behind -- assert on the resulting record (status and date), not on the response.
+
+### Test the bug you fixed, and the code next to it
+The HTML-stripping fix was checked three ways: the same iframe page (content unchanged), a caller who *sends* a script (still sanitized), and `schedule_post` (which shares the code path). The third check is what exposed the scheduling bug. QA analogy: after a bug fix you run the regression for the bug and for its neighbours.
+
+### Two symptoms, one cause
+The rate limiter locked out a valid token because the limit was checked before the credentials. Reordering (credentials first, count only failures) fixed that, and also cut the log writes from one per request to one per window.
+
+### Deny-list vs allow-list, with a number on it
+`get_options` went from "blocks 12 known-bad keys" to "returns 9 known-good keys". The platform only ever read 2. Smaller surface, and it can't go stale when another plugin invents a new secret.
+
+### Unicode is a data-shape problem, not a locale problem
+`strlen` on a 45-character Hindi title said 125 (bytes); `str_word_count` said a 640-word page had 0 words. Devanagari vowel signs are combining marks, so a word pattern of just letters splits words apart; the fix needed marks (`\p{M}`) inside the word. The test itself was wrong at first too: the Windows console turned Hindi into `?` before it reached the plugin, so non-ASCII test data has to be sent from UTF-8 files.
+
+### Say what you couldn't prove
+The real cache plugins weren't available, so the test used stand-ins that record each purge call. That proves we call their documented API correctly, not that the plugins behave. The PR said so. Same for the release workflow: its shell step ran locally against the real files (4 pass/fail cases), but the workflow has not run on GitHub.
+
+### Interview questions this session answers
+- Why can `wp_update_post()` with only a title change the post's content, and how do you regression-test that?
+- What does it mean that a cache plugin "purges on save_post", and why doesn't a direct `update_post_meta()` trigger it?
+- Why is checking a rate limit *before* authenticating a problem behind a shared proxy IP?
+- Why does `str_word_count` report 0 for Hindi, and what does `\p{M}` change in a word regex?
+- Why remove an unused setting rather than implement it?
+
+## 2026-09-25 — Let the platform's own look do the work
+
+### Native beats bespoke inside someone else's UI
+A settings page inside wp-admin never loads the site's front-end theme, so "match the theme" is really "match wp-admin". The lightest way is to use core classes (`.button`, `.wrap`, `.description`) and inherit colors instead of hardcoding a dark gradient design: admin-styling plugins and color schemes then restyle it for free, and ~160 lines of CSS became ~40. QA analogy: asserting on stable semantic selectors instead of pixel positions.
+
+### Snapshot before you overwrite
+The monorepo copy held uncommitted work that was superseded by the plugin repo. Committing it first, then syncing in a second commit, made the overwrite reversible.
+
+### Interview questions this session answers
+- Why does an admin settings page not inherit the front-end theme, and what should it inherit instead?
+- What is the safest way to replace a working-tree copy that has uncommitted changes?
+
+## 2026-09-25 (later) — Shipping is more than merging
+
+### Two repos, one folder: the cost of a copy
+The plugin lived in the monorepo AND its own repo. Every symptom this session came from that: the copy fell behind, a PR opened against the wrong base, and the platform served a stale bundled zip. One source of truth (link to the release, don't copy the file) removed a whole class of drift.
+
+### A default branch is a setting that shapes every PR
+The plugin repo's default branch was an old feature branch, so GitHub's "compare & pull request" pointed at it and produced conflicts that weren't real. When conflicts look absurd, check the base branch before resolving anything.
+
+### Merged is not deployed, deployed is not verified
+A merge to `main` triggers the deploy; then confirm on the live URL (HEAD on a GET-only route gives a misleading 405, so use GET). QA analogy: the pipeline going green is a smoke signal, the live check is the actual assertion.
+
+### A red pipeline can be a lying assertion
+`aws ssm wait` gives up after ~100s and the script treats "InProgress" as failure, so slow-but-fine deploys look broken. A check that fails for the wrong reason trains people to ignore red.
+
+### Rolling back means rolling forward
+Update checkers only offer versions newer than installed. Deleting a bad release doesn't downgrade sites that already updated; you publish a higher version with the old code. Also: deleting a plugin can run its uninstall and wipe the token, so "replace in place" is the safe manual path.
+
+### HTTP vs HTTPS is a product problem, not a browser quirk
+Chrome blocking the download was a symptom: the platform, which handles logins and API tokens, is served over plain HTTP.
+
+### Interview questions this session answers
+- Why can deleting a release not roll back installed clients, and what does?
+- How can a default branch cause phantom merge conflicts?
+- Why might a CI deploy report failure while the deploy succeeds, and how do you fix the wait logic?
+- Why is "merged" not the same as "released" or "verified"?
+- Why redirect to a release asset instead of bundling a copy of a dependency?
+
+## 2026-09-26: "Deployed" must mean the customer can see it
+
+**What happened.** The dashboard said "deployed" for changes that never reached the live page. The plugin had written Yoast fields on a Rank Math site, returned OK, and we believed it.
+
+**The concept.** A success signal from a lower layer (the plugin's 200) is not proof of the outcome the user cares about (the public page shows the new title). Same as a test that asserts on the API response but never checks what the user sees. The fix is to make the outcome check the source of truth and to fail closed: unknown or pending is shown as "checking", never as "live".
+
+**How it fits our architecture.** The verify job already existed; the gap was that three separate serializers and two UIs ignored it. One shared module (`deploy_status.py`) now answers "is it live?" so screens can't disagree, the same idea as the FIELD_DEPLOYERS registry. Our own database copy of the page now updates only after proof.
+
+**A trap avoided.** For a delayed re-check the obvious move was to use `Job.scheduled_for`. Reading the scheduler showed it stores the NEXT run time there, so honouring it would have delayed every scheduled job. Read the code that owns a column before reusing it.
+
+### Interview questions this session answers
+- Why is an API "success" response not the same as a verified outcome?
+- What does "fail closed" mean for a status badge?
+- Why put a derived status in one shared function instead of each endpoint?
+- How would you add delayed retries to a job queue without breaking existing schedules?

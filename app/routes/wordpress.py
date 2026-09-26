@@ -4,7 +4,6 @@ WordPress connection + deploy/rollback routes (Tasks 3.2-3.5).
 import re
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -520,33 +519,6 @@ def _connected_or_error(db: Session, project_id: int) -> tuple[models.WordPressC
     return conn, token
 
 
-# Category -> Page column that "Current" (current_value_for in audit.py)
-# reads for that category. After a successful deploy we know exactly what
-# we just wrote, so we update our own copy immediately rather than leaving
-# "Current" showing the pre-deploy value until the next crawl/re-audit.
-# h1 is stored as a list on Page (crawler can see multiple H1s) -- a deploy
-# only ever supplies one value, so it replaces the list with a single-item
-# list; this is an approximation for pages that genuinely had >1 H1, but a
-# stale display would be a worse default than an accurate single value.
-_PAGE_FIELD_FOR_CATEGORY = {
-    "title": "title", "meta_description": "meta_description", "h1": "h1",
-    "twitter": "twitter_title", "canonical": "canonical", "opengraph": "og_title",
-}
-
-
-def _apply_deploy_to_page(db: Session, page_id: int, field_name: str, new_value: str) -> None:
-    page = db.get(models.Page, page_id)
-    if not page:
-        return
-    page_field = _PAGE_FIELD_FOR_CATEGORY.get(field_name)
-    if not page_field:
-        return
-    if page_field == "h1":
-        page.h1 = [new_value]
-    else:
-        setattr(page, page_field, new_value)
-
-
 @router.post("/suggestions/{suggestion_id}/deploy")
 def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depends(get_db)):
     """Deploys an accepted/edited suggestion's value to WordPress. Reads the
@@ -612,7 +584,9 @@ def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depen
     for s in superseded:
         s.status = "accepted"
 
-    _apply_deploy_to_page(db, suggestion.page_id, field_name, new_value)
+    # Our own Page copy is NOT updated here any more: it is updated by the
+    # verify_deploy job once the public page confirms the value (see
+    # deploy_status.apply_verified_value_to_page).
 
     db.commit()
     db.refresh(revision)
@@ -631,6 +605,35 @@ def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depen
     ))
     db.commit()
 
+    return _revision_out(revision)
+
+
+@router.post("/revisions/{revision_id}/verify")
+def reverify_revision(revision_id: int, db: Session = Depends(get_db)):
+    """Manual 'Re-check': queues a fresh live-page verification for a deployed
+    revision. Useful after a 'saved but not showing' result once a cache has
+    been purged, and for revisions deployed before verification existed.
+    (Not automatic on purpose: the scheduler stamps scheduled_for with the NEXT
+    run time, so delaying a job via that column would push every scheduled job
+    back by a full interval.)"""
+    revision = db.get(models.SuggestionRevision, revision_id)
+    if not revision:
+        raise HTTPException(status_code=404, detail="Revision not found")
+    if revision.rolled_back_at:
+        raise HTTPException(status_code=409, detail="This revision was rolled back; nothing to verify.")
+
+    already_queued = any(
+        (j.payload or {}).get("revision_id") == revision.id
+        for j in db.query(models.Job).filter(
+            models.Job.job_type == "verify_deploy",
+            models.Job.status.in_(("queued", "running")),
+        )
+    )
+    if not already_queued:
+        db.add(models.Job(project_id=revision.project_id, job_type="verify_deploy", payload={"revision_id": revision.id}))
+    revision.verify_status = "pending"
+    revision.verify_detail = None
+    db.commit()
     return _revision_out(revision)
 
 

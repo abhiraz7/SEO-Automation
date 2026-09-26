@@ -13,4 +13,4 @@
 - This is in addition to mentor-mode explanations above, not instead of them: teach the concept, then review the change like you'd review a colleague's PR.
 
 ## Git commits
-- Do NOT add a `Co-Authored-By: Claude` trailer to commit messages. Commits should be attributed solely to the repo's configured git user.
+- DO add a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer to every commit message going forward. Confirmed 2026-09-23: the user explicitly wants Claude to get full credit for AI-assisted work on this project, reversing the earlier no-credit stance. This applies to any agent or session picking up work on this repo, not just the current conversation.

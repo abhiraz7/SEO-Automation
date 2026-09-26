@@ -1682,6 +1682,52 @@ function loadPageModal(pageId, issueId) {
       document.getElementById('page-modal-body').innerHTML = '<div style="color:#dc2626;font-size:13px;">Could not load page: ' + pmEsc(err.message) + '</div>';
     });
 }
+// 'deployed' only means WordPress accepted the write; this badge shows whether
+// the live page actually reflects it. Missing live_status is treated as 'checking'.
+function pmLiveBadge(s) {
+  var st = s.live_status || 'checking';
+  var map = {
+    checking: ['background:#f1f5f9;color:#64748b;', '⏳ Checking live page…'],
+    live: ['background:#dcfce7;color:#15803d;', '✓ Live on site'],
+    not_showing: ['background:#fef3c7;color:#b45309;', '⚠ Saved, not showing on site yet'],
+    unverified: ['background:#fee2e2;color:#dc2626;', "⚠ Couldn't verify"]
+  };
+  var m = map[st] || map.checking;
+  var html = '<span title="' + pmEsc(s.live_detail) + '" style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:5px;' + m[0] + '">' + m[1] + '</span>';
+  var revId = parseInt(s.live_revision_id, 10);
+  if (st !== 'live' && !isNaN(revId)) {
+    html += '<button onclick="pmReverify(' + revId + ')" style="font-size:10px;color:#4f46e5;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">Re-check</button>';
+  }
+  return html;
+}
+// Polls until this revision's live check finishes, then reloads the modal so
+// the badge shows the real result instead of sitting on "Checking…".
+var PM_DONE_STATES = ['verified', 'mismatch', 'error'];
+function pmWatchRevision(revisionId, attempt) {
+  attempt = attempt || 0;
+  if (attempt >= 24) return;  // ~2 minutes at 5s; Re-check still works after that
+  setTimeout(function() {
+    fetch('/projects/{{ project.id }}/revisions')
+      .then(function(r) { return r.ok ? r.json() : []; })
+      .then(function(list) {
+        var rev = (list || []).find(function(x) { return x.id === revisionId; });
+        if (!rev || PM_DONE_STATES.indexOf(rev.verify_status) === -1) return pmWatchRevision(revisionId, attempt + 1);
+        if (currentPageModalId) loadPageModal(currentPageModalId, currentPageModalIssueId);
+        showToast(rev.verify_status === 'verified' ? 'Verified: the change is live on the site.' : 'Saved, but the live page does not show it yet.', rev.verify_status === 'verified' ? undefined : 'error');
+      })
+      .catch(function() { pmWatchRevision(revisionId, attempt + 1); });
+  }, 5000);
+}
+function pmReverify(revisionId) {
+  fetch('/revisions/' + revisionId + '/verify', { method: 'POST' })
+    .then(function(res) {
+      if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); });
+      showToast('Re-checking the live page…');
+      if (currentPageModalId) loadPageModal(currentPageModalId, currentPageModalIssueId);
+      pmWatchRevision(revisionId);
+    })
+    .catch(function(err) { showToast('Re-check failed: ' + err.message, 'error'); });
+}
 function pmSuggestionHtml(issue, s) {
   var statusColors = {
     accepted: 'background:#dcfce7;color:#15803d;', rejected: 'background:#fee2e2;color:#dc2626;',
@@ -1690,7 +1736,7 @@ function pmSuggestionHtml(issue, s) {
   };
   var canDeploy = ['accepted', 'edited'].indexOf(s.status) !== -1 && ['meta_description', 'title', 'h1', 'twitter', 'canonical', 'opengraph'].indexOf(issue.category) !== -1;
   var actions = s.status === 'deployed'
-    ? '<button onclick="pmSuggRollback(' + s.id + ')" style="font-size:11px;color:#ea580c;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">↩ Roll back</button>'
+    ? pmLiveBadge(s) + '<button onclick="pmSuggRollback(' + s.id + ')" style="font-size:11px;color:#ea580c;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">↩ Roll back</button>'
     : '<button onclick="pmSuggDecide(' + s.id + ',\'accept\')" style="font-size:11px;color:#15803d;background:none;border:none;cursor:pointer;padding:0;">Accept</button>' +
       '<button onclick="pmSuggDecide(' + s.id + ',\'reject\')" style="font-size:11px;color:#dc2626;background:none;border:none;cursor:pointer;padding:0;">Reject</button>' +
       '<button onclick="pmSuggEditPrompt(' + s.id + ',' + JSON.stringify(s.edited_content || s.content).replace(/"/g, '&quot;') + ')" style="font-size:11px;color:#4f46e5;background:none;border:none;cursor:pointer;padding:0;">Edit</button>' +
@@ -1827,7 +1873,14 @@ function pmSuggDeploy(id, btn) {
     }
     return res;
   })
-    .then(function(res) { if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); }); loadPageModal(currentPageModalId, currentPageModalIssueId); showToast('Deployed to WordPress.'); })
+    .then(function(res) {
+      if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); });
+      return res.json().then(function(rev) {
+        loadPageModal(currentPageModalId, currentPageModalIssueId);
+        showToast('Saved to WordPress. Checking the live page…');
+        if (rev && rev.id) pmWatchRevision(rev.id);
+      });
+    })
     .catch(function(err) {
       showToast('Deploy failed: ' + err.message, 'error');
       // Only re-enable on failure -- on success the modal reloads and

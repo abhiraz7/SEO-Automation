@@ -1409,3 +1409,125 @@ real WordPress install yet.
 - `image_alt` still isn't in `DEPLOYABLE_CATEGORIES` -- the tool exists
   end-to-end now, but nothing calls it from the Deploy button yet,
   deliberately deferred as a separate, live-write UI change.
+
+## 2026-09-24 — Session: AI SEO Connector plugin (v1.2.2) full code review — no code changes
+
+### Done
+- Read every non-vendored file of `ai-seo-connector/` (bootstrap, auth, router, MCP, logger,
+  4 handlers, admin/dashboard, release.yml, README, CHANGELOG) plus the platform call sites in
+  `app/wordpress.py` / `app/routes/wordpress.py`.
+- Wrote the full review + reference map to
+  `prompts/AI-SEO-Connector-Plugin-Review-2026-09-24.md` (kept out of `ai-seo-connector/` on
+  purpose — that folder ships in the public repo and the client zip).
+- Key facts: platform uses only 7 of 23 tools; platform still calls the legacy `vtseo/v1`
+  namespace (alias can't be removed yet).
+- Top findings: (1) Bearer requests run as user 0 → `update_post {title}` (the H1 deployer)
+  re-saves post_content through kses and can strip iframes/scripts; (2) MCP resources/* bypass
+  tool-group toggles and return unfiltered meta for any post type; (3) `get_options` deny-list
+  incomplete (and doc claims `active_plugins` is blocked — it isn't); (4) README claims uninstall
+  cleanup that doesn't exist + generic 500s vs "clear specific errors"; (5) stale "Yoast-only"
+  text in MCP instructions/dashboard; (6) RankMath `noindex:"false"` → ON; (7) GET /mcp SSE
+  holds a PHP worker 5 min; (8) unauthenticated requests cause unbounded option writes.
+
+### Not verified
+- Static review only — no PHP CLI here, nothing run on a live WordPress site. Yoast
+  indexable refresh after direct meta writes and page-cache visibility still need a live test.
+
+### Next
+- Fix #1 (kses) first — state the change, wait for approval, then implement.
+- Live deploy + rollback verification on `vseo.vtraffic.io`.
+
+
+## 2026-09-24 (later) — Session: plugin review findings filed as GitHub issues and fixed, one PR each
+
+### Done
+- Findings from the review were filed on `abhiraz7/AI-SEO-Connector` as issues #4-#9 (human-written,
+  grouped by kind of fix). Installed and signed in to `gh` (as `abhiraz7`).
+- Shipped the uncommitted 1.3.0 work first (PR #10) so the fixes build on it, then fixed each issue
+  in its own PR, reproduced on a throwaway WordPress 7.1.2 before and re-tested after, merged and
+  closed one at a time: #4 -> PR #11 (kses stripping page HTML; draft scheduling), #5 -> PR #12
+  (page caches), #6 -> PR #13 (resources/get_options/meta/rate limiter), #7 -> PR #14 (uninstall.php,
+  error responses, Yoast-only wording), #8 -> PR #15 (noindex booleans, retired sitemap ping,
+  Unicode audit), #9 -> PR #16 (GET /mcp 405, release version check, one tool registry,
+  notifications, log_level).
+- PR #17 prepares v1.4.0 (version bump + CHANGELOG entry used as the release notes). NOT tagged.
+- Ran the platform's own `app/wordpress.py` against the fixed plugin end to end (all calls OK) and
+  its 28 mocked-HTTP tests (pass).
+- Torn down the test bed (stopped php + mysqld, deleted its folders). Full result table and a
+  rebuild recipe are in `prompts/AI-SEO-Connector-Plugin-Review-2026-09-24.md`.
+
+### Decisions / flags
+- All findings were published as PUBLIC issues at the user's choice (the repo is public), while
+  client sites still ran the unfixed code until a release is tagged.
+- `yoast_sitemap_ping` removed rather than replaced with IndexNow (needs a key file at the site
+  root; no Google support).
+- Tag `v1.4.0` is left to the user: it is what pushes the update to every connected site.
+
+### Not verified
+- Real cache plugins (tested with recording stubs of their purge APIs), RankMath front-end output,
+  the multisite branch of `uninstall.php`, and the new release workflow (its shell step was run
+  locally; the workflow itself first runs on the next tag).
+
+### Next
+- User decides when to tag `v1.4.0`, and whether to sync the monorepo `ai-seo-connector/` copy to
+  plugin-repo `main` (overwrites its uncommitted files).
+- Re-point the platform from `vtseo/v1` to `aiseoc/v1`, then the alias can be retired.
+- Open hardening: SSRF IPv6 / DNS rebinding in `handler-media.php`; `vtseo_*` options never deleted
+  on upgrade.
+
+## 2026-09-25 — Session: Minimal plugin settings screen + monorepo sync
+
+### What changed
+- New branch `ui/minimal-settings-screen` on `abhiraz7/AI-SEO-Connector` (from plugin `main`, v1.4.0): settings screen rebuilt as a flat, native-WordPress page (Connection / Permissions / Tools). No gradients, glow, animation or custom accent schemes; uses core `.button`/`.wrap`.
+- `admin/dashboard.php` rewritten (markup + CSS; element IDs and AJAX wiring unchanged). `admin/class-admin.php`: removed `$scheme_accents`, `hex_to_rgb`, the `aiseoc-screen` body-class filter; menu status dot is flat.
+- `CHANGELOG.md`: "Unreleased" entry, no version bump.
+- Monorepo `ai-seo-connector/` synced to that branch (was behind: it held uncommitted 1.3.0 work, snapshotted in its own commit first, so nothing was lost). Now includes `uninstall.php` and all 1.4.0 fixes.
+
+### Not verified
+- Screen not opened in a browser (no test bed rebuilt): layout, mobile width and non-default admin color schemes unchecked. Only `php -l` run.
+
+### Next
+- Screenshot check on a throwaway WP 7.1.2, then open a PR on the plugin repo. Tag `v1.4.0` (or a new version) is still the user's call.
+
+## 2026-09-25 (later) — Session: Release 1.5.0, download link, deploy checks
+
+### What changed
+- Plugin: PR #19 merged, tag `v1.5.0` pushed, release workflow passed (its version check ran for the first time). Latest release = v1.5.0.
+- Plugin repo default branch was the stale `feature/ai-seo-connector-plugin`, which made GitHub's default PRs (#18, #20) conflict; user switched the default to `main`, #20 closed.
+- Platform PR #3 (`fix/plugin-download-link`): `/downloads/ai-seo-connector` (and legacy `/downloads/vtechseo-agent`) now 302-redirect to the plugin repo's latest release asset; both bundled zips removed; panel text renamed to AI SEO Connector. Merged to `main`, AWS deploy succeeded, verified live (302 + text).
+- Wrote `docs/release-notes-2026-09-20-to-2026-09-25.md` and `prompts/AI-SEO-Connector-Rollback-Runbook.md`.
+
+### Findings (not fixed)
+- Earlier deploy runs (#1, #2) showed red because `deploy.yml` waits ~100s (`aws ssm wait ... || true`) then reads status "InProgress" as failure; the SSM command keeps running. Fix = poll until a terminal status. Not done.
+- Platform is served over plain HTTP (`http://54.80.253.215`), so Chrome flags the plugin download as "insecure download blocked". Proper fix = domain + HTTPS. Left as is by user decision.
+- vseo.vtraffic.io connection shows "failed": likely still on the old VtechSEO Agent plugin; needs the new zip installed by hand + token re-pasted. Not verified.
+- Monorepo and plugin repo are separate projects sharing one folder; recommended splitting (plugin repo as sole source of truth). Not done; user has not decided.
+- "Awaiting connection" after upgrading from 1.2.2 is expected (contact recording was added in 1.3.0).
+
+### Not verified
+- New plugin settings screen never rendered in a browser; rollback runbook never exercised.
+
+## 2026-09-26 (session: deploy engine research + "deployed means live")
+
+### Investigated (no code change)
+- ExamNotesPDF deploys never went live: old plugin wrote `_yoast_wpseo_*` on a Rank Math site (16 of 16 past deploys mismatched the live page). Plugin 1.5.0 now detects Rank Math (`/ping` on examnotespdf.in: 1.5.0, `seo_plugin: rankmath`); `vseo.vtraffic.io` still runs the old VtechSEO Agent 1.0.0.
+- `/subject/...` and `/exam/...` pages are taxonomy terms, not posts: no post ID, no plugin term tools. Live test (2026-09-26, reverted): term meta `rank_math_title`/`rank_math_description` on term 26 changed the live title and description at once.
+- Full findings and 7-step plan: `prompts/Deploy-Problem-RankMath-and-Taxonomy-2026-09-26.md`. Section 6 records an outside UI proposal, checked against the code (no action queue/approval state exists in the plugin).
+
+### Changed (plan step 1: stop false success). NOT committed, NOT pushed.
+- New `app/deploy_status.py`: `live_status` (checking / live / not_showing / unverified) from the latest non-rolled-back revision's `verify_status`; fails closed; also `apply_verified_value_to_page`.
+- `routes/onpage_semrush.py`, `routes/projects.py` (detail-json), `routes/suggestions.py`: deployed suggestions now carry `live_status`, `live_detail`, `live_revision_id`. onpage issues_js now fetches suggestions in one query.
+- `routes/wordpress.py`: deploy no longer overwrites our Page copy at write time; new `POST /revisions/{id}/verify` (manual Re-check, no duplicate queued jobs).
+- `jobs/handlers/verify_deploy.py`: Page copy updated only when `verified`.
+- `onpage_semrush.html`, `project_detail.html`: live badges, Re-check button, toast now "Saved to WordPress. Checking the live page…".
+- `tests/test_deploy_status.py`: 22 tests; whole suite 122 passed.
+- Queued 10 verify jobs for old still-pending deployed revisions (ids 11-16, 18, 19, 21, 23). They run when the app's scheduler is running and call DataForSEO.
+
+### Decisions
+- Auto-recheck NOT built: the scheduler stamps `scheduled_for` with the next run time, so honouring it would delay every scheduled job by a full interval. Manual Re-check instead.
+
+### Not verified
+- The new badges were never rendered in a browser (routes return 200 and the payload carries `live_status`, that is all).
+- Rank Math title variables (`%sep%` etc.) may cause a false "not showing" mismatch; untested.
+- A post write through plugin 1.5.0 has not been proven end to end. Yoast term storage untested.
+- Remaining plan steps (plugin term tools, resolver, DB column, routing, per-site health, repair) not started.

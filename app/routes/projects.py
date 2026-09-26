@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, backlinks_provider, models, schemas
+from .. import audit, backlinks_provider, deploy_status, models, schemas
 from ..database import get_db
 from .settings import is_crawler_enabled, register_crawler_global
 
@@ -613,6 +613,9 @@ def page_detail_json(project_id: int, page_id: int, issue_id: int | None = None,
 
     issues = page.issues
     non_title_issues = [issue for issue in issues if issue.category != "title"]
+    live_map = deploy_status.live_status_for_suggestions(
+        db, [s.id for issue in issues for s in issue.suggestions if s.status == "deployed"]
+    )
 
     def _issue_out(issue: models.Issue) -> dict:
         return {
@@ -628,6 +631,7 @@ def page_detail_json(project_id: int, page_id: int, issue_id: int | None = None,
                     "content": s.content,
                     "edited_content": s.edited_content,
                     "status": s.status,
+                    **deploy_status.suggestion_live_fields(live_map, s),
                 }
                 for s in sorted(issue.suggestions, key=lambda s: s.rank)
             ],
