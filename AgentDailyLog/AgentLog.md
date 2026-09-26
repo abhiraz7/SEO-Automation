@@ -1531,3 +1531,31 @@ real WordPress install yet.
 - Rank Math title variables (`%sep%` etc.) may cause a false "not showing" mismatch; untested.
 - A post write through plugin 1.5.0 has not been proven end to end. Yoast term storage untested.
 - Remaining plan steps (plugin term tools, resolver, DB column, routing, per-site health, repair) not started.
+
+## 2026-09-27 — PR #6 deployed; production 500 on /projects/<id>/onpage and /revisions, repaired
+
+### What happened
+- PR #6 (live-status work, plugin 1.6.0 folder, versioned download) merged and deployed. Production `/projects/1/onpage` and `/projects/1/revisions` then returned 500: `no such column: suggestion_revisions.verify_status`.
+- Cause: production DB lacked the three verify_* columns (migration 025). My new live-status lookup read that table on the dashboard, exposing a latent gap. App itself stayed up; other pages worked.
+- Repair: schema audit (read-only, via SSM) showed only those 3 columns on one table were missing; ran `migrations/025_deploy_verification.py` inside the running app container (additive). All pages 200 afterwards.
+- Hardening: PR #7 makes the lookup fail closed ("unverified") instead of raising. Not merged.
+
+### Open
+- Why migration 025 did not persist through the deploy's migration loop. Hypothesis (unconfirmed): DB is in WAL mode and migrations run in a separate `docker compose run` container while the old app container is still running.
+- PRs #4 and #5 (download rename, /version + update warning) remain open; #4's download change already reached main through #6.
+- CI/CD steps for the owner to type: prompts/CI-CD-Hardening-Steps.md (in PR #5).
+- Prod verify jobs for old revisions (6 rows, all pending) were not backfilled; local backfill only.
+
+## 2026-09-27 (later) — Fast fixes: term deploys, automatic re-check, refusal of unsupported SEO plugins
+
+### Built (all PRs, none merged)
+- Platform PR #8: deploy to taxonomy term pages (no DB change), duplicate-slug matching, reasons for undeployable URLs. 29 tests. Live-checked term ids on examnotespdf.in.
+- Platform PR #9: automatic re-check of a "not showing" deploy after 3/10/30 min. Delayed jobs wait in status 'waiting' (a parked 'queued' job would make the dashboard spin: projects.py treats any queued/running job as fetching). 25 tests. #8 + #9 combine cleanly (209 pass).
+- Plugin PR #23 (AI-SEO-Connector): refuse SEO writes when neither Yoast nor RankMath is active; changelog finalised. Live regression on RankMath passed; server PHP lint passed.
+- Installed the two changed plugin files on examnotespdf.in with a backup (server: /home/u262050791/plugin-backups/files-20260927-010525).
+
+### Mistake made and fixed
+- Pushed the plugin branch to the platform repo (`origin`) as well as the plugin repo from a worktree whose `origin` is the platform repo. Deleted the stray branch from the platform repo immediately.
+
+### Not verified
+- Badge wording in a browser; a real cache expiring between re-check attempts; refusal on real AIOSEO/SEOPress sites; end-to-end term deploy through the UI.
