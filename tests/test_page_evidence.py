@@ -347,3 +347,36 @@ def test_only_two_pages_per_analysis_may_use_the_browser():
 def test_budget_is_thread_safe_and_exact():
     b = pe.BrowserBudget(3)
     assert [b.take() for _ in range(5)] == [True, True, True, False, False]
+
+
+# ── question extraction ───────────────────────────────────────────────────
+
+def test_questions_containing_abbreviations_are_not_cut_in_half():
+    """Regression: 'B.Ed?' used to be missed because its dot was read as a sentence end."""
+    found = pe.questions_in("Intro text here. What is the age limit for B.Ed? Then more text. Is it valid in the U.S.? ok")
+    assert "What is the age limit for B.Ed?" in found and "Is it valid in the U.S.?" in found
+
+
+def test_only_the_question_is_returned_not_the_sentence_before_it():
+    found = pe.questions_in("This page explains admission. Who can apply for the course?")
+    assert found == ["Who can apply for the course?"]
+
+
+def test_hindi_questions_are_found():
+    assert pe.questions_in("यह जानकारी उपयोगी है। बी.एड के लिए आयु सीमा क्या है? धन्यवाद।") == ["बी.एड के लिए आयु सीमा क्या है?"]
+
+
+def test_question_extraction_is_deduplicated_and_capped():
+    text = " ".join(["What is the rule for eligibility?"] * 5 + [f"What is number {i} in the list of rules?" for i in range(40)])
+    found = pe.questions_in(text, limit=15)
+    assert len(found) == 15 and found.count("What is the rule for eligibility?") == 1
+
+
+def test_fragments_too_short_or_too_long_to_be_questions_are_ignored():
+    assert pe.questions_in("Why? Yes.") == []
+    assert pe.questions_in("x" * 300 + "?") == []
+
+
+def test_extract_page_uses_the_same_question_rule():
+    html = "<html><body><main><p>Intro. What is the age limit for B.Ed? More words follow here.</p></main></body></html>"
+    assert "What is the age limit for B.Ed?" in pe.extract_page(html)["questions"]

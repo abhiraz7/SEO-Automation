@@ -674,10 +674,9 @@ class CompetitorPageSnapshot(Base):
 class CompetitorGap(Base):
     """One evidence-backed gap between the target page and the comparable
     ranking pages. competitor_count / competitor_total are computed by the app
-    from the snapshots -- never supplied by the model. draft_* holds the atomic
-    draft generated for this gap after the user asks for it; it is only ever a
-    draft (status uses the same vocabulary as Suggestion: pending, accepted,
-    edited, rejected) and is never published automatically."""
+    from the snapshots -- never supplied by the model. Drafts are NOT stored here:
+    a draft belongs to an ACTION (which can cite several gaps), so it lives inside
+    the run's action_plan_json next to that action."""
     __tablename__ = "competitor_gaps"
 
     id = Column(Integer, primary_key=True)
@@ -690,8 +689,4 @@ class CompetitorGap(Base):
     evidence_json = Column(JSON)                    # which competitors / headings / signals back this up
     confidence = Column(String)                     # high | medium | low
     recommended_action = Column(String)             # add | expand | rewrite | restructure | leave_unchanged | separate_page (filled from the validated plan)
-    draft_text = Column(Text)
-    draft_status = Column(String)                   # NULL until a draft exists; then pending | accepted | edited | rejected
-    edited_draft_text = Column(Text)
-    draft_error = Column(Text)
     created_at = Column(DateTime, default=_utcnow)

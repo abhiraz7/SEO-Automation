@@ -51,7 +51,8 @@ _BROWSER_LOCK = threading.Lock()         # one browser at a time (this server ha
 
 _NOISE_TAGS = ("script", "style", "noscript", "template", "svg", "iframe", "form", "nav", "footer", "aside")
 _JS_MOUNT_ID = re.compile(r"^(root|app|__next|__nuxt|___gatsby)$", re.I)
-_QUESTION_SENTENCE = re.compile(r"[^.?!\n]{12,160}\?")
+_QUESTION_RUN = re.compile(r"[^?\n]{8,400}\?")
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!।])\s+")
 
 
 # ── SSRF guard ────────────────────────────────────────────────────────────
@@ -178,12 +179,9 @@ def extract_page(html: str) -> dict:
     words = len(text.split())
 
     questions = [h["text"] for h in headings if h["text"].endswith("?")]
-    for m in _QUESTION_SENTENCE.finditer(text):
-        q = _clean(m.group(0))
+    for q in questions_in(text):
         if q not in questions:
             questions.append(q)
-        if len(questions) >= 15:
-            break
 
     js_shell = words < JS_SHELL_WORDS and (js_mount or noscript_says_js)
     if words >= 300 and len(headings) >= 2 and had_main:
@@ -203,6 +201,22 @@ def extract_page(html: str) -> dict:
         "js_shell": js_shell,
         "extraction_confidence": confidence,
     }
+
+
+def questions_in(text: str, limit: int = 15) -> list[str]:
+    """Question-shaped sentences in plain text: what extract_page uses, and what the
+    project's own crawled pages use, so both sides of a comparison are measured the
+    same way. A sentence ends at a full stop, exclamation mark or danda FOLLOWED BY
+    WHITESPACE, so an abbreviation such as 'B.Ed' or 'U.S.' does not cut a question
+    in half."""
+    out: list[str] = []
+    for m in _QUESTION_RUN.finditer(text or ""):
+        q = _clean(_SENTENCE_BOUNDARY.split(_clean(m.group(0)))[-1])
+        if 12 <= len(q) <= 160 and q not in out:
+            out.append(q)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _needs_browser(extracted: dict) -> bool:
