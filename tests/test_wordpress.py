@@ -206,12 +206,19 @@ def test_resolve_homepage_get_options_error_propagates():
 
 
 def test_plugin_download_redirects_to_latest_release():
-    # The platform must not bundle its own copy of the plugin: the download
-    # route sends users to the newest GitHub release, on both the new path
-    # and the legacy one.
+    # The platform must not bundle its own copy of the plugin. When GitHub's
+    # API can't be reached, the download route falls back to sending users to
+    # the newest release zip (the versioned-filename path is covered in
+    # test_plugin_download.py), on both the new path and the legacy one.
+    from unittest.mock import patch
+
+    import httpx
+
     from app.routes import wordpress as routes
 
-    resp = routes.download_wp_plugin()
+    routes._plugin_release_cache.update(at=0.0, value=None)
+    with patch.object(routes.httpx, "get", side_effect=httpx.ConnectError("no network")):
+        resp = routes.download_wp_plugin()
     assert resp.status_code == 302
     assert resp.headers["location"] == (
         "https://github.com/abhiraz7/AI-SEO-Connector/releases/latest/download/ai-seo-connector.zip"

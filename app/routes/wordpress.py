@@ -1,12 +1,14 @@
 """
 WordPress connection + deploy/rollback routes (Tasks 3.2-3.5).
 """
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -16,25 +18,77 @@ from ..database import SessionLocal, get_db
 router = APIRouter()
 
 # The plugin lives in its own repo (github.com/abhiraz7/AI-SEO-Connector) and is
-# released there. "releases/latest/download/<asset>" always resolves to the
-# newest release's zip, so this platform never carries its own copy that can
-# drift out of date.
-PLUGIN_DOWNLOAD_URL = (
-    "https://github.com/abhiraz7/AI-SEO-Connector/releases/latest/download/ai-seo-connector.zip"
-)
+# released there, so this platform never carries a copy that can drift out of
+# date (the old bundled zip was the stale VtechSEO Agent 1.0.0 plugin).
+PLUGIN_REPO = "abhiraz7/AI-SEO-Connector"
+PLUGIN_ASSET = "ai-seo-connector.zip"
+PLUGIN_LATEST_API = f"https://api.github.com/repos/{PLUGIN_REPO}/releases/latest"
+# Fallback when GitHub's API can't be reached: still gets the user the newest
+# zip, just under the unversioned asset name.
+PLUGIN_DOWNLOAD_URL = f"https://github.com/{PLUGIN_REPO}/releases/latest/download/{PLUGIN_ASSET}"
+
+# Unauthenticated GitHub API calls are limited to 60/hour per IP, so remember
+# the latest release for a few minutes instead of asking on every click.
+_PLUGIN_RELEASE_CACHE_SECONDS = 600
+_plugin_release_cache: dict = {"at": 0.0, "value": None}
+
+# Only ever put a plain version number in a Content-Disposition filename.
+_SAFE_VERSION = re.compile(r"^\d+\.\d+\.\d+(?:[-.][0-9A-Za-z]+)*$")
+
+
+def _latest_plugin_release() -> tuple[str, str] | None:
+    """(version, asset download URL) of the newest AI SEO Connector release, or
+    None if it can't be determined. Never raises: a slow or unreachable GitHub
+    just means the caller falls back to the plain redirect."""
+    now = time.time()
+    if _plugin_release_cache["value"] and now - _plugin_release_cache["at"] < _PLUGIN_RELEASE_CACHE_SECONDS:
+        return _plugin_release_cache["value"]
+    try:
+        resp = httpx.get(PLUGIN_LATEST_API, headers={"Accept": "application/vnd.github+json"}, timeout=10)
+        resp.raise_for_status()
+        release = resp.json()
+        version = str(release.get("tag_name", "")).lstrip("v")
+        if not _SAFE_VERSION.match(version):
+            return None
+        asset_url = next(
+            (a.get("browser_download_url") for a in release.get("assets", []) if a.get("name") == PLUGIN_ASSET),
+            None,
+        )
+        if not asset_url:
+            return None
+    except (httpx.HTTPError, ValueError, AttributeError):
+        return None
+    _plugin_release_cache.update(at=now, value=(version, asset_url))
+    return version, asset_url
 
 
 # The old path is kept so existing links and bookmarks still land on the plugin.
 @router.get("/downloads/ai-seo-connector")
 @router.get("/downloads/vtechseo-agent")
 def download_wp_plugin():
-    """Sends the user to the latest AI SEO Connector release zip -- the
-    connection drawer links here so a user can install the plugin on their
-    site before saving a connection. It is a redirect, not a file we serve:
-    the previous bundled zip had gone stale (it was the old VtechSEO Agent
-    plugin), and a copy inside this repo will always drift from the real one.
-    The plugin is scoped to content/SEO/media/site-info only, no page-builder
-    control, no plugin management, no PHP execution."""
+    """Serves the latest AI SEO Connector release zip as
+    ai-seo-connector-<version>.zip -- the connection drawer links here so a
+    user can install the plugin before saving a connection. The file is fetched
+    from the plugin's GitHub release and re-served with a versioned filename
+    (a plain redirect can't rename it: the browser would save the release
+    asset's own unversioned name). If GitHub can't be reached or the release
+    has no matching asset, falls back to redirecting to the latest release's
+    zip so the download still works. The plugin is scoped to content/SEO/media/
+    site-info only: no page-builder control, no plugin management, no PHP
+    execution."""
+    release = _latest_plugin_release()
+    if release:
+        version, asset_url = release
+        try:
+            zip_resp = httpx.get(asset_url, follow_redirects=True, timeout=30)
+            zip_resp.raise_for_status()
+        except httpx.HTTPError:
+            return RedirectResponse(PLUGIN_DOWNLOAD_URL, status_code=302)
+        return Response(
+            content=zip_resp.content,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="ai-seo-connector-{version}.zip"'},
+        )
     return RedirectResponse(PLUGIN_DOWNLOAD_URL, status_code=302)
 
 # Politeness delay between resolve_post_id_by_url calls when resolving a
