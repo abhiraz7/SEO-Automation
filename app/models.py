@@ -272,7 +272,7 @@ class SavedKeyword(Base):
 
 
 class WordPressConnection(Base):
-    """Connection to a project's WordPress site via the VtechSEO Agent plugin
+    """Connection to a project's WordPress site via the AI SEO Connector plugin
     (POST {site_url}/wp-json/vtseo/v1/tool, Bearer auth). api_token is Fernet-
     encrypted at rest (app/wordpress.py owns encrypt/decrypt; nothing else
     should touch the raw token). is_staging defaults True on purpose: deploys

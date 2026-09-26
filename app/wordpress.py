@@ -1,14 +1,15 @@
 """
-WordPress adapter -- talks to the VtechSEO Agent plugin's REST tool dispatcher
+WordPress adapter -- talks to the AI SEO Connector plugin's REST tool dispatcher
 (POST {site_url}/wp-json/vtseo/v1/tool, Bearer auth), not the WordPress core
 REST API directly. Mirrors semrush.py/dataforseo.py's role for keywords:
 nothing outside this file should know the plugin's request/response shape.
 
-VtechSEO Agent replaced the earlier general-purpose claude-wp-mcp dev plugin
+AI SEO Connector (formerly VtechSEO Agent) replaced the earlier general-purpose claude-wp-mcp dev plugin
 for this connection (different REST namespace: vtseo/v1, not cwpm/v1) --
 any site still running only claude-wp-mcp will fail every call here with a
 connection/404-style error until it installs the new plugin from
-/downloads/vtechseo-agent and reconnects. See vtechseo-agent/README.md.
+/downloads/ai-seo-connector and reconnects. The plugin still answers on the legacy
+vtseo/v1 route this file calls, so that alias must stay.
 
 Every public function returns an explicit ok/no_data/error result (see
 WordPressResult below) -- same three-outcome discipline as the keyword
