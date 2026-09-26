@@ -11,10 +11,12 @@ name: Sync plugin copy
 # Needs Settings > Actions > General > "Allow GitHub Actions to create and
 # approve pull requests" turned on.
 #
-# Pull requests opened with the built-in token do not start pull_request
-# workflows, and "pytest" is a required check for main, so the last step starts
-# the Tests workflow by hand on the bot's branch. Without it the sync PR would
-# wait forever for a check that never runs.
+# ONE MANUAL STEP PER SYNC PR: "pytest" is a required check for main, and GitHub
+# holds the Tests run for a pull request opened with the built-in token at
+# "action_required" until an admin approves it. Open the PR's Checks (or the
+# Actions tab) and click "Approve and run workflows"; the PR becomes mergeable
+# when Tests pass. (Starting Tests by hand with workflow_dispatch does NOT
+# satisfy the requirement -- that was tried and the PR stayed blocked.)
 on:
   schedule:
     - cron: "17 3 * * *" # daily
@@ -23,7 +25,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  actions: write # to start the Tests workflow on the bot's branch
 
 jobs:
   sync:
@@ -45,7 +46,6 @@ jobs:
           rm -rf plugin-src
 
       - name: Open a pull request if anything changed
-        id: cpr
         uses: peter-evans/create-pull-request@v6
         with:
           branch: bot/sync-plugin
@@ -57,9 +57,4 @@ jobs:
             Automatic mirror of github.com/abhiraz7/AI-SEO-Connector `main`.
             The plugin repo is the source of truth; edit the plugin there, never here.
 
-      - name: Run the tests on the sync branch
-        # Only when a PR was created or updated (not when nothing changed).
-        if: steps.cpr.outputs.pull-request-operation == 'created' || steps.cpr.outputs.pull-request-operation == 'updated'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run test.yml --ref bot/sync-plugin
+            Before merging: approve the waiting "Tests" run (Checks tab > "Approve and run workflows").

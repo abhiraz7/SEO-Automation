@@ -6,10 +6,11 @@ name: Tests
 # "pytest" (this job) is a REQUIRED status check for main: a pull request whose
 # tests are red or missing cannot be merged.
 #
-# workflow_dispatch exists for pull requests opened by another workflow with the
-# built-in token (the plugin sync bot): GitHub does not start pull_request
-# workflows for those, so the sync workflow starts this one by hand on the bot's
-# branch. The check it reports is the same "pytest" on the same commit.
+# Pull requests opened by another workflow with the built-in token (the plugin
+# sync bot) get their Tests run held at "action_required" until an admin clicks
+# "Approve and run workflows"; that approved run is what satisfies the required
+# check. workflow_dispatch is only a convenience for running the tests by hand;
+# a manually dispatched run does NOT satisfy the requirement for a pull request.
 on:
   pull_request:
   workflow_dispatch:
