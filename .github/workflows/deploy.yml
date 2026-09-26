@@ -3,11 +3,53 @@ name: Deploy to EC2
 on:
   push:
     branches: [main]
+    # Merges that cannot change the running app do not restart production.
+    paths-ignore:
+      - "ai-seo-connector/**"
+      - "prompts/**"
+      - "docs/**"
+      - "tests/**"
+      - "AgentDailyLog/**"
+      - "LEARNING_JOURNAL.md"
+      - "*.md"
+      - ".github/workflows/test.yml"
+      - ".github/workflows/sync-plugin.yml"
+
+# One deploy at a time: two overlapping runs would race on the same server
+# (docker build, migrations, container restart).
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  # The gate: `deploy` below does not start unless this passes.
+  test:
+    name: Tests must pass before anything deploys
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30 # a hung run must not hold the deploy lock forever
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -32,7 +74,11 @@ jobs:
           import json
           commands = [
               "cd /opt/seo-automation",
+              # Remember what is running now, so a rollback knows where to go back to.
+              "sudo -u ec2-user bash -c 'git rev-parse HEAD > /opt/seo-automation/.app_commit.prev'",
               "sudo -u ec2-user git pull origin main",
+              # Record this deploy's commit; it ends up in the image and /version reports it.
+              "sudo -u ec2-user bash -c 'git rev-parse HEAD > /opt/seo-automation/.app_commit'",
               "sudo -u ec2-user bash -c 'echo ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} > .env'",
               "sudo -u ec2-user bash -c 'echo SEMRUSH_API_KEY=${{ secrets.SEMRUSH_API_KEY }} >> .env'",
               "sudo -u ec2-user bash -c 'echo DATAFORSEO_LOGIN=${{ secrets.DATAFORSEO_LOGIN }} >> .env'",
@@ -43,8 +89,15 @@ jobs:
               "if [ ! -f /opt/seo-automation/data/seo_automation.db ]; then touch /opt/seo-automation/data/seo_automation.db; fi",
               "chown ec2-user:ec2-user /opt/seo-automation/data/seo_automation.db",
               "docker builder prune -af --filter until=48h",
+              # Keep the image that is running now under a second name. Without this,
+              # `docker image prune` deletes it and there is nothing to roll back to.
+              "sudo -u ec2-user docker tag seo-automation-app:latest seo-automation-app:previous || true",
               "sudo -u ec2-user docker compose -f /opt/seo-automation/docker-compose.yml build",
-              "for f in /opt/seo-automation/migrations/*.py; do n=$(basename \"$f\"); echo \"Running $n\"; sudo -u ec2-user docker compose -f /opt/seo-automation/docker-compose.yml run --rm app python \"migrations/$n\" || exit 1; done",
+              # Stop the OLD app so the migration is the only connection to the database.
+              # (Migrations run beside a live app were being lost: 025 vanished twice.)
+              "sudo -u ec2-user docker compose -f /opt/seo-automation/docker-compose.yml stop app",
+              # If a migration fails, start the previous app again, then fail the deploy.
+              "for f in /opt/seo-automation/migrations/*.py; do n=$(basename \"$f\"); echo \"Running $n\"; sudo -u ec2-user docker compose -f /opt/seo-automation/docker-compose.yml run --rm app python \"migrations/$n\" || { echo \"Migration $n FAILED - restarting the previous app version\"; sudo -u ec2-user docker compose -f /opt/seo-automation/docker-compose.yml start app; exit 1; }; done",
               "sudo -u ec2-user docker compose -f /opt/seo-automation/docker-compose.yml up -d",
               "docker image prune -f",
           ]
@@ -53,6 +106,7 @@ jobs:
           PYEOF
 
       - name: Deploy via SSM
+        id: ssm
         run: |
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
@@ -60,18 +114,107 @@ jobs:
             --parameters file://params.json \
             --query "Command.CommandId" --output text)
 
-          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${{ secrets.EC2_INSTANCE_ID }}" || true
+          # Wait for a real final status. The old `ssm wait ... || true` gave up
+          # after ~100s and reported a false red on deploys that were still running.
+          STATUS="Pending"
+          for i in $(seq 1 90); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+              --query "Status" --output text 2>/dev/null || echo "Pending")
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 10
+          done
 
           aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
 
-          STATUS=$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
-            --query "Status" --output text)
-
           if [ "$STATUS" != "Success" ]; then
             echo "Deploy failed with status: $STATUS"
+            echo "rollback=yes" >> "$GITHUB_OUTPUT"
             exit 1
           fi
+
+      # Prove the running server is healthy, not just that the commands finished.
+      - name: Confirm the new version is healthy
+        id: smoke
+        run: |
+          if [ -z "${{ vars.APP_URL }}" ]; then
+            echo "::error::Repository variable APP_URL is not set (Settings > Secrets and variables > Actions > Variables)."
+            exit 1 # a setup problem, not a server problem: no rollback
+          fi
+          EXPECTED="${{ github.sha }}"
+          LIVE=""
+          SCHEMA_OK=""
+          MATCHED="no"
+          for i in $(seq 1 20); do
+            BODY=$(curl -s --max-time 10 "${{ vars.APP_URL }}/version" || true)
+            LIVE=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('commit',''))" 2>/dev/null || true)
+            SCHEMA_OK=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('schema',{}).get('ok'))" 2>/dev/null || true)
+            echo "attempt $i: live=$LIVE expected=$EXPECTED schema_ok=$SCHEMA_OK"
+            if [ "$LIVE" = "unknown" ]; then
+              echo "::error::The server did not record its commit (.app_commit missing), so what is running cannot be proven. Not rolling back."
+              exit 1
+            fi
+            if [ -n "$LIVE" ]; then
+              # Pass if the server runs this commit, or a NEWER one deployed on top of it.
+              if [ "$LIVE" = "$EXPECTED" ] || { git fetch -q origin main && git merge-base --is-ancestor "$EXPECTED" "$LIVE"; }; then
+                MATCHED="yes"
+                break
+              fi
+            fi
+            sleep 6
+          done
+
+          if [ "$MATCHED" != "yes" ]; then
+            echo "::error::The server is not serving commit $EXPECTED (last seen: '$LIVE')"
+            echo "rollback=yes" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          if [ "$SCHEMA_OK" != "True" ]; then
+            echo "::error::The database is missing columns the code expects: $BODY"
+            echo "rollback=yes" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          for path in / /settings /docs /version; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "${{ vars.APP_URL }}$path" || true)
+            echo "GET $path -> $CODE"
+            if [ "$CODE" != "200" ]; then
+              echo "::error::$path returned $CODE"
+              echo "rollback=yes" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+          done
+          echo "OK: this commit is live, the schema is complete, and the key pages respond."
+
+      # If the new version is broken, put the previous one back automatically.
+      - name: Roll back to the previous version
+        if: always() && (steps.ssm.outputs.rollback == 'yes' || steps.smoke.outputs.rollback == 'yes')
+        run: |
+          echo "The new version is unhealthy. Rolling back to the previous image."
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["cd /opt/seo-automation","sudo -u ec2-user git reset --hard $(cat .app_commit.prev)","sudo -u ec2-user docker tag seo-automation-app:previous seo-automation-app:latest","sudo -u ec2-user docker compose -f /opt/seo-automation/docker-compose.yml up -d --no-build --force-recreate app"]' \
+            --query "Command.CommandId" --output text)
+          STATUS="Pending"
+          for i in $(seq 1 30); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+              --query "Status" --output text 2>/dev/null || echo "Pending")
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 10
+          done
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
+          echo "Rollback finished with status: $STATUS"
+          [ "$STATUS" = "Success" ] || exit 1
