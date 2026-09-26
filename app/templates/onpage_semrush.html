@@ -781,6 +781,15 @@ function testWordPressConnection() {
       if (r.ok) {
         result.style.color = '#16a34a';
         result.textContent = '✅ Connected — ' + (r.body.site && r.body.site.plugin ? r.body.site.plugin + ' v' + r.body.site.version : 'plugin responded');
+        // A plugin older than the latest release (or the retired VtechSEO Agent)
+        // misses fixes -- say so instead of leaving the site silently behind.
+        var upd = r.body.plugin_update;
+        if (upd && upd.update_available === true) {
+          result.style.color = '#b45309';
+          result.textContent += upd.reason === 'different_plugin'
+            ? ' — ⚠ this is not AI SEO Connector; install v' + upd.latest_version + ' (download button above)'
+            : ' — ⚠ update available: v' + upd.latest_version;
+        }
         showToast('Connection verified.');
       } else {
         result.style.color = '#dc2626';

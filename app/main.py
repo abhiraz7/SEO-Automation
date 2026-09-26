@@ -5,7 +5,7 @@ load_dotenv()
 
 from fastapi import FastAPI
 
-from . import scheduler as job_scheduler
+from . import build_info, scheduler as job_scheduler
 from .database import Base, engine
 from .routes import audit, competitors, crawl, jobs, keywords, links, onpage_semrush, projects, security, settings, suggestions, visibility, wordpress
 
@@ -39,3 +39,10 @@ app.include_router(security.router)
 app.include_router(visibility.router)
 app.include_router(competitors.router)
 app.include_router(links.router)
+
+
+@app.get("/version")
+def version():
+    """Which commit this process is running (see build_info.py). No database,
+    no auth, no side effects -- safe for the deploy pipeline to poll."""
+    return build_info.get_build_info()
