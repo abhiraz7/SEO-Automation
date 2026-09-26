@@ -184,21 +184,30 @@ def get_suggestion_groups(
     return groups
 
 
-def get_serp(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
+def get_serp(keyword: str, location: str = DEFAULT_LOCATION, device: str = "desktop") -> dict:
     """'View SERP'. DataForSEO first (full titles/descriptions, ~100 results);
     Semrush's phrase_organic as fallback (domain+URL only, 10 results) so a
     dead DataForSEO account degrades the SERP view instead of breaking it.
     Tags the result with _source so callers that care about result depth
     (e.g. rank_check) know which provider actually answered."""
-    result = dataforseo.fetch_serp(keyword, location)
+    # device is only passed through when it is NOT the default, so the call every
+    # existing caller (and test) makes is byte-for-byte the one it always made.
+    # Semrush's phrase_organic has no device option: its fallback answers for
+    # desktop regardless, which is reported via "_device" so callers can say so.
+    if device == "desktop":
+        result = dataforseo.fetch_serp(keyword, location)
+    else:
+        result = dataforseo.fetch_serp(keyword, location, device=device)
     if not result.get("error"):
         result["_source"] = "dataforseo"
+        result["_device"] = device
         return result
     dfs_error = result["error"]
 
     result = semrush.fetch_serp(keyword, location)
     if not result.get("error"):
         result["_source"] = "semrush"
+        result["_device"] = "desktop"
         return result
     return {"error": f"dataforseo: {dfs_error}; semrush: {result['error']}"}
 

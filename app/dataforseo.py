@@ -183,12 +183,19 @@ def summarize_serp_features(result: dict) -> dict:
     return features
 
 
-def fetch_serp(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
+SERP_DEVICES = ("desktop", "mobile")
+
+
+def fetch_serp(keyword: str, location: str = DEFAULT_LOCATION, device: str = "desktop") -> dict:
     """Live SERP lookup for the 'View SERP' action -- intentionally not cached
-    or stored anywhere (see keyword_provider.py / plan point 4)."""
+    or stored anywhere (see keyword_provider.py / plan point 4). `device` is
+    optional and defaults to desktop, the only value this used to send, so every
+    existing caller behaves exactly as before."""
     code = _location_code(location)
     if code is None:
         return {"error": f"Unsupported location: {location}"}
+    if device not in SERP_DEVICES:
+        return {"error": f"Unsupported device: {device!r} (use one of {', '.join(SERP_DEVICES)})"}
     try:
         data = _post(
             "/serp/google/organic/live/advanced",
@@ -196,7 +203,7 @@ def fetch_serp(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
                 "keyword": keyword,
                 "location_code": code,
                 "language_code": LANGUAGE_CODE_EN,
-                "device": "desktop",
+                "device": device,
             }],
         )
         result = data["tasks"][0]["result"][0]
