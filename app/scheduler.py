@@ -121,6 +121,41 @@ def dispatch_due_schedules() -> None:
         db.close()
 
 
+def _job_is_due(job: models.Job, now: datetime) -> bool:
+    """A job may carry payload["not_before"] (ISO time) -- used for delayed
+    re-checks. No not_before, or one we can't parse, means "due": running an
+    odd job early is better than starving it."""
+    raw = (job.payload or {}).get("not_before") if isinstance(job.payload, dict) else None
+    if not raw:
+        return True
+    try:
+        due = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return True
+    if due.tzinfo is None:
+        due = due.replace(tzinfo=timezone.utc)
+    return now >= due
+
+
+def _promote_due_waiting_jobs(db, job_types: set[str]) -> int:
+    """Delayed jobs sit in status 'waiting', NOT 'queued', until they are due.
+    That matters: the project page treats ANY queued/running Job as "still
+    fetching" and auto-reloads every 8s, and the queue badge counts them, so a
+    re-check parked as 'queued' for 30 minutes would make the dashboard spin for
+    30 minutes. 'waiting' is invisible to both; this flips due ones to 'queued'
+    so the normal picker runs them. (scheduled_for is deliberately not used: the
+    scheduler stamps it with the NEXT run time.)"""
+    now = datetime.now(timezone.utc)
+    promoted = 0
+    for job in db.query(models.Job).filter(models.Job.status == "waiting", models.Job.job_type.in_(job_types)).all():
+        if _job_is_due(job, now):
+            job.status = "queued"
+            promoted += 1
+    if promoted:
+        db.commit()
+    return promoted
+
+
 def _run_next_queued_job_in_lane(job_types: set[str], timeout_seconds: int) -> None:
     """Picks the oldest queued Job whose job_type is in this lane and runs
     it in a subprocess (see JOB_TIMEOUT_SECONDS comment + app/jobs/runner.py
@@ -129,6 +164,7 @@ def _run_next_queued_job_in_lane(job_types: set[str], timeout_seconds: int) -> N
     times out without finalizing."""
     db = SessionLocal()
     try:
+        _promote_due_waiting_jobs(db, job_types)
         job = (
             db.query(models.Job)
             .filter(models.Job.status == "queued", models.Job.job_type.in_(job_types))

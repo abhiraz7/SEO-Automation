@@ -685,27 +685,31 @@ def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depen
 
 @router.post("/revisions/{revision_id}/verify")
 def reverify_revision(revision_id: int, db: Session = Depends(get_db)):
-    """Manual 'Re-check': queues a fresh live-page verification for a deployed
-    revision. Useful after a 'saved but not showing' result once a cache has
-    been purged, and for revisions deployed before verification existed.
-    (Not automatic on purpose: the scheduler stamps scheduled_for with the NEXT
-    run time, so delaying a job via that column would push every scheduled job
-    back by a full interval.)"""
+    """Manual 'Re-check': verifies the live page now. Cache-related mismatches
+    are also re-checked automatically (see verify_deploy.RECHECK_DELAYS_MINUTES);
+    this button is for "I purged the cache, look again immediately" and for
+    revisions deployed before verification existed. If an automatic re-check is
+    already waiting it is brought forward instead of adding a second job, and
+    a check that is already queued or running is left alone."""
     revision = db.get(models.SuggestionRevision, revision_id)
     if not revision:
         raise HTTPException(status_code=404, detail="Revision not found")
     if revision.rolled_back_at:
         raise HTTPException(status_code=409, detail="This revision was rolled back; nothing to verify.")
 
-    already_queued = any(
-        (j.payload or {}).get("revision_id") == revision.id
-        for j in db.query(models.Job).filter(
+    open_jobs = [
+        j for j in db.query(models.Job).filter(
             models.Job.job_type == "verify_deploy",
-            models.Job.status.in_(("queued", "running")),
+            models.Job.status.in_(("queued", "running", "waiting")),
         )
-    )
-    if not already_queued:
-        db.add(models.Job(project_id=revision.project_id, job_type="verify_deploy", payload={"revision_id": revision.id}))
+        if (j.payload or {}).get("revision_id") == revision.id
+    ]
+    if not any(j.status in ("queued", "running") for j in open_jobs):
+        waiting = [j for j in open_jobs if j.status == "waiting"]
+        if waiting:
+            waiting[0].status = "queued"  # bring the pending automatic re-check forward
+        else:
+            db.add(models.Job(project_id=revision.project_id, job_type="verify_deploy", payload={"revision_id": revision.id}))
     revision.verify_status = "pending"
     revision.verify_detail = None
     db.commit()

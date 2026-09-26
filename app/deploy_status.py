@@ -65,6 +65,19 @@ def live_status_for_suggestions(db: Session, suggestion_ids: list[int]) -> dict[
         logger.exception("live-status lookup failed; deployed suggestions will show as unverified")
         db.rollback()
         return {}
+    try:
+        # Revisions that already have an automatic re-check waiting: the UI says
+        # "re-checking automatically" instead of leaving a scary "not showing".
+        rechecking_ids = {
+            (j.payload or {}).get("revision_id")
+            for j in db.query(models.Job).filter(
+                models.Job.job_type == "verify_deploy", models.Job.status == "waiting"
+            )
+        }
+    except SQLAlchemyError:
+        db.rollback()
+        rechecking_ids = set()
+
     out: dict[int, dict] = {}
     for rev in revisions:
         # Newest first, so the first one seen per suggestion is the one that counts.
@@ -74,6 +87,7 @@ def live_status_for_suggestions(db: Session, suggestion_ids: list[int]) -> dict[
             "live_status": live_status_from_verify(rev.verify_status),
             "live_detail": rev.verify_detail,
             "revision_id": rev.id,
+            "rechecking": rev.id in rechecking_ids,
         }
     return out
 
@@ -86,11 +100,12 @@ def suggestion_live_fields(status_map: dict[int, dict], suggestion: models.Sugge
         return {}
     info = status_map.get(suggestion.id)
     if not info:
-        return {"live_status": "unverified", "live_detail": None, "live_revision_id": None}
+        return {"live_status": "unverified", "live_detail": None, "live_revision_id": None, "live_rechecking": False}
     return {
         "live_status": info["live_status"],
         "live_detail": info["live_detail"],
         "live_revision_id": info["revision_id"],
+        "live_rechecking": bool(info.get("rechecking")),
     }
 
 
