@@ -880,12 +880,68 @@ function closeFixModal() {
   fmCurrentIssueId = null;
 }
 
+// 'deployed' only means WordPress accepted the write; this badge shows whether
+// the live page actually reflects it. Missing live_status is treated as 'checking'.
+function fmLiveBadge(s) {
+  var st = s.live_status || 'checking';
+  var map = {
+    checking: ['background:#f1f5f9;color:#64748b;', '⏳ Checking live page…'],
+    live: ['background:#dcfce7;color:#15803d;', '✓ Live on site'],
+    not_showing: ['background:#fef3c7;color:#b45309;', '⚠ Saved, not showing on site yet'],
+    unverified: ['background:#fee2e2;color:#dc2626;', "⚠ Couldn't verify"]
+  };
+  var m = map[st] || map.checking;
+  var html = '<span title="' + fmEsc(s.live_detail) + '" style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;' + m[0] + '">' + m[1] + '</span>';
+  var revId = parseInt(s.live_revision_id, 10);
+  if (st !== 'live' && !isNaN(revId)) {
+    html += '<button onclick="fmReverify(' + revId + ',' + s.id + ')" style="font-size:10px;color:#4f46e5;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">Re-check</button>';
+  }
+  return html;
+}
+// Polls the revisions list until this revision's live check has finished, then
+// updates the card. Without this the badge would sit on "Checking…" forever,
+// because the verify job runs in the background and nothing else refreshes it.
+var FM_VERIFY_TO_LIVE = { verified: 'live', mismatch: 'not_showing', error: 'unverified' };
+function fmWatchRevision(revisionId, suggId, attempt) {
+  attempt = attempt || 0;
+  if (attempt >= 24) return;  // ~2 minutes at 5s, then leave the badge on Checking (Re-check still works)
+  setTimeout(function() {
+    fetch('/projects/' + PROJECT_ID + '/revisions')
+      .then(function(r) { return r.ok ? r.json() : []; })
+      .then(function(list) {
+        var rev = (list || []).find(function(x) { return x.id === revisionId; });
+        var live = rev && FM_VERIFY_TO_LIVE[rev.verify_status];
+        if (!live) return fmWatchRevision(revisionId, suggId, attempt + 1);
+        var issue = ISSUES_JS[fmCurrentIssueId];
+        var s = issue && (issue.suggestions || []).find(function(x) { return x.id === suggId; });
+        if (s) {
+          s.live_status = live; s.live_detail = rev.verify_detail; s.live_revision_id = revisionId;
+          renderFixModal(issue);
+        }
+        showToast(live === 'live' ? 'Verified: the change is live on the site.' : 'Saved, but the live page does not show it yet.', live === 'live' ? undefined : 'error');
+      })
+      .catch(function() { fmWatchRevision(revisionId, suggId, attempt + 1); });
+  }, 5000);
+}
+function fmReverify(revisionId, suggId) {
+  fetch('/revisions/' + revisionId + '/verify', { method: 'POST' })
+    .then(function(res) {
+      if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); });
+      var issue = ISSUES_JS[fmCurrentIssueId];
+      var s = issue && (issue.suggestions || []).find(function(x) { return x.id === suggId; });
+      if (s) { s.live_status = 'checking'; renderFixModal(issue); }
+      showToast('Re-checking the live page…');
+      fmWatchRevision(revisionId, suggId);
+    })
+    .catch(function(err) { showToast('Re-check failed: ' + err.message, 'error'); });
+}
+
 function fmSuggestionCard(issue, s) {
   var canDeploy = ['accepted', 'edited'].indexOf(s.status) !== -1 && DEPLOYABLE_CATEGORIES.indexOf(issue.category) !== -1;
   var text = s.edited_content || s.content;
   var actions;
   if (s.status === 'deployed') {
-    actions = '<button onclick="fmRollback(' + s.id + ')" style="font-size:11px;color:#ea580c;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">↩ Roll back</button>';
+    actions = fmLiveBadge(s) + '<button onclick="fmRollback(' + s.id + ')" style="font-size:11px;color:#ea580c;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">↩ Roll back</button>';
   } else if (s.status === 'accepted' || s.status === 'edited') {
     // Already decided -- Accept/Reject/Use-in-editor no longer apply. Save
     // (loads it into the editor below so further tweaks can be saved) and
@@ -1256,12 +1312,17 @@ function fmDeploy(id, btn) {
   })
     .then(function(res) {
       if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); });
-      if (issue) {
-        var s = (issue.suggestions || []).find(function(x){ return x.id === id; });
-        if (s) s.status = 'deployed';
-        renderFixModal(issue);
-      }
-      showToast('Deployed to WordPress.');
+      // The deploy response is the new SuggestionRevision, so its id lets the
+      // 'Re-check' button work straight away (no reload needed).
+      return res.json().then(function(rev) {
+        if (issue) {
+          var s = (issue.suggestions || []).find(function(x){ return x.id === id; });
+          if (s) { s.status = 'deployed'; s.live_status = 'checking'; s.live_revision_id = (rev && rev.id) || null; }
+          renderFixModal(issue);
+        }
+        showToast('Saved to WordPress. Checking the live page…');
+        if (rev && rev.id) fmWatchRevision(rev.id, id);
+      });
     })
     .catch(function(err) {
       showToast('Deploy failed: ' + err.message, 'error');

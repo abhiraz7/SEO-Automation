@@ -1,27 +1,33 @@
 <?php
 /**
- * Settings screen for AI SEO Connector. All variables below ($token, $enabled,
- * $actions, $logs, $nonce, $api_base, $app_username, $has_yoast, $has_rankmath)
- * are set by AISEOC_Admin::render_page() just before this file is included.
+ * Settings screen for AI SEO Connector. Variables in scope, set by
+ * AISEOC_Admin::render_page(): $token, $actions, $logs, $nonce, $api_base,
+ * $app_username, $status, $has_yoast, $has_rankmath.
+ *
+ * Deliberately plain: it reuses WordPress's own classes (.wrap, .button,
+ * .button-primary, .description) and the admin color scheme variable, so it
+ * follows whatever admin look the site owner has chosen. The only CSS here is
+ * layout and the status dot.
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 $masked_token = $token ? substr( $token, 0, 8 ) . '…' . substr( $token, -8 ) : '';
+$is_paused    = $status['state'] === 'paused';
+$site_host    = wp_parse_url( home_url(), PHP_URL_HOST ) ?: home_url();
+
 $groups = [
-    'content' => [ 'label' => 'Content',      'desc' => 'Create/update/delete posts &amp; pages, featured images, taxonomies.' ],
-    'seo'     => [ 'label' => 'SEO (Yoast)',   'desc' => 'Read/write Yoast SEO meta, run audits, ping sitemaps.' ],
-    'media'   => [ 'label' => 'Media',         'desc' => 'Upload/list/delete media, fix alt text (by ID or by URL).' ],
-    'site'    => [ 'label' => 'Site info',     'desc' => 'Read-only site/plugin info, flush cache. No installs, no user or option writes.' ],
+    'seo'     => [ 'label' => 'SEO',       'desc' => 'Read and write Yoast or RankMath meta and run audits.' ],
+    'content' => [ 'label' => 'Content',   'desc' => 'Create, update and delete posts and pages, featured images, taxonomies.' ],
+    'media'   => [ 'label' => 'Media',     'desc' => 'Upload, list and delete media; fix alt text by ID or URL.' ],
+    'site'    => [ 'label' => 'Site info', 'desc' => 'Read site, plugin and a few site settings; clear caches. No installs, no user or option writes.' ],
 ];
 
 /**
  * Split "Recent activity" into genuinely actionable entries (a tool call, a
  * real error) versus routine blocked-auth noise (a bad token/password from
- * some scanner, correctly rejected by the rate limiter). Shown separately
- * below so a non-technical client doesn't read a wall of "Failed Bearer
- * token attempt" lines as evidence of an active break-in -- it's the
- * security working as intended, not an incident. Nothing is discarded,
- * just grouped differently.
+ * some scanner, correctly rejected). Shown separately so a non-technical
+ * client doesn't read a wall of "Failed Bearer token attempt" lines as an
+ * active break-in. Nothing is discarded, just grouped differently.
  */
 $blocked_prefixes = [ 'Failed Bearer token attempt', 'Failed Basic Auth attempt', 'Rate limit hit' ];
 $blocked_logs  = [];
@@ -35,226 +41,168 @@ foreach ( $logs as $entry ) {
 }
 ?>
 <style>
-  @keyframes aiseoc-mesh-drift{
-    0%,100%{background-position:0% 0%,100% 100%,50% 20%,0 0}
-    50%{background-position:100% 40%,10% 60%,60% 100%,0 0}
-  }
-  @keyframes aiseoc-badge-pulse{
-    0%,100%{box-shadow:0 0 0 1px rgba(51,194,136,.35),0 0 10px rgba(51,194,136,.35)}
-    50%{box-shadow:0 0 0 1px rgba(51,194,136,.55),0 0 20px rgba(51,194,136,.65)}
-  }
-  @keyframes aiseoc-fade-up{
-    from{opacity:0;transform:translateY(6px)}
-    to{opacity:1;transform:translateY(0)}
-  }
+  .aiseoc{max-width:760px}
+  .aiseoc h1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .aiseoc-ver{font-size:12px;font-weight:400;color:#646970}
+  .aiseoc-site{margin:2px 0 0;color:#646970}
 
-  .aiseoc-wrap{
-    position:relative;
-    max-width:960px;margin:24px auto;
-    padding:36px 32px 44px;
-    border-radius:22px;
-    color:#e7e7ee;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    background:
-      radial-gradient(circle at 12% 12%, rgba(99,102,241,.22), transparent 42%),
-      radial-gradient(circle at 88% 8%, rgba(139,92,246,.20), transparent 38%),
-      radial-gradient(circle at 50% 95%, rgba(16,185,129,.14), transparent 45%),
-      #0a0a10;
-    background-size:220% 220%,220% 220%,220% 220%,auto;
-    animation:aiseoc-mesh-drift 24s ease-in-out infinite;
-    box-shadow:0 30px 80px rgba(0,0,0,.45),0 1px 0 rgba(255,255,255,.04) inset;
-    border:1px solid rgba(255,255,255,.06);
-  }
-  .aiseoc-wrap h1{
-    font-size:27px;font-weight:700;margin:0 0 6px;letter-spacing:-.3px;
-  }
-  .aiseoc-wrap h1 .aiseoc-title-grad{
-    background:linear-gradient(135deg,#ffffff 0%,#cfcfff 55%,#9d9dff 100%);
-    -webkit-background-clip:text;background-clip:text;color:transparent;
-  }
-  .aiseoc-wrap .aiseoc-sub{color:#a3a3b0;font-size:13.5px;line-height:1.55;margin:0 0 28px;max-width:640px}
+  /* Status colors: green connected, grey awaiting, amber idle, red paused */
+  .aiseoc-s-green{--s:#00a32a}
+  .aiseoc-s-yellow{--s:#dba617}
+  .aiseoc-s-red{--s:#d63638}
+  .aiseoc-s-white{--s:#8c8f94}
+  .aiseoc-status{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;color:#1d2327}
+  .aiseoc-dot{width:8px;height:8px;border-radius:50%;background:var(--s,#8c8f94)}
 
-  .aiseoc-card{
-    position:relative;overflow:hidden;
-    background:rgba(22,22,30,.58);
-    -webkit-backdrop-filter:blur(18px) saturate(140%);
-    backdrop-filter:blur(18px) saturate(140%);
-    border:1px solid rgba(255,255,255,.08);
-    border-radius:14px;padding:24px 26px;margin-bottom:20px;
-    box-shadow:0 10px 30px rgba(0,0,0,.28),0 1px 0 rgba(255,255,255,.03) inset;
-    transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease;
-    animation:aiseoc-fade-up .4s ease both;
-  }
-  .aiseoc-card::before{
-    content:'';position:absolute;top:0;left:0;right:0;height:2px;
-    background:linear-gradient(90deg,#6366f1,#8b5cf6,#06b6d4);opacity:.55;
-  }
-  .aiseoc-card:hover{
-    transform:translateY(-2px);
-    border-color:rgba(255,255,255,.14);
-    box-shadow:0 16px 44px rgba(0,0,0,.4),0 1px 0 rgba(255,255,255,.05) inset;
-  }
-  .aiseoc-card h2{
-    font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;
-    margin:0 0 16px;color:#b7b7ff;display:flex;align-items:center;gap:8px;
-  }
-  .aiseoc-card h2::before{
-    content:'';width:6px;height:6px;border-radius:50%;flex:none;
-    background:linear-gradient(135deg,#6366f1,#8b5cf6);
-    box-shadow:0 0 10px rgba(139,92,246,.85);
-  }
+  .aiseoc-sec{margin-top:24px;padding-top:20px;border-top:1px solid #dcdcde}
+  .aiseoc-sec h2{margin:0 0 12px;padding:0;font-size:14px}
+  .aiseoc-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px}
+  .aiseoc-key{flex:none;width:90px;color:#646970}
+  .aiseoc-code{min-width:0;padding:4px 8px;border:1px solid #dcdcde;border-radius:3px;background:#f6f7f7;
+    font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all}
+  .aiseoc .description{margin:4px 0 0}
 
-  .aiseoc-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
-  .aiseoc-code{
-    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-    background:rgba(10,10,16,.7);border:1px solid rgba(255,255,255,.08);
-    border-radius:7px;padding:8px 11px;font-size:12.5px;color:#b3b3ff;word-break:break-all;
-    transition:border-color .2s ease;
-  }
-  .aiseoc-code:hover{border-color:rgba(139,92,246,.4)}
+  .aiseoc-perm{display:flex;align-items:flex-start;gap:8px;margin:0 0 10px}
+  .aiseoc-perm input{margin-top:2px}
+  .aiseoc-perm b{display:block;font-weight:500}
 
-  .aiseoc-btn{
-    background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%);
-    color:#fff;border:none;border-radius:8px;padding:9px 16px;
-    font-size:12.5px;font-weight:600;cursor:pointer;letter-spacing:.01em;
-    box-shadow:0 4px 16px rgba(99,102,241,.35);
-    transition:transform .18s ease,box-shadow .18s ease,filter .18s ease;
-  }
-  .aiseoc-btn:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(99,102,241,.5);filter:brightness(1.06)}
-  .aiseoc-btn:active{transform:translateY(0)}
-  .aiseoc-btn.ghost{
-    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);color:#d3d3db;
-    box-shadow:none;
-  }
-  .aiseoc-btn.ghost:hover{background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.2);transform:translateY(-1px);box-shadow:0 6px 16px rgba(0,0,0,.3)}
-  .aiseoc-btn.danger{
-    background:transparent;border:1px solid rgba(248,113,113,.35);color:#f87171;box-shadow:none;
-  }
-  .aiseoc-btn.danger:hover{background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.6);transform:translateY(-1px)}
+  .aiseoc details{margin-top:12px;padding-top:12px;border-top:1px solid #dcdcde}
+  .aiseoc summary{cursor:pointer;font-size:14px;font-weight:600}
+  .aiseoc details>div{margin-top:12px}
+  .aiseoc-chip{margin-left:8px;font-size:12px;font-weight:400;color:var(--s,#646970)}
 
-  .aiseoc-group{display:flex;align-items:flex-start;gap:10px;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.06);border-radius:8px;transition:background .18s ease}
-  .aiseoc-group:hover{background:rgba(255,255,255,.03)}
-  .aiseoc-group:last-child{border-bottom:none}
-  .aiseoc-group label{font-weight:600;color:#fff;font-size:13px}
-  .aiseoc-group p{margin:3px 0 0;color:#9a9aa8;font-size:12px;line-height:1.5}
-  .aiseoc-group input[type="checkbox"]{accent-color:#8b5cf6}
+  .aiseoc-checks{margin:12px 0 0;padding:0;list-style:none}
+  .aiseoc-check{display:grid;grid-template-columns:18px 1fr;gap:8px;padding:6px 0}
+  .aiseoc-check-ic{font-weight:700;color:var(--s)}
+  .aiseoc-check p{margin:2px 0 0;color:#646970}
 
-  .aiseoc-log{max-height:260px;overflow-y:auto;font-family:ui-monospace,monospace;font-size:11.5px}
-  .aiseoc-log-row{display:flex;gap:10px;padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.05);border-radius:6px;transition:background .15s ease}
-  .aiseoc-log-row:hover{background:rgba(255,255,255,.03)}
-  .aiseoc-log-row .lvl-warn{color:#f59e0b}.aiseoc-log-row .lvl-error{color:#f87171}.aiseoc-log-row .lvl-info{color:#7dd3a8}
+  .aiseoc-log{max-height:240px;overflow-y:auto;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .aiseoc-log-row{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid #f0f0f1}
+  .aiseoc-log-row .t{color:#8c8f94;white-space:nowrap}
+  .aiseoc-log-row .lvl-warn{color:#996800}.aiseoc-log-row .lvl-error{color:#d63638}.aiseoc-log-row .lvl-info{color:#00a32a}
+  .aiseoc-empty{padding:8px 0;color:#646970}
+  .aiseoc-blocked .aiseoc-log-row{opacity:.7}
+  .aiseoc-trust{margin:0;padding-left:18px}
+  .aiseoc-trust li{margin-bottom:6px}
 
-  .aiseoc-toast{
-    position:fixed;bottom:20px;right:20px;
-    background:rgba(22,22,30,.85);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
-    border:1px solid rgba(255,255,255,.12);color:#fff;padding:11px 18px;border-radius:10px;
-    font-size:13px;z-index:9999;display:none;box-shadow:0 12px 32px rgba(0,0,0,.5);
-  }
-
-  .aiseoc-badge{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:600;letter-spacing:.02em}
-  .aiseoc-badge.on{background:rgba(15,42,32,.9);color:#4ade9c;animation:aiseoc-badge-pulse 2.6s ease-in-out infinite}
-  .aiseoc-badge.off{background:#2e1613;color:#ff6b5e}
-
-  .aiseoc-trust{border-color:rgba(125,211,168,.18);background:rgba(20,26,23,.6)}
-  .aiseoc-trust h2{color:#7dd3a8}
-  .aiseoc-trust h2::before{background:linear-gradient(135deg,#34d399,#10b981);box-shadow:0 0 10px rgba(16,185,129,.7)}
-  .aiseoc-trust ul{margin:8px 0 0;padding-left:18px;color:#c8c8d0;font-size:12.5px;line-height:1.65}
-  .aiseoc-trust li{margin-bottom:5px}
-
-  .aiseoc-blocked summary{cursor:pointer;font-size:12px;color:#8a8a95;padding:6px 0;transition:color .15s ease}
-  .aiseoc-blocked summary:hover{color:#b3b3c0}
-  .aiseoc-blocked .aiseoc-log-row{opacity:0.6}
+  .aiseoc-toast{position:fixed;right:20px;bottom:20px;z-index:99999;display:none;padding:10px 14px;
+    border-left:4px solid #00a32a;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);font-size:13px}
 </style>
 
-<h1>🛰️ <span class="aiseoc-title-grad">AI SEO Connector</span></h1>
-<p class="aiseoc-sub">Lets the VtechSEO platform read on-page SEO data and apply approved fixes on this site. Scoped to content, SEO and media only — no page-builder control, no plugin installs, no PHP execution.</p>
+<div class="wrap aiseoc">
 
-<div class="aiseoc-card aiseoc-trust">
-  <h2>What this connection can and can't do</h2>
-  <ul>
-    <li><strong>Your WordPress login is never shared.</strong> This plugin generates one random token, kept in this site's own database. Nothing else — not your admin password, not your email — ever leaves this server.</li>
-    <li><strong>Access is scoped and listed below.</strong> The VtechSEO platform can only use the tool groups you enable in "Enabled tool groups" beneath this card: Content, SEO, Media, and read-only Site info. There is no page-builder access, no plugin installs, no PHP execution, no arbitrary database access — ever, regardless of settings.</li>
-    <li><strong>You can revoke access instantly, at any time.</strong> Click "Regenerate" next to the token to invalidate it immediately, or uncheck "Enabled" to reject every request until you turn it back on. No confirmation needed from anyone else.</li>
-  </ul>
-</div>
+  <h1>
+    SEO Connector
+    <span class="aiseoc-status aiseoc-s-<?php echo esc_attr( $status['color'] ); ?>" id="aiseoc-pill" role="status" aria-live="polite">
+      <span class="aiseoc-dot"></span><span id="aiseoc-pill-label"><?php echo esc_html( $status['label'] ); ?></span>
+    </span>
+    <span class="aiseoc-ver">v<?php echo esc_html( AISEOC_VERSION ); ?></span>
+  </h1>
+  <p class="aiseoc-site"><?php echo esc_html( $site_host ); ?></p>
 
-<div class="aiseoc-card">
-  <h2>Connection</h2>
-  <div class="aiseoc-row">
-    <span class="aiseoc-badge <?php echo $enabled === '1' ? 'on' : 'off'; ?>"><?php echo $enabled === '1' ? 'Enabled' : 'Disabled'; ?></span>
-    <label style="font-size:13px;color:#c8c8d0"><input type="checkbox" id="aiseoc-enabled" <?php checked( $enabled, '1' ); ?>> Enabled</label>
-  </div>
-  <div class="aiseoc-row"><strong style="font-size:12px;color:#9a9aa5;width:110px">API base URL</strong><span class="aiseoc-code"><?php echo esc_html( $api_base ); ?></span></div>
-  <div class="aiseoc-row">
-    <strong style="font-size:12px;color:#9a9aa5;width:110px">Bearer token</strong>
-    <span class="aiseoc-code" id="aiseoc-token-display" data-token="<?php echo esc_attr( $token ); ?>"><?php echo esc_html( $masked_token ); ?></span>
-    <button class="aiseoc-btn ghost" id="aiseoc-copy-token">Copy full token</button>
-    <button class="aiseoc-btn ghost" id="aiseoc-regen-token">🔄 Regenerate</button>
-  </div>
-  <p style="font-size:11.5px;color:#7a7a85;margin:8px 0 0">Paste the API base URL and token into VtechSEO's WordPress connection screen. Regenerating immediately invalidates the old token everywhere it's used — do this any time you suspect it's been exposed.</p>
-</div>
-
-<div class="aiseoc-card">
-  <h2>Alternative: WordPress Application Password</h2>
-  <p style="font-size:12px;color:#9a9aa5;margin:0 0 10px">WordPress's own built-in per-app credential system — revocable any time from <strong>Users → Profile</strong> without touching this plugin.</p>
-  <?php if ( $app_username ): ?>
-    <p style="font-size:12px;color:#c8c8d0" id="aiseoc-app-username-label">WordPress user: <strong style="color:#fff"><?php echo esc_html( $app_username ); ?></strong> (password shown only once, at creation)</p>
-  <?php else: ?>
-    <p style="font-size:12px;color:#7a7a85" id="aiseoc-no-app-pw">No Application Password created yet for this connection.</p>
-  <?php endif; ?>
-  <button class="aiseoc-btn ghost" id="aiseoc-create-app-pw">🔑 <?php echo $app_username ? 'Regenerate' : 'Create'; ?> Application Password</button>
-  <div id="aiseoc-app-pw-block" style="display:none;margin-top:10px">
-    <div class="aiseoc-row"><strong style="font-size:12px;color:#9a9aa5;width:80px">Password</strong><span class="aiseoc-code" id="aiseoc-app-pw-display"></span></div>
-    <div class="aiseoc-row"><strong style="font-size:12px;color:#9a9aa5;width:80px">Basic auth</strong><span class="aiseoc-code" id="aiseoc-app-encoded-display"></span></div>
-    <p style="font-size:11px;color:#f59e0b">Copy this now — WordPress will not show it again.</p>
-  </div>
-</div>
-
-<div class="aiseoc-card">
-  <h2>Enabled tool groups</h2>
-  <?php foreach ( $groups as $key => $g ): ?>
-    <div class="aiseoc-group">
-      <input type="checkbox" name="aiseoc_actions[]" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $actions, true ) ); ?> style="margin-top:3px">
-      <div><label><?php echo esc_html( $g['label'] ); ?></label><p><?php echo $g['desc']; ?></p></div>
+  <section class="aiseoc-sec">
+    <h2>Connection</h2>
+    <p class="aiseoc-row" style="margin-bottom:4px">
+      <span id="aiseoc-detail"><?php echo esc_html( $status['detail'] ); ?></span>
+      <button class="button" id="aiseoc-pause" data-paused="<?php echo $is_paused ? '1' : '0'; ?>"><?php echo $is_paused ? 'Resume' : 'Pause'; ?></button>
+    </p>
+    <div class="aiseoc-row" style="margin-top:16px"><span class="aiseoc-key">API URL</span><span class="aiseoc-code"><?php echo esc_html( $api_base ); ?></span></div>
+    <div class="aiseoc-row">
+      <span class="aiseoc-key">Token</span>
+      <span class="aiseoc-code" id="aiseoc-token-display" data-token="<?php echo esc_attr( $token ); ?>"><?php echo esc_html( $masked_token ); ?></span>
+      <button class="button" id="aiseoc-copy-token">Copy</button>
+      <button class="button" id="aiseoc-regen-token">Regenerate</button>
     </div>
-  <?php endforeach; ?>
-  <p style="font-size:11.5px;color:#7a7a85;margin:10px 0 0">
-    Detected SEO plugin: <strong style="color:#c8c8d0"><?php echo $has_yoast ? 'Yoast SEO' : ( $has_rankmath ? 'RankMath (not yet supported by this plugin\'s SEO tools)' : 'none detected' ); ?></strong>
-  </p>
-  <button class="aiseoc-btn" id="aiseoc-save" style="margin-top:12px">Save settings</button>
-</div>
+    <p class="description">Paste these into your SEO platform. Regenerating invalidates the old token immediately.</p>
+  </section>
 
-<div class="aiseoc-card">
-  <h2>Recent activity</h2>
-  <div class="aiseoc-log">
-    <?php if ( empty( $activity_logs ) ): ?>
-      <div style="text-align:center;padding:24px;color:#7a7a85;font-size:12px">No activity yet.</div>
-    <?php else: foreach ( $activity_logs as $entry ): ?>
-      <div class="aiseoc-log-row">
-        <span style="color:#5a5a65;white-space:nowrap"><?php echo esc_html( $entry['time'] ); ?></span>
-        <span class="lvl-<?php echo esc_attr( $entry['level'] ); ?>"><?php echo esc_html( strtoupper( $entry['level'] ) ); ?></span>
-        <span style="color:#c8c8d0"><?php echo esc_html( $entry['message'] ); ?></span>
+  <section class="aiseoc-sec">
+    <h2>Permissions</h2>
+    <?php foreach ( $groups as $key => $g ): ?>
+      <label class="aiseoc-perm">
+        <input type="checkbox" name="aiseoc_actions[]" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $actions, true ) ); ?>>
+        <span><b><?php echo esc_html( $g['label'] ); ?></b><span class="description"><?php echo esc_html( $g['desc'] ); ?></span></span>
+      </label>
+    <?php endforeach; ?>
+    <p class="description">SEO plugin detected: <?php echo $has_yoast ? 'Yoast SEO' : ( $has_rankmath ? 'RankMath' : 'none' ); ?></p>
+    <p><button class="button button-primary" id="aiseoc-save">Save permissions</button></p>
+  </section>
+
+  <section class="aiseoc-sec">
+    <h2>Tools</h2>
+
+    <details id="aiseoc-doctor">
+      <summary>Doctor <span class="aiseoc-chip" id="aiseoc-doctor-chip"></span></summary>
+      <div>
+        <p class="description">Checks PHP, WordPress, HTTPS, permalinks and your SEO plugin, then makes a real request to this site's own API.</p>
+        <p><button class="button" id="aiseoc-doctor-run">Run checks</button></p>
+        <ul class="aiseoc-checks" id="aiseoc-checks"></ul>
       </div>
-    <?php endforeach; endif; ?>
-  </div>
+    </details>
 
-  <?php if ( ! empty( $blocked_logs ) ): ?>
-  <details class="aiseoc-blocked" style="margin-top:14px">
-    <summary>Blocked connection attempts (<?php echo count( $blocked_logs ); ?>)</summary>
-    <p style="font-size:11.5px;color:#7a7a85;margin:6px 0 10px">These are requests with a missing or invalid token/password — automatically rejected and rate-limited (max 20 per 15 minutes per IP address). This is normal background noise on any public site (automated scanners probing random URLs) and does <strong>not</strong> mean your site was compromised or that anyone got in.</p>
-    <div class="aiseoc-log">
-      <?php foreach ( $blocked_logs as $entry ): ?>
-        <div class="aiseoc-log-row">
-          <span style="color:#5a5a65;white-space:nowrap"><?php echo esc_html( $entry['time'] ); ?></span>
-          <span class="lvl-<?php echo esc_attr( $entry['level'] ); ?>"><?php echo esc_html( strtoupper( $entry['level'] ) ); ?></span>
-          <span style="color:#9a9aa5"><?php echo esc_html( $entry['message'] ); ?></span>
+    <details>
+      <summary>Recent activity</summary>
+      <div>
+        <div class="aiseoc-log">
+          <?php if ( empty( $activity_logs ) ): ?>
+            <div class="aiseoc-empty">No activity yet.</div>
+          <?php else: foreach ( $activity_logs as $entry ): ?>
+            <div class="aiseoc-log-row">
+              <span class="t"><?php echo esc_html( $entry['time'] ); ?></span>
+              <span class="lvl-<?php echo esc_attr( $entry['level'] ); ?>"><?php echo esc_html( strtoupper( $entry['level'] ) ); ?></span>
+              <span><?php echo esc_html( $entry['message'] ); ?></span>
+            </div>
+          <?php endforeach; endif; ?>
         </div>
-      <?php endforeach; ?>
-    </div>
-  </details>
-  <?php endif; ?>
+        <?php if ( ! empty( $blocked_logs ) ): ?>
+        <details class="aiseoc-blocked">
+          <summary>Blocked attempts (<?php echo count( $blocked_logs ); ?>)</summary>
+          <div>
+            <p class="description">Requests with a missing or invalid token, rejected automatically and rate-limited. This is normal background noise from scanners on any public site; it does not mean anyone got in.</p>
+            <div class="aiseoc-log">
+              <?php foreach ( $blocked_logs as $entry ): ?>
+                <div class="aiseoc-log-row">
+                  <span class="t"><?php echo esc_html( $entry['time'] ); ?></span>
+                  <span><?php echo esc_html( $entry['message'] ); ?></span>
+                </div>
+              <?php endforeach; ?>
+            </div>
+          </div>
+        </details>
+        <?php endif; ?>
+        <p><button class="button" id="aiseoc-clear-logs">Clear logs</button></p>
+      </div>
+    </details>
 
-  <button class="aiseoc-btn danger" id="aiseoc-clear-logs" style="margin-top:12px">Clear logs</button>
+    <details>
+      <summary>Application password <span class="aiseoc-chip"><?php echo $app_username ? 'Configured' : 'Optional'; ?></span></summary>
+      <div>
+        <p class="description">An alternative to the token, using WordPress's own credentials. Revocable any time from Users → Profile.</p>
+        <?php if ( $app_username ): ?>
+          <p id="aiseoc-app-username-label">WordPress user: <strong><?php echo esc_html( $app_username ); ?></strong> (password is shown only once, when created)</p>
+        <?php else: ?>
+          <p id="aiseoc-no-app-pw">No application password has been created.</p>
+        <?php endif; ?>
+        <p><button class="button" id="aiseoc-create-app-pw"><?php echo $app_username ? 'Regenerate' : 'Create'; ?> application password</button></p>
+        <div id="aiseoc-app-pw-block" style="display:none">
+          <div class="aiseoc-row"><span class="aiseoc-key">Password</span><span class="aiseoc-code" id="aiseoc-app-pw-display"></span></div>
+          <div class="aiseoc-row"><span class="aiseoc-key">Basic auth</span><span class="aiseoc-code" id="aiseoc-app-encoded-display"></span></div>
+          <p class="description"><strong>Copy this now. WordPress will not show it again.</strong></p>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>What this connection can and can't do</summary>
+      <div>
+        <ul class="aiseoc-trust">
+          <li><strong>Your WordPress login is never shared.</strong> The plugin generates one random token, kept in this site's database. Your admin password is never requested or stored.</li>
+          <li><strong>Tool calls are limited to the permissions you switch on above.</strong> There is no page-builder access, no plugin installs and no PHP execution, whatever the settings.</li>
+          <li><strong>You can cut access instantly.</strong> Regenerate the token to invalidate it, or pause the connection to reject every request until you resume.</li>
+        </ul>
+      </div>
+    </details>
+  </section>
 </div>
 
 <div class="aiseoc-toast" id="aiseoc-toast"></div>
@@ -264,80 +212,164 @@ foreach ( $logs as $entry ) {
   const $ = (id) => document.getElementById(id);
   const nonce = <?php echo wp_json_encode( $nonce ); ?>;
   const ajaxurl = <?php echo wp_json_encode( admin_url( 'admin-ajax.php' ) ); ?>;
+  const post = (action, extra = {}) =>
+    fetch(ajaxurl, { method: 'POST', body: new URLSearchParams({ action, nonce, ...extra }) }).then(r => r.json());
 
+  let toastTimer;
   function toast(msg, ok = true){
     const t = $('aiseoc-toast');
     t.textContent = msg;
     t.style.display = 'block';
-    t.style.borderColor = ok ? '#166534' : '#7f1d1d';
-    setTimeout(() => { t.style.display = 'none'; }, 3500);
+    t.style.borderLeftColor = ok ? '#00a32a' : '#d63638';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.style.display = 'none'; }, 3500);
+  }
+
+  function setColor(el, color){
+    if (!el) return;
+    [...el.classList].filter(c => c.startsWith('aiseoc-s-')).forEach(c => el.classList.remove(c));
+    el.classList.add('aiseoc-s-' + color);
+  }
+
+  // Single place the connection state is painted: status label, detail line,
+  // pause button and the WordPress menu badge all follow the same object.
+  function applyStatus(s){
+    setColor($('aiseoc-pill'), s.color);
+    $('aiseoc-pill-label').textContent = s.label;
+    $('aiseoc-detail').textContent = s.detail;
+    const pause = $('aiseoc-pause');
+    if (pause){
+      const paused = s.state === 'paused';
+      pause.dataset.paused = paused ? '1' : '0';
+      pause.textContent = paused ? 'Resume' : 'Pause';
+    }
+    const rgb = { green: '0,163,42', yellow: '219,166,23', red: '214,54,56', white: '140,143,148' }[s.color] || '140,143,148';
+    const item = document.querySelector('#adminmenu li.toplevel_page_ai-seo-connector');
+    if (item) item.style.setProperty('--aiseoc-dot-rgb', rgb);
+  }
+
+  // Poll while the tab is visible so "Connected" appears without a reload.
+  setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    post('aiseoc_status').then(d => { if (d.success) applyStatus(d.data); }).catch(() => {});
+  }, 20000);
+
+  function copyText(text){
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    return new Promise((resolve, reject) => {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy') ? resolve() : reject(); } catch (e) { reject(e); }
+      ta.remove();
+    });
   }
 
   $('aiseoc-copy-token')?.addEventListener('click', () => {
-    const full = $('aiseoc-token-display').dataset.token;
-    navigator.clipboard.writeText(full).then(() => toast('Token copied.'));
+    copyText($('aiseoc-token-display').dataset.token)
+      .then(() => toast('Token copied.'))
+      .catch(() => toast('Could not copy automatically. Select the token and copy it manually.', false));
   });
 
   $('aiseoc-regen-token')?.addEventListener('click', () => {
     if (!confirm('Regenerate token? Any connection using the old token will need updating.')) return;
-    fetch(ajaxurl, { method: 'POST', body: new URLSearchParams({ action: 'aiseoc_regen', nonce }) })
-      .then(r => r.json()).then(d => {
-        if (d.success) {
-          const t = d.data.token;
-          const masked = t.length > 16 ? t.slice(0, 8) + '…' + t.slice(-8) : '•'.repeat(t.length);
-          const el = $('aiseoc-token-display');
-          el.dataset.token = t;
-          el.textContent = masked;
-          toast('Token regenerated — update your VtechSEO connection.');
-        }
-      });
+    post('aiseoc_regen').then(d => {
+      if (!d.success) return;
+      const t = d.data.token;
+      const el = $('aiseoc-token-display');
+      el.dataset.token = t;
+      el.textContent = t.length > 16 ? t.slice(0, 8) + '…' + t.slice(-8) : '•'.repeat(t.length);
+      applyStatus(d.data.status);
+      toast('Token regenerated. Update the connection in your SEO platform.');
+    });
+  });
+
+  $('aiseoc-pause')?.addEventListener('click', () => {
+    const paused = $('aiseoc-pause').dataset.paused === '1';
+    if (!paused && !confirm('Pause the connection? Every request from your platform will be rejected until you resume.')) return;
+    post('aiseoc_toggle_pause', { paused: paused ? '' : '1' }).then(d => {
+      if (!d.success) return toast('Could not change the connection state.', false);
+      applyStatus(d.data.status);
+      toast(paused ? 'Connection resumed.' : 'Connection paused.');
+    });
   });
 
   $('aiseoc-create-app-pw')?.addEventListener('click', () => {
     const btn = $('aiseoc-create-app-pw');
     btn.textContent = 'Creating…';
     btn.disabled = true;
-    fetch(ajaxurl, { method: 'POST', body: new URLSearchParams({ action: 'aiseoc_create_app_pw', nonce }) })
-      .then(r => r.json()).then(d => {
-        btn.disabled = false;
-        if (d.success) {
-          const { username, password, encoded } = d.data;
-          const noMsg = $('aiseoc-no-app-pw');
-          if (noMsg) noMsg.style.display = 'none';
-          const block = $('aiseoc-app-pw-block');
-          if (block) block.style.display = '';
-          $('aiseoc-app-pw-display').textContent = password;
-          $('aiseoc-app-encoded-display').textContent = 'Basic ' + encoded;
-          btn.textContent = '🔄 Regenerate Application Password';
-          toast("Application Password created! Copy it now — it won't be shown again.");
-        } else {
-          toast('Error: ' + (d.data?.message || 'Unknown error'), false);
-        }
-      }).catch(() => { btn.disabled = false; toast('Request failed.', false); });
+    post('aiseoc_create_app_pw').then(d => {
+      btn.disabled = false;
+      if (d.success) {
+        const { password, encoded } = d.data;
+        const noMsg = $('aiseoc-no-app-pw');
+        if (noMsg) noMsg.style.display = 'none';
+        $('aiseoc-app-pw-block').style.display = '';
+        $('aiseoc-app-pw-display').textContent = password;
+        $('aiseoc-app-encoded-display').textContent = 'Basic ' + encoded;
+        btn.textContent = 'Regenerate application password';
+        toast("Application password created. Copy it now, it won't be shown again.");
+      } else {
+        btn.textContent = 'Create application password';
+        toast('Error: ' + (d.data?.message || 'Unknown error'), false);
+      }
+    }).catch(() => { btn.disabled = false; btn.textContent = 'Create application password'; toast('Request failed.', false); });
   });
 
   $('aiseoc-save')?.addEventListener('click', () => {
     const fd = new FormData();
     fd.append('action', 'aiseoc_save');
     fd.append('nonce', nonce);
-    if ($('aiseoc-enabled').checked) fd.append('enabled', '1');
-    fd.append('log_level', 'info');
     document.querySelectorAll('input[name="aiseoc_actions[]"]:checked').forEach(c => fd.append('allowed_actions[]', c.value));
     fetch(ajaxurl, { method: 'POST', body: fd })
-      .then(r => r.json()).then(d => toast(d.success ? 'Settings saved.' : 'Error saving.', d.success));
+      .then(r => r.json()).then(d => toast(d.success ? 'Permissions saved.' : 'Error saving.', d.success));
   });
 
   $('aiseoc-clear-logs')?.addEventListener('click', () => {
-    fetch(ajaxurl, { method: 'POST', body: new URLSearchParams({ action: 'aiseoc_clear_logs', nonce }) })
-      .then(r => r.json()).then(d => {
-        if (d.success) {
-          document.querySelectorAll('.aiseoc-log').forEach(el => {
-            el.innerHTML = '<div style="text-align:center;padding:24px;color:#7a7a85;font-size:12px">Log cleared.</div>';
-          });
-          document.querySelector('.aiseoc-blocked')?.remove();
-          toast('Logs cleared.');
-        }
-      });
+    post('aiseoc_clear_logs').then(d => {
+      if (!d.success) return;
+      document.querySelectorAll('.aiseoc-log').forEach(el => { el.innerHTML = '<div class="aiseoc-empty">Log cleared.</div>'; });
+      document.querySelector('.aiseoc-blocked')?.remove();
+      toast('Logs cleared.');
+    });
   });
+
+  // ── Doctor ──
+  const icons  = { pass: '✓', warn: '!', fail: '✕', info: 'i' };
+  const colors = { pass: 'green', warn: 'yellow', fail: 'red', info: 'white' };
+  let doctorRan = false;
+
+  function renderDoctor(data){
+    const list = $('aiseoc-checks');
+    list.textContent = '';
+    data.checks.forEach(c => {
+      const li = document.createElement('li');
+      li.className = 'aiseoc-check aiseoc-s-' + colors[c.status];
+      const ic = document.createElement('span'); ic.className = 'aiseoc-check-ic'; ic.textContent = icons[c.status];
+      const body = document.createElement('div');
+      const b = document.createElement('b'); b.textContent = c.label;
+      const p = document.createElement('p'); p.textContent = c.detail;
+      body.append(b, p);
+      if (c.fix){ const f = document.createElement('p'); f.textContent = 'Fix: ' + c.fix; body.append(f); }
+      li.append(ic, body);
+      list.append(li);
+    });
+    const s = data.summary;
+    const chip = $('aiseoc-doctor-chip');
+    chip.textContent = s.pass + ' passed' + (s.warn ? ' · ' + s.warn + ' warning' + (s.warn > 1 ? 's' : '') : '') + (s.fail ? ' · ' + s.fail + ' failed' : '');
+    setColor(chip, s.fail ? 'red' : (s.warn ? 'yellow' : 'green'));
+  }
+
+  function runDoctor(){
+    const btn = $('aiseoc-doctor-run');
+    btn.disabled = true; btn.textContent = 'Running…';
+    post('aiseoc_doctor').then(d => {
+      btn.disabled = false; btn.textContent = 'Run again';
+      if (d.success){ doctorRan = true; renderDoctor(d.data); } else { toast('Doctor could not run.', false); }
+    }).catch(() => { btn.disabled = false; btn.textContent = 'Run checks'; toast('Doctor request failed.', false); });
+  }
+
+  $('aiseoc-doctor-run')?.addEventListener('click', runDoctor);
+  $('aiseoc-doctor')?.addEventListener('toggle', () => { if ($('aiseoc-doctor').open && !doctorRan) runDoctor(); });
 })();
 </script>
