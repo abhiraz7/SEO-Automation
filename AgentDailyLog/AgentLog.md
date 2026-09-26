@@ -1559,3 +1559,17 @@ real WordPress install yet.
 
 ### Not verified
 - Badge wording in a browser; a real cache expiring between re-check attempts; refusal on real AIOSEO/SEOPress sites; end-to-end term deploy through the UI.
+
+## 2026-09-27 (evening) — Merged and deployed the to-do; migration 025 cause found; v1.6.0 released
+
+### Done (each platform merge verified on production: pages 200, AWS on the exact commit, container up, no tracebacks)
+- Merged platform #8, #9, #10, #11 and plugin #23; pushed tag `v1.6.0` on the plugin repo (release workflow passed, zip verified, download button now serves 1.6.0).
+- Ran the new term resolver inside the production container against the real pages: terms 26 / 54 / 52 resolve.
+- Migration 025 mystery: the deploy logs show it printed "Added ..." on both the Sep 25 and Sep 26 deploys, yet the columns were missing each time. Inferred cause: migration runs in a separate container while the old app container holds the WAL-mode database open; the migration's WAL is container-local and is discarded. Built detect-only `schema_check.py` + `schema` on `/version` (#11); production reports `ok: true`.
+
+### Still to do (user types the workflow files)
+- deploy.yml: add `stop app` before the migration loop (2c), `.app_commit` line (2a), truthful wait (2b), smoke test with commit + schema (2d); new `test.yml` (step 1). See prompts/CI-CD-Hardening-Steps.md.
+- Automatic plugin release on version bump; upgrade vseo.vtraffic.io from the old 1.0.0 plugin.
+
+### Not verified
+- The WAL explanation is inferred, not reproduced. Badges/re-check wording never viewed in a browser. Real cache expiry between re-check attempts. Refusal on real AIOSEO/SEOPress sites. End-to-end term deploy through the UI.
