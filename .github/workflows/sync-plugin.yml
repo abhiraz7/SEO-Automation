@@ -1,0 +1,53 @@
+name: Sync plugin copy
+
+# The plugin's source of truth is github.com/abhiraz7/AI-SEO-Connector. The
+# ai-seo-connector/ folder in this repo is a MIRROR of that repo's main: this
+# workflow keeps it current through a reviewed pull request. Edit the plugin in
+# its own repo, never here (a hand edit is overwritten by the next sync).
+#
+# Merging a sync PR does not restart production: ai-seo-connector/** is in the
+# deploy workflow's paths-ignore.
+#
+# Needs Settings > Actions > General > "Allow GitHub Actions to create and
+# approve pull requests" turned on. Pull requests opened with the built-in token
+# do not start other workflows, so the sync PR gets no Tests check; it only
+# mirrors plugin code that was already reviewed in the plugin repo.
+on:
+  schedule:
+    - cron: "17 3 * * *" # daily
+  workflow_dispatch: # and a manual "Run workflow" button
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@v4
+
+      - name: Check out the plugin repo
+        uses: actions/checkout@v4
+        with:
+          repository: abhiraz7/AI-SEO-Connector
+          ref: main
+          path: plugin-src
+
+      - name: Mirror the plugin into ai-seo-connector/
+        run: |
+          rsync -a --delete --exclude '.git' plugin-src/ ai-seo-connector/
+          rm -rf plugin-src
+
+      - name: Open a pull request if anything changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: bot/sync-plugin
+          delete-branch: true
+          add-paths: ai-seo-connector/
+          commit-message: "Sync ai-seo-connector/ with the plugin repo's main"
+          title: "Sync plugin copy with AI-SEO-Connector main"
+          body: |
+            Automatic mirror of github.com/abhiraz7/AI-SEO-Connector `main`.
+            The plugin repo is the source of truth; edit the plugin there, never here.
