@@ -59,6 +59,12 @@ _GENERIC_HEADINGS = {
     "search", "newsletter", "subscribe", "recent posts", "categories", "contact us", "disclaimer",
 }
 
+# Public names for other services: the AI Content Optimizer counts keyword occurrences
+# and repeated phrases with the SAME word rules, so the two features can never
+# disagree about what a "word" is (this matters for Hindi, see _tokenize).
+tokenize = _tokenize
+STOPWORDS = frozenset(_STOP)
+
 
 def normalize_tokens(text: str) -> frozenset:
     """Lower-cased content words of `text`, without stop words, with a light
