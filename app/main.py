@@ -5,11 +5,12 @@ load_dotenv()
 
 from fastapi import FastAPI
 
-from . import build_info, scheduler as job_scheduler
+from . import build_info, schema_check, scheduler as job_scheduler
 from .database import Base, engine
 from .routes import audit, competitors, crawl, jobs, keywords, links, onpage_semrush, projects, security, settings, suggestions, visibility, wordpress
 
 Base.metadata.create_all(bind=engine)
+schema_check.log_drift_at_startup(engine)
 
 
 @asynccontextmanager
@@ -43,6 +44,8 @@ app.include_router(links.router)
 
 @app.get("/version")
 def version():
-    """Which commit this process is running (see build_info.py). No database,
-    no auth, no side effects -- safe for the deploy pipeline to poll."""
-    return build_info.get_build_info()
+    """Which commit this process is running (see build_info.py) and whether the
+    database has every column the code expects (see schema_check.py). No auth and
+    no writes -- safe for the deploy pipeline to poll, and to fail a deploy on
+    schema.ok being false."""
+    return {**build_info.get_build_info(), "schema": schema_check.schema_report(engine)}

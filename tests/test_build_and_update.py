@@ -59,7 +59,9 @@ def test_version_endpoint_returns_build_info(monkeypatch):
     from app.main import app
     resp = TestClient(app).get("/version")
     assert resp.status_code == 200
-    assert resp.json() == {"commit": GOOD, "source": "env"}
+    body = resp.json()
+    assert body["commit"] == GOOD and body["source"] == "env"
+    assert "ok" in body["schema"]  # whether it is True depends on the DB this test run has; see test_schema_check.py
 
 
 # ── plugin update check ──────────────────────────────────────────────────
