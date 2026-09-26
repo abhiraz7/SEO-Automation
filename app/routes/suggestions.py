@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
-from .. import ai_provider, models, prompt_builder
+from .. import ai_provider, deploy_status, models, prompt_builder
 from ..ai_errors import AIGenerationError, ImageFetchError
 from ..database import get_db
 from ..services import context_builder
@@ -166,7 +166,14 @@ def _generate_and_store(
 
 
 def _suggestion_out(s: models.Suggestion) -> dict:
+    live = {}
+    if s.status == "deployed":
+        # Only deployed rows need the extra query; every other status is unchanged.
+        live = deploy_status.suggestion_live_fields(
+            deploy_status.live_status_for_suggestions(object_session(s), [s.id]), s
+        )
     return {
+        **live,
         "id": s.id,
         "status": s.status,
         "image_src": s.image_src,

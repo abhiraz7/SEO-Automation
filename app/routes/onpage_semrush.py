@@ -26,7 +26,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, dataforseo_onpage, models, wordpress
+from .. import audit, dataforseo_onpage, deploy_status, models, wordpress
 from ..database import get_db
 from ..onpage_task_maintenance import mark_stale_onpage_tasks
 from .links import store_links_for_task
@@ -488,6 +488,16 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             })
         return result
 
+    # One query for every issue's suggestions (was one per issue), plus the
+    # live-verification status of the deployed ones -- see app/deploy_status.py.
+    suggestions_by_issue: dict[int, list] = {}
+    if issues:
+        for s in db.query(models.Suggestion).filter(models.Suggestion.issue_id.in_([i.id for i in issues])).all():
+            suggestions_by_issue.setdefault(s.issue_id, []).append(s)
+    live_map = deploy_status.live_status_for_suggestions(
+        db, [s.id for group in suggestions_by_issue.values() for s in group if s.status == "deployed"]
+    )
+
     issues_js = {
         issue.id: {
             "id": issue.id,
@@ -508,11 +518,9 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
                     "edited_content": s.edited_content,
                     "source": "claude",
                     "rank": s.rank,
+                    **deploy_status.suggestion_live_fields(live_map, s),
                 }
-                for s in sorted(
-                    db.query(models.Suggestion).filter(models.Suggestion.issue_id == issue.id).all(),
-                    key=lambda s: s.rank,
-                )
+                for s in sorted(suggestions_by_issue.get(issue.id, []), key=lambda s: s.rank)
             ],
         }
         for issue in issues

@@ -777,3 +777,19 @@ Chrome blocking the download was a symptom: the platform, which handles logins a
 - Why might a CI deploy report failure while the deploy succeeds, and how do you fix the wait logic?
 - Why is "merged" not the same as "released" or "verified"?
 - Why redirect to a release asset instead of bundling a copy of a dependency?
+
+## 2026-09-26: "Deployed" must mean the customer can see it
+
+**What happened.** The dashboard said "deployed" for changes that never reached the live page. The plugin had written Yoast fields on a Rank Math site, returned OK, and we believed it.
+
+**The concept.** A success signal from a lower layer (the plugin's 200) is not proof of the outcome the user cares about (the public page shows the new title). Same as a test that asserts on the API response but never checks what the user sees. The fix is to make the outcome check the source of truth and to fail closed: unknown or pending is shown as "checking", never as "live".
+
+**How it fits our architecture.** The verify job already existed; the gap was that three separate serializers and two UIs ignored it. One shared module (`deploy_status.py`) now answers "is it live?" so screens can't disagree, the same idea as the FIELD_DEPLOYERS registry. Our own database copy of the page now updates only after proof.
+
+**A trap avoided.** For a delayed re-check the obvious move was to use `Job.scheduled_for`. Reading the scheduler showed it stores the NEXT run time there, so honouring it would have delayed every scheduled job. Read the code that owns a column before reusing it.
+
+### Interview questions this session answers
+- Why is an API "success" response not the same as a verified outcome?
+- What does "fail closed" mean for a status badge?
+- Why put a derived status in one shared function instead of each endpoint?
+- How would you add delayed retries to a job queue without breaking existing schedules?

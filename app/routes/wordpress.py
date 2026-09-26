@@ -1,12 +1,13 @@
 """
 WordPress connection + deploy/rollback routes (Tasks 3.2-3.5).
 """
+import re
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -15,26 +16,79 @@ from ..database import SessionLocal, get_db
 
 router = APIRouter()
 
-_PLUGIN_ZIP_PATH = Path(__file__).resolve().parent.parent / "downloads" / "vtechseo-agent.zip"
+# The plugin lives in its own repo (github.com/abhiraz7/AI-SEO-Connector) and is
+# released there, so this platform never carries a copy that can drift out of
+# date (the old bundled zip was the stale VtechSEO Agent 1.0.0 plugin).
+PLUGIN_REPO = "abhiraz7/AI-SEO-Connector"
+PLUGIN_ASSET = "ai-seo-connector.zip"
+PLUGIN_LATEST_API = f"https://api.github.com/repos/{PLUGIN_REPO}/releases/latest"
+# Fallback when GitHub's API can't be reached: still gets the user the newest
+# zip, just under the unversioned asset name.
+PLUGIN_DOWNLOAD_URL = f"https://github.com/{PLUGIN_REPO}/releases/latest/download/{PLUGIN_ASSET}"
+
+# Unauthenticated GitHub API calls are limited to 60/hour per IP, so remember
+# the latest release for a few minutes instead of asking on every click.
+_PLUGIN_RELEASE_CACHE_SECONDS = 600
+_plugin_release_cache: dict = {"at": 0.0, "value": None}
+
+# Only ever put a plain version number in a Content-Disposition filename.
+_SAFE_VERSION = re.compile(r"^\d+\.\d+\.\d+(?:[-.][0-9A-Za-z]+)*$")
 
 
+def _latest_plugin_release() -> tuple[str, str] | None:
+    """(version, asset download URL) of the newest AI SEO Connector release, or
+    None if it can't be determined. Never raises: a slow or unreachable GitHub
+    just means the caller falls back to the plain redirect."""
+    now = time.time()
+    if _plugin_release_cache["value"] and now - _plugin_release_cache["at"] < _PLUGIN_RELEASE_CACHE_SECONDS:
+        return _plugin_release_cache["value"]
+    try:
+        resp = httpx.get(PLUGIN_LATEST_API, headers={"Accept": "application/vnd.github+json"}, timeout=10)
+        resp.raise_for_status()
+        release = resp.json()
+        version = str(release.get("tag_name", "")).lstrip("v")
+        if not _SAFE_VERSION.match(version):
+            return None
+        asset_url = next(
+            (a.get("browser_download_url") for a in release.get("assets", []) if a.get("name") == PLUGIN_ASSET),
+            None,
+        )
+        if not asset_url:
+            return None
+    except (httpx.HTTPError, ValueError, AttributeError):
+        return None
+    _plugin_release_cache.update(at=now, value=(version, asset_url))
+    return version, asset_url
+
+
+# The old path is kept so existing links and bookmarks still land on the plugin.
+@router.get("/downloads/ai-seo-connector")
 @router.get("/downloads/vtechseo-agent")
 def download_wp_plugin():
-    """Serves the VtechSEO Agent WordPress plugin zip -- the connection
-    drawer links here so a user can install it on their site before saving
-    a connection above. Replaces the earlier general-purpose claude-wp-mcp
-    dev plugin for this flow: VtechSEO Agent is scoped to content/seo/media/
-    site-info only (see vtechseo-agent/README.md), no page-builder control,
-    no plugin management, no PHP execution -- safer to hand to every client
-    site by default. claude-wp-mcp still exists for internal, one-off
-    engagement work, just no longer linked from this popup."""
-    if not _PLUGIN_ZIP_PATH.exists():
-        raise HTTPException(status_code=404, detail="Plugin package not found on server.")
-    return FileResponse(
-        _PLUGIN_ZIP_PATH,
-        media_type="application/zip",
-        filename="vtechseo-agent.zip",
-    )
+    """Serves the latest AI SEO Connector release zip as
+    ai-seo-connector-<version>.zip -- the connection drawer links here so a
+    user can install the plugin before saving a connection. The file is fetched
+    from the plugin's GitHub release and re-served with a versioned filename
+    (a plain redirect can't rename it: the browser would save the release
+    asset's own unversioned name). If GitHub can't be reached or the release
+    has no matching asset, falls back to redirecting to the latest release's
+    zip so the download still works. The plugin is scoped to content/SEO/media/
+    site-info only: no page-builder control, no plugin management, no PHP
+    execution."""
+    release = _latest_plugin_release()
+    if release:
+        version, asset_url = release
+        try:
+            zip_resp = httpx.get(asset_url, follow_redirects=True, timeout=30)
+            zip_resp.raise_for_status()
+        except httpx.HTTPError:
+            return RedirectResponse(PLUGIN_DOWNLOAD_URL, status_code=302)
+        return Response(
+            content=zip_resp.content,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="ai-seo-connector-{version}.zip"'},
+        )
+    return RedirectResponse(PLUGIN_DOWNLOAD_URL, status_code=302)
 
 # Politeness delay between resolve_post_id_by_url calls when resolving a
 # whole project's pages in one pass -- each call is 1-2 HTTP requests to the
@@ -432,33 +486,6 @@ def _connected_or_error(db: Session, project_id: int) -> tuple[models.WordPressC
     return conn, token
 
 
-# Category -> Page column that "Current" (current_value_for in audit.py)
-# reads for that category. After a successful deploy we know exactly what
-# we just wrote, so we update our own copy immediately rather than leaving
-# "Current" showing the pre-deploy value until the next crawl/re-audit.
-# h1 is stored as a list on Page (crawler can see multiple H1s) -- a deploy
-# only ever supplies one value, so it replaces the list with a single-item
-# list; this is an approximation for pages that genuinely had >1 H1, but a
-# stale display would be a worse default than an accurate single value.
-_PAGE_FIELD_FOR_CATEGORY = {
-    "title": "title", "meta_description": "meta_description", "h1": "h1",
-    "twitter": "twitter_title", "canonical": "canonical", "opengraph": "og_title",
-}
-
-
-def _apply_deploy_to_page(db: Session, page_id: int, field_name: str, new_value: str) -> None:
-    page = db.get(models.Page, page_id)
-    if not page:
-        return
-    page_field = _PAGE_FIELD_FOR_CATEGORY.get(field_name)
-    if not page_field:
-        return
-    if page_field == "h1":
-        page.h1 = [new_value]
-    else:
-        setattr(page, page_field, new_value)
-
-
 @router.post("/suggestions/{suggestion_id}/deploy")
 def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depends(get_db)):
     """Deploys an accepted/edited suggestion's value to WordPress. Reads the
@@ -524,7 +551,9 @@ def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depen
     for s in superseded:
         s.status = "accepted"
 
-    _apply_deploy_to_page(db, suggestion.page_id, field_name, new_value)
+    # Our own Page copy is NOT updated here any more: it is updated by the
+    # verify_deploy job once the public page confirms the value (see
+    # deploy_status.apply_verified_value_to_page).
 
     db.commit()
     db.refresh(revision)
@@ -543,6 +572,35 @@ def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depen
     ))
     db.commit()
 
+    return _revision_out(revision)
+
+
+@router.post("/revisions/{revision_id}/verify")
+def reverify_revision(revision_id: int, db: Session = Depends(get_db)):
+    """Manual 'Re-check': queues a fresh live-page verification for a deployed
+    revision. Useful after a 'saved but not showing' result once a cache has
+    been purged, and for revisions deployed before verification existed.
+    (Not automatic on purpose: the scheduler stamps scheduled_for with the NEXT
+    run time, so delaying a job via that column would push every scheduled job
+    back by a full interval.)"""
+    revision = db.get(models.SuggestionRevision, revision_id)
+    if not revision:
+        raise HTTPException(status_code=404, detail="Revision not found")
+    if revision.rolled_back_at:
+        raise HTTPException(status_code=409, detail="This revision was rolled back; nothing to verify.")
+
+    already_queued = any(
+        (j.payload or {}).get("revision_id") == revision.id
+        for j in db.query(models.Job).filter(
+            models.Job.job_type == "verify_deploy",
+            models.Job.status.in_(("queued", "running")),
+        )
+    )
+    if not already_queued:
+        db.add(models.Job(project_id=revision.project_id, job_type="verify_deploy", payload={"revision_id": revision.id}))
+    revision.verify_status = "pending"
+    revision.verify_detail = None
+    db.commit()
     return _revision_out(revision)
 
 

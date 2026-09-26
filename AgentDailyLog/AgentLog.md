@@ -1506,3 +1506,28 @@ real WordPress install yet.
 
 ### Not verified
 - New plugin settings screen never rendered in a browser; rollback runbook never exercised.
+
+## 2026-09-26 (session: deploy engine research + "deployed means live")
+
+### Investigated (no code change)
+- ExamNotesPDF deploys never went live: old plugin wrote `_yoast_wpseo_*` on a Rank Math site (16 of 16 past deploys mismatched the live page). Plugin 1.5.0 now detects Rank Math (`/ping` on examnotespdf.in: 1.5.0, `seo_plugin: rankmath`); `vseo.vtraffic.io` still runs the old VtechSEO Agent 1.0.0.
+- `/subject/...` and `/exam/...` pages are taxonomy terms, not posts: no post ID, no plugin term tools. Live test (2026-09-26, reverted): term meta `rank_math_title`/`rank_math_description` on term 26 changed the live title and description at once.
+- Full findings and 7-step plan: `prompts/Deploy-Problem-RankMath-and-Taxonomy-2026-09-26.md`. Section 6 records an outside UI proposal, checked against the code (no action queue/approval state exists in the plugin).
+
+### Changed (plan step 1: stop false success). NOT committed, NOT pushed.
+- New `app/deploy_status.py`: `live_status` (checking / live / not_showing / unverified) from the latest non-rolled-back revision's `verify_status`; fails closed; also `apply_verified_value_to_page`.
+- `routes/onpage_semrush.py`, `routes/projects.py` (detail-json), `routes/suggestions.py`: deployed suggestions now carry `live_status`, `live_detail`, `live_revision_id`. onpage issues_js now fetches suggestions in one query.
+- `routes/wordpress.py`: deploy no longer overwrites our Page copy at write time; new `POST /revisions/{id}/verify` (manual Re-check, no duplicate queued jobs).
+- `jobs/handlers/verify_deploy.py`: Page copy updated only when `verified`.
+- `onpage_semrush.html`, `project_detail.html`: live badges, Re-check button, toast now "Saved to WordPress. Checking the live page…".
+- `tests/test_deploy_status.py`: 22 tests; whole suite 122 passed.
+- Queued 10 verify jobs for old still-pending deployed revisions (ids 11-16, 18, 19, 21, 23). They run when the app's scheduler is running and call DataForSEO.
+
+### Decisions
+- Auto-recheck NOT built: the scheduler stamps `scheduled_for` with the next run time, so honouring it would delay every scheduled job by a full interval. Manual Re-check instead.
+
+### Not verified
+- The new badges were never rendered in a browser (routes return 200 and the payload carries `live_status`, that is all).
+- Rank Math title variables (`%sep%` etc.) may cause a false "not showing" mismatch; untested.
+- A post write through plugin 1.5.0 has not been proven end to end. Yoast term storage untested.
+- Remaining plan steps (plugin term tools, resolver, DB column, routing, per-site health, repair) not started.
