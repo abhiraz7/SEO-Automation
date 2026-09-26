@@ -4,6 +4,7 @@ alongside its move from flat scalar fields to entity lists, since list-shaped
 request bodies are naturally expressed as JSON, not HTML form fields.
 """
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -195,3 +196,45 @@ class SavedKeywordOut(SavedKeywordIn):
 class BulkKeywordsIn(BaseModel):
     keywords: list[str] = Field(..., max_length=100)
     location: str = "IN"  # ISO country code, see app/keyword_locations.py
+
+
+# ── AI Competitor Gap: what the model may return ─────────────────────────────
+# The model never writes evidence. It cites evidence IDs (E01, E02, ...) from the list
+# the application supplied; the application then fills in each item's label and its
+# competitor_count / competitor_total from its OWN data (services/action_plan.py). So
+# a wrong or invented count cannot exist in a stored plan, by construction.
+
+ActionType = Literal["add", "expand", "rewrite", "restructure", "leave_unchanged", "separate_page"]
+Priority = Literal["high", "medium", "low"]
+Confidence = Literal["high", "medium", "low"]
+
+
+class ModelPlanAction(BaseModel):
+    """One action exactly as the model returns it (before validation against the
+    supplied evidence)."""
+    model_config = {"extra": "ignore"}
+
+    id: str = ""
+    type: ActionType
+    priority: Priority = "medium"
+    title: str = Field(min_length=1, max_length=300)
+    problem: str = Field(default="", max_length=1500)
+    recommendation: str = Field(min_length=1, max_length=2000)
+    evidence_ids: list[str] = Field(default_factory=list)
+    confidence: Confidence = "low"
+    requires_fact_check: bool = False
+
+
+class ModelActionPlan(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    actions: list[ModelPlanAction]
+
+
+class ModelGapDraft(BaseModel):
+    """The atomic draft the model returns for one action."""
+    model_config = {"extra": "ignore"}
+
+    draft: str = Field(min_length=1, max_length=6000)
+    claims_to_verify: list[str] = Field(default_factory=list)
+
