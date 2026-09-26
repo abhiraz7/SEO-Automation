@@ -103,6 +103,9 @@ def _json_object(raw: str) -> dict:
     return data
 
 
+json_object = _json_object       # public name for the optimizer's parser
+
+
 def parse_action_plan(raw: str) -> schemas.ModelActionPlan:
     try:
         return schemas.ModelActionPlan.model_validate(_json_object(raw))

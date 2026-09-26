@@ -119,7 +119,7 @@ def test_a_target_that_does_not_fit_the_type_is_blocked(type_, target):
     ("expand_section", "sec_01"), ("rewrite_section", "sec_03"), ("add_section", "new"), ("add_faq", "new"), ("improve_internal_link", "sec_02"), ("improve_internal_link", "new"),
 ])
 def test_every_valid_type_target_pair_is_accepted(type_, target):
-    assert ov._target_fits(type_, target)
+    assert ov.target_fits(type_, target)
 
 
 @pytest.mark.parametrize("type_", ["expand_section", "rewrite_section"])

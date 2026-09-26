@@ -86,7 +86,7 @@ def _norm(text) -> str:
 
 # ── 1. schema ─────────────────────────────────────────────────────────────
 
-def _target_fits(type_: str, target: str | None) -> bool:
+def target_fits(type_: str, target: str | None) -> bool:
     is_section = bool(re.fullmatch(r"sec_\d+", target or ""))
     return {
         "improve_title": target == "title",
@@ -109,7 +109,7 @@ def _schema(s: dict, ctx: dict) -> dict:
         return _check("schema", "blocked", "The suggestion has no proposed text.", fatal=True)
 
     problems = []
-    if not _target_fits(t, s.get("target_ref")):
+    if not target_fits(t, s.get("target_ref")):
         problems.append(f"the target {s.get('target_ref')!r} does not fit a {t.replace('_', ' ')}")
     before = s.get("before")
     if t in ("expand_section", "rewrite_section") and not (before or "").strip():
