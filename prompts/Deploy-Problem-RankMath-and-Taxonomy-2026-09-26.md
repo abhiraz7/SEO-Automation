@@ -1,7 +1,7 @@
 # Deploy Engine: Findings and Plan (ExamNotesPDF, 2026-09-26)
 
 **Site studied:** https://examnotespdf.in (project_id 9)
-**Status:** Research done, plan agreed in principle. No app or plugin code changed yet.
+**Status:** Steps 1, 2, 3 and 5 are built (see "Status update 2026-09-27" at the end). Steps 4, 6 (part) and 7 remain.
 **Goal:** turn the deploy path (app + AI SEO Connector plugin) into a trustworthy engine for many client sites: every fix lands on the right object, in the right SEO plugin's fields, and is only called "deployed" once the live page proves it.
 
 ---
@@ -132,3 +132,38 @@ Source: a design review pasted by the user (not written by us; its reading of th
 - **P0 (no new backend):** re-layout with Connection, Access cards, Safety (true claims only), Activity, Diagnostics, Advanced; move the API URL, token and Application Password into Advanced; rename Tools.
 - **P1 (needs engine work first):** structured activity log, last action with verification, rollback/change history, then approval and AI Actions via an app-to-plugin contract.
 - **Sequencing:** the engine work in sections 3 and 4 comes first, because the UX can only truthfully show "applied and verified" once verification exists.
+
+---
+
+## 7. Status update 2026-09-27
+
+### Decisions made
+- **Yoast term storage:** unknown, so Yoast terms stay **refused** with a clear message until it can be tested on a real site.
+- **All in One SEO and SEOPress:** **refuse**, do not support. No renaming of the `yoast_*` tools.
+- **Cache wait time:** automatic re-check after **3, then 10, then 30 minutes**, then the mismatch stands. Manual Re-check stays.
+- **Dropped from the list:** Notes Factory overwrite check, other clients' Rank Math status, and the location of `claude-wp-mcp final`.
+
+### Built
+| Step | State |
+|---|---|
+| 1. Stop false success | Live: badges, manual Re-check, page copy updated only on verify, polling. Hardened (PR #7) so a lookup failure never breaks a page. **PR #9** adds the automatic re-check (waiting jobs, escalating delays, skips rolled-back/superseded revisions). |
+| 2. Plugin term tools | 1.6.0 merged into the plugin repo's `main` and live-tested on a RankMath site. **Not tagged/released.** Plugin **PR #23** refuses writes on All in One SEO / SEOPress / no SEO plugin and finalises the changelog. |
+| 3. Resolver | **PR #8**: term lookup by link, duplicate-slug matching, and plain-language reasons for undeployable URLs (query strings, pagination, media, cdn-cgi, feeds). Checked live: `/subject/ctet-evs/` is term 26, `/exam/dsssb-tgt/` is 54, `/subject/hindi/` is 52. |
+| 4. Database column | **Not needed.** PR #8 avoids it: a term id is never cached on `pages.wp_post_id`; the revision records `deployed_via=seo_set_term_meta` and the plugin's reply carries the taxonomy. |
+| 5. Deploy/rollback routing | **PR #8**: terms go to the term tools; only title and meta description; other fields get a 422 with a reason; rollback refuses if the taxonomy wasn't recorded. |
+| 6. Engine health | The "update available" warning is live, and `/version` is live. Still missing: reading the SEO plugin at connect time; upgrading `vseo.vtraffic.io` from the old 1.0.0 plugin (an action, not code). |
+| 7. Repair the past | Not started. |
+
+### Still open
+- **Merge and deploy** PRs #8 and #9 (platform) and #23 (plugin), then **tag `v1.6.0`** on the plugin repo.
+- **Migration 025 did not persist through the deploy** and caused a production 500 (repaired by hand). Cause unconfirmed; hypothesis: WAL mode plus migrations run in a separate container while the old app container is still running. Must be understood before the next schema change.
+- **CI/CD steps you type** (`prompts/CI-CD-Hardening-Steps.md`): PR test workflow, truthful deploy wait, `.app_commit` line and the `/version` smoke test.
+- Post-type archives such as `/free-notes/` still fall through to the manual prompt.
+- A real end-to-end term deploy through the UI has not been run; the plugin side was tested directly.
+- The 6 production revisions still show "Checking…" (no backfill was run on production).
+- Badges not yet viewed in a browser.
+- Site theme bug on ExamNotesPDF: `single-memory_maps.php` prints a second meta description.
+- Old suggestions: revision 21 stored HTML in a canonical field; revision 23 shows an unexplained title mismatch.
+- Section 6 (plugin settings page redesign): all open.
+- Removing the plugin copy from this repo (single source of truth): decision pending.
+
