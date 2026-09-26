@@ -181,7 +181,7 @@ Source: a design review pasted by the user (not written by us; its reading of th
 - [ ] **3. Loose ends:**
   - [x] **Migration 025 mystery: cause found, detection built, fix documented.** The deploy logs show migration 025 printing `Added suggestion_revisions.verify_status` (and two more columns) on the **Sep 25** deploy and again on the **Sep 26** deploy, yet the columns were missing afterwards. The migration runs in a separate container (`docker compose run --rm`) while the old app container still has the SQLite database open in WAL mode; the migration's change appears to be left in a container-local write-ahead file that vanishes with the container. *Inferred from the logs, not reproduced.* Built: `schema_check.py` (detect-only), startup ERROR log, and `schema` on `/version` (PR #11). **Still to do (you type):** add the "stop the old app before migrating" line to `deploy.yml`, and the smoke test that fails a deploy on schema drift (steps 2c and 2d in the CI/CD doc).
   - [ ] **Type the CI/CD steps** from `prompts/CI-CD-Hardening-Steps.md`, in this order: step 1 (PR test workflow, new file); 2a (`.app_commit` line); 2b (truthful wait); **2c (stop before migrate: the fix for the lost migrations)**; 2d (smoke test for commit + schema; needs the `APP_URL` repository variable and 2a first).
-- [ ] **4. Automatic plugin release on a version bump** (plugin repo `release.yml`). The workflow builds and publishes when a `v*` tag is pushed, but creating the tag is still manual. Do this before 1.6.1; the release job must create the tag itself, because tags pushed with the built-in token do not start other workflows.
+- [x] **4. Automatic plugin release on a version bump (built and verified; see section 9)** (plugin repo `release.yml`). The workflow builds and publishes when a `v*` tag is pushed, but creating the tag is still manual. Do this before 1.6.1; the release job must create the tag itself, because tags pushed with the built-in token do not start other workflows.
 
 ### Still open elsewhere in this document
 - `vseo.vtraffic.io` still runs the old VtechSEO Agent 1.0.0 plugin. Install 1.6.0 there by hand (deactivate and delete the old plugin, install the zip, copy the new token, paste it into the app, Test connection); the app's "update available" warning already flags it.
@@ -190,3 +190,22 @@ Source: a design review pasted by the user (not written by us; its reading of th
 - The 6 production revisions still show "Checking..." (no backfill was run on production); badges not yet viewed in a browser.
 - ExamNotesPDF theme bug: `single-memory_maps.php` prints a second meta description.
 - Section 6 (plugin settings page redesign) and removing the plugin copy from this repo (single source of truth) remain open decisions.
+
+---
+
+## 9. Guardrails now in place (2026-09-27, verified)
+
+### Branch protection on `main` (platform repo)
+- **Required check: `pytest`** (the Tests workflow). A pull request whose tests are red or missing cannot be merged, and **admins are included**. No force-pushes, no deleting `main`. Direct pushes to `main` are rejected.
+- **Verified by behaviour:** a direct push was rejected with `Required status check "pytest" is expected`; a throwaway PR with one deliberately failing test showed `mergeStateStatus=BLOCKED` (it was closed unmerged, and nothing leaked); a green PR merged normally.
+- **The plugin-sync bot PR needs one click.** GitHub holds the Tests run for a PR opened with the built-in token at `action_required`. Open the PR's Checks tab and click **Approve and run workflows**; the PR becomes mergeable when Tests pass. (Starting Tests by hand with `workflow_dispatch` did **not** satisfy the requirement: that was tried, and the PR stayed blocked until the waiting run was approved.)
+- **Emergency override (last resort):** Settings > Branches > edit the `main` rule > untick "Do not allow bypassing the above settings" (admins), or remove the required check. Put it back afterwards.
+- Merges that only touch `ai-seo-connector/**`, `prompts/**`, `docs/**`, `tests/**`, `AgentDailyLog/**`, `*.md`, `test.yml` or `sync-plugin.yml` do **not** deploy (deploy's `paths-ignore`); verified for the sync PRs and the CI PRs.
+
+### Automatic plugin release (plugin repo)
+- **To release:** raise `Version:` in `ai-seo-connector.php` and `AISEOC_VERSION` (they must match), add a `## [x.y.z]` entry to `CHANGELOG.md`, merge to `main`. The workflow creates the tag, builds the zip and publishes the release. A merge that does not change the version releases nothing.
+- **It refuses (and publishes nothing)** if the two versions disagree, the CHANGELOG entry is missing, the version is not plain `x.y.z`, or it is **lower than the latest release** (GitHub picks "latest" by date). Comparison is numeric (`1.10.1` > `1.10.0`).
+- **Verified:** the decision script was run for real in throwaway repos (24 checks). The workflow ran on its own merge and correctly decided `v1.6.0 is already released; nothing to do` (build and publish skipped; releases and tags unchanged). A manual dry run built the zip in CI and published nothing.
+- **Not yet proven:** the actual automatic publish, which first happens on the next real version bump. Recovery if it ever fails halfway: delete that release and its tag, fix, then run the workflow by hand (dry run first).
+- **Rehearse any time:** Actions > "Release AI SEO Connector plugin zip" > Run workflow (defaults to a dry run).
+
