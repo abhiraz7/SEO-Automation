@@ -174,6 +174,103 @@ def _rest_post_type_bases(site_url: str) -> list[str]:
     return bases + extra
 
 
+def _norm_path(url) -> str:
+    """Path of a URL with leading/trailing/duplicate edge slashes removed, so
+    'https://x.com//a/b/' and 'https://x.com/a/b' compare equal."""
+    return urlparse(str(url or "")).path.strip("/")
+
+
+# URL shapes that are real pages on the site but have NO single WordPress
+# post/term behind them, so there is nothing to deploy a title or description
+# to. Each maps to a plain-language reason the UI can show instead of asking
+# the user for a numeric ID that could never exist.
+_NON_DEPLOYABLE_MESSAGES = {
+    "query_url": "This URL has a query string (a filter or search view of another page). It isn't a page of its own in WordPress, so there's nothing to deploy to. Deploy to the page it filters instead.",
+    "pagination": "This is a paginated archive view (page 2, 3, ...). It has no post or term of its own to deploy a title or description to.",
+    "media_file": "This is an uploaded file (image, PDF...), not a WordPress page. Fix image alt text through the image tools instead.",
+    "infrastructure": "This is a server/CDN utility URL, not a WordPress page.",
+    "feed": "This is an RSS feed, not a WordPress page.",
+}
+
+
+def non_deployable_reason(page_url: str) -> str | None:
+    """Reason key (see _NON_DEPLOYABLE_MESSAGES) if this URL can never be
+    deployed to, else None. Pure string checks -- no network."""
+    parsed = urlparse(str(page_url or ""))
+    path = parsed.path.strip("/")
+    if parsed.query:
+        return "query_url"
+    if path.startswith("wp-content/") or path.startswith("wp-includes/"):
+        return "media_file"
+    if path.startswith("cdn-cgi/"):
+        return "infrastructure"
+    segments = path.split("/") if path else []
+    if len(segments) >= 2 and segments[-2] == "page" and segments[-1].isdigit():
+        return "pagination"
+    if segments and segments[-1] == "feed":
+        return "feed"
+    return None
+
+
+def non_deployable_message(reason: str) -> str:
+    return _NON_DEPLOYABLE_MESSAGES.get(reason, "This URL can't be deployed to.")
+
+
+# Taxonomies that are WordPress internals, never a page a visitor lands on.
+_INTERNAL_TAXONOMIES = {"nav_menu", "wp_pattern_category", "link_category"}
+
+
+def resolve_term_by_url(site_url: str, page_url: str) -> WordPressResult:
+    """Best-effort lookup of a taxonomy TERM (category, tag, custom taxonomy
+    archive such as /subject/hindi/) from its live URL, via core REST
+    (wp/v2/taxonomies, then wp/v2/<rest_base>?slug=...). Public, needs no token.
+
+    Only trusts a term whose own `link` has exactly this page's path, so a term
+    that merely shares a slug with the page (or with a term in another taxonomy)
+    is never picked. Returns data={"taxonomy", "term_id"} on success. Never
+    raises: a missing/blocked REST API just means no_data."""
+    slug = _norm_path(page_url).rsplit("/", 1)[-1]
+    if not slug:
+        return WordPressResult(status="no_data", error="No slug to look up.")
+    base = site_url.rstrip("/")
+    try:
+        resp = httpx.get(f"{base}/wp-json/wp/v2/taxonomies", timeout=_TIMEOUT)
+        if resp.status_code != 200:
+            return WordPressResult(status="no_data", error="Taxonomies endpoint not available.")
+        taxonomies = resp.json()
+    except (httpx.RequestError, ValueError):
+        return WordPressResult(status="no_data", error="Could not read the site's taxonomies.")
+    if not isinstance(taxonomies, dict):
+        return WordPressResult(status="no_data", error="Unexpected taxonomies response.")
+
+    wanted = _norm_path(page_url)
+    found = []
+    for name, tax in sorted(taxonomies.items()):
+        if name in _INTERNAL_TAXONOMIES or not isinstance(tax, dict) or not tax.get("rest_base"):
+            continue
+        try:
+            r = httpx.get(
+                f"{base}/wp-json/wp/v2/{tax['rest_base']}",
+                params={"slug": slug, "_fields": "id,link,taxonomy"},
+                timeout=_TIMEOUT,
+            )
+        except httpx.RequestError:
+            return WordPressResult(status="error", error=f"Could not reach {site_url}")
+        if r.status_code != 200:
+            continue
+        try:
+            terms = r.json()
+        except ValueError:
+            continue
+        for t in terms if isinstance(terms, list) else []:
+            if isinstance(t, dict) and "id" in t and _norm_path(t.get("link")) == wanted:
+                found.append({"taxonomy": t.get("taxonomy") or name, "term_id": t["id"]})
+    if len(found) == 1:
+        return WordPressResult(status="ok", data=found[0])
+    return WordPressResult(status="no_data", error=f"No unique taxonomy term found for {slug!r}")
+
+
+
 def resolve_post_id_by_url(site_url: str, page_url: str, token: str | None = None) -> WordPressResult:
     """Best-effort lookup of a page's WordPress post ID from its live URL.
 
@@ -222,8 +319,17 @@ def resolve_post_id_by_url(site_url: str, page_url: str, token: str | None = Non
             results = resp.json()
         except ValueError:
             continue
-        if isinstance(results, list) and len(results) == 1 and "id" in results[0]:
-            return WordPressResult(status="ok", data={"post_id": results[0]["id"], "post_type": post_type})
+        if isinstance(results, list):
+            matches = [r for r in results if isinstance(r, dict) and "id" in r]
+            if len(matches) == 1:
+                return WordPressResult(status="ok", data={"post_id": matches[0]["id"], "post_type": post_type})
+            if len(matches) > 1:
+                # Same slug under different parents (e.g. /buy-backlinks/premium-plan/
+                # and /google-stacking/premium-plan/): the REST response carries each
+                # item's real link, so pick the one whose path is exactly this page's.
+                exact = [r for r in matches if _norm_path(r.get("link")) == _norm_path(page_url)]
+                if len(exact) == 1:
+                    return WordPressResult(status="ok", data={"post_id": exact[0]["id"], "post_type": post_type})
 
     return WordPressResult(status="no_data", error=f"No unique post/page found for slug {slug!r}")
 
@@ -284,3 +390,16 @@ def get_post(site_url: str, token: str, post_id: int) -> WordPressResult:
     """Used to read the CURRENT value of a field before deploying, so
     SuggestionRevision.before_value is the real prior value, not an assumption."""
     return _call_tool(site_url, token, "get_post", {"post_id": post_id})
+
+
+def get_term_seo(site_url: str, token: str, taxonomy: str, term_id: int) -> WordPressResult:
+    """Reads a taxonomy term's SEO title/description/focus keyword via the
+    plugin's seo_get_term_meta tool (plugin 1.6.0+, RankMath only)."""
+    return _call_tool(site_url, token, "seo_get_term_meta", {"taxonomy": taxonomy, "term_id": term_id})
+
+
+def set_term_seo(site_url: str, token: str, taxonomy: str, term_id: int, **fields) -> WordPressResult:
+    """fields: any of seo_title, meta_description, focus_keyword. An empty
+    string removes the custom value (the plugin deletes the term meta), which is
+    also what rolling back to an empty before-value needs."""
+    return _call_tool(site_url, token, "seo_set_term_meta", {"taxonomy": taxonomy, "term_id": term_id, **fields})
