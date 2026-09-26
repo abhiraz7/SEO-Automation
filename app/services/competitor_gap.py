@@ -50,7 +50,8 @@ class BusyError(RuntimeError):
     """An analysis is already running for this project (a 409)."""
 
 
-_running: set[int] = set()
+_running: set[int] = set()                   # project ids with an analysis in flight
+_drafting: set[tuple[int, str]] = set()      # (run id, action id) with a draft being generated
 _running_lock = threading.Lock()
 
 
@@ -337,6 +338,17 @@ def notices(run: models.CompetitorAnalysisRun) -> list[str]:
     return out
 
 
+def recent_runs(db, project_id: int, limit: int = 10) -> list[dict]:
+    """The project's latest analyses, newest first, for the history list."""
+    rows = (db.query(models.CompetitorAnalysisRun).filter(models.CompetitorAnalysisRun.project_id == project_id)
+            .order_by(models.CompetitorAnalysisRun.created_at.desc(), models.CompetitorAnalysisRun.id.desc()).limit(limit).all())
+    return [{
+        "id": r.id, "keyword": r.keyword, "target_url": r.target_url, "location": r.location, "device": r.device,
+        "status": r.status, "error": r.error, "summary_line": summary_line(r),
+        "created_at": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else None,
+    } for r in rows]
+
+
 def run_detail(db, run: models.CompetitorAnalysisRun) -> dict:
     snaps = (db.query(models.CompetitorPageSnapshot).filter(models.CompetitorPageSnapshot.analysis_run_id == run.id)
              .order_by(models.CompetitorPageSnapshot.position).all())
@@ -402,23 +414,34 @@ def generate_draft(db, run: models.CompetitorAnalysisRun, action_id: str) -> dic
     if existing.get("status") in ("accepted", "edited"):
         raise InputError("This action already has a draft you accepted or edited. It is kept, not regenerated.")
 
-    snaps = (db.query(models.CompetitorPageSnapshot)
-             .filter(models.CompetitorPageSnapshot.analysis_run_id == run.id, models.CompetitorPageSnapshot.fetch_status == "ok").all())
-    competitor_texts = [s.text for s in snaps if s.text]
-    ts = run.target_snapshot or {}
-    evidence = action_plan.build_evidence_list([])  # the draft prompt uses the action's own expanded evidence
-    bundle = {
-        "keyword": run.keyword, "location": run.location, "device": run.device, "evidence": evidence,
-        "target": {"url": ts.get("url") or run.target_url, "title": ts.get("title"), "h1": ts.get("h1"),
-                   "headings": [h["text"] for h in ts.get("headings") or []], "word_count": ts.get("word_count"),
-                   "excerpt": ts.get("excerpt")},
-    }
-    profile = db.query(models.BusinessProfile).filter(models.BusinessProfile.project_id == run.project_id).first()
-    result = ai_provider.generate_gap_draft(db, bundle, action, competitor_texts, profile)
-    draft = {"text": result["draft"], "status": "pending", "claims_to_verify": result["claims_to_verify"],
-             "warnings": result["warnings"], "generated_at": _now()}
-    _save_action(db, run, action_id, draft=draft)
-    return draft
+    # One generation per action at a time: a double click must not pay for two AI
+    # calls and race to save two drafts. (Per process, like the analysis guard.)
+    key = (run.id, action_id)
+    with _running_lock:
+        if key in _drafting:
+            raise BusyError("A draft for this action is already being generated.")
+        _drafting.add(key)
+    try:
+        snaps = (db.query(models.CompetitorPageSnapshot)
+                 .filter(models.CompetitorPageSnapshot.analysis_run_id == run.id, models.CompetitorPageSnapshot.fetch_status == "ok").all())
+        competitor_texts = [s.text for s in snaps if s.text]
+        ts = run.target_snapshot or {}
+        evidence = action_plan.build_evidence_list([])  # the draft prompt uses the action's own expanded evidence
+        bundle = {
+            "keyword": run.keyword, "location": run.location, "device": run.device, "evidence": evidence,
+            "target": {"url": ts.get("url") or run.target_url, "title": ts.get("title"), "h1": ts.get("h1"),
+                       "headings": [h["text"] for h in ts.get("headings") or []], "word_count": ts.get("word_count"),
+                       "excerpt": ts.get("excerpt")},
+        }
+        profile = db.query(models.BusinessProfile).filter(models.BusinessProfile.project_id == run.project_id).first()
+        result = ai_provider.generate_gap_draft(db, bundle, action, competitor_texts, profile)
+        draft = {"text": result["draft"], "status": "pending", "claims_to_verify": result["claims_to_verify"],
+                 "warnings": result["warnings"], "generated_at": _now()}
+        _save_action(db, run, action_id, draft=draft)
+        return draft
+    finally:
+        with _running_lock:
+            _drafting.discard(key)
 
 
 def decide_draft(db, run: models.CompetitorAnalysisRun, action_id: str, decision: str, text: str | None = None) -> dict:

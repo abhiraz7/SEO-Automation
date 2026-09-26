@@ -31,8 +31,10 @@ def db():
 @pytest.fixture(autouse=True)
 def _no_leftover_running_flags():
     cg._running.clear()
+    cg._drafting.clear()
     yield
     cg._running.clear()
+    cg._drafting.clear()
 
 
 TARGET = "https://mine.com/b-ed-admission"
@@ -519,3 +521,40 @@ def test_nothing_in_the_service_can_publish(db):
             imported += [a.name for a in node.names]
     assert imported, "the import scan found nothing, so it proves nothing"
     assert not [i for i in imported if "wordpress" in i.lower() or "deploy" in i.lower() or "requests" in i.lower()], imported
+
+
+def test_a_double_click_on_generate_does_not_pay_for_two_drafts(db):
+    r = make_run_with_plan(db)
+    cg._drafting.add((r.id, "action_001"))              # a generation for this action is already in flight
+    with patch.object(cg.ai_provider, "generate_gap_draft") as g:
+        with pytest.raises(cg.BusyError):
+            cg.generate_draft(db, r, "action_001")
+    g.assert_not_called()
+
+
+def test_the_draft_guard_is_released_after_success_and_after_failure(db):
+    r = make_run_with_plan(db)
+    with patch.object(cg.ai_provider, "generate_gap_draft", side_effect=AIGenerationError("nope")):
+        with pytest.raises(AIGenerationError):
+            cg.generate_draft(db, r, "action_001")
+    assert not cg._drafting
+    with patch.object(cg.ai_provider, "generate_gap_draft", return_value=DRAFT):
+        cg.generate_draft(db, r, "action_001")
+    assert not cg._drafting
+
+
+def test_recent_runs_are_newest_first_limited_and_scoped_to_the_project(db):
+    project, _ = make_project(db)
+    other = models.Project(name="Other", base_url="https://other.com")
+    db.add(other)
+    db.commit()
+    for i in range(3):
+        run(db, project, keyword=f"keyword number {i}")
+    with patch.object(cg.serp_evidence, "fetch_serp_evidence", return_value=se.normalize_serp({"error": "boom"})):
+        cg.run_analysis(db, other, "https://other.com/x", "someone else's keyword", "IN", "desktop")
+
+    rows = cg.recent_runs(db, project.id, limit=2)
+    assert [r["keyword"] for r in rows] == ["keyword number 2", "keyword number 1"]
+    assert rows[0]["summary_line"] == "5 of 5 comparable competitors successfully analysed" and rows[0]["status"] == "ok"
+    assert [r["keyword"] for r in cg.recent_runs(db, other.id)] == ["someone else's keyword"]
+    assert cg.recent_runs(db, other.id)[0]["status"] == "error"
