@@ -108,13 +108,14 @@ def has_something_to_fix(evidence: list[dict]) -> bool:
 def availability(model: dict, candidates: list[dict]) -> dict[str, str | None]:
     """{type: None when the type is available for this page, else the reason it is not}.
     The optimizer never offers to edit something it cannot see."""
-    has_text = any(s["text"] for s in model["sections"])
+    has_text = any(s["editable"] for s in model["sections"])
+    no_text = "no section of the page has text short enough to rewrite as one atomic edit, or the text was not crawled"
     return {
         "improve_title": None,
         "improve_meta_description": None,
         "improve_heading": None if (model["h1"] or model["sections"]) else "the page has no headings",
-        "expand_section": None if has_text else "the text of the page's sections is not available (the page was not crawled with its content)",
-        "rewrite_section": None if has_text else "the text of the page's sections is not available (the page was not crawled with its content)",
+        "expand_section": None if has_text else no_text,
+        "rewrite_section": None if has_text else no_text,
         "add_section": None if model["content_known"] else "the page's content is not known",
         "add_faq": None if model["content_known"] else "the page's content is not known",
         "improve_internal_link": (
@@ -194,6 +195,8 @@ def _resolve_before(t: str, target: str, model: dict) -> tuple[str | None, str |
         if t in ("expand_section", "rewrite_section"):
             if section["text"] is None:
                 return None, "the current text of that section is not available"
+            if not section["editable"]:
+                return None, "that section is too long to expand or rewrite as one atomic edit"
             return section["text"], None
     return None, None
 

@@ -128,8 +128,28 @@ def test_a_fully_crawled_page_supports_every_type():
 def test_a_page_without_section_text_cannot_be_expanded_or_rewritten():
     page = make_page(markdown=None, heading_structure=[{"tag": "h2", "text": "Eligibility"}])
     a = plan.availability(page, CANDIDATES)
-    assert "not available" in a["expand_section"] and "not available" in a["rewrite_section"]
+    assert "not crawled" in a["expand_section"] and "not crawled" in a["rewrite_section"]
     assert a["add_section"] is None and a["improve_heading"] is None and a["improve_title"] is None
+
+
+LONG_MD = "## Short section\n\nA short body.\n\n## Long section\n\n" + ("A long sentence that goes on and on. " * 60)
+
+
+def test_a_section_too_long_for_one_atomic_edit_cannot_be_expanded_or_rewritten_but_the_short_one_can():
+    page = make_page(markdown=LONG_MD)
+    assert [s["editable"] for s in page["sections"]] == [True, False]
+    b = make_bundle(page)
+    ev = [evidence_id(b, "Documents required")]
+    out = resolve([item(type="rewrite_section", target="sec_02", evidence_ids=ev, after="A shorter rewritten body " * 6),
+                   item(type="rewrite_section", target="sec_01", evidence_ids=ev, after="A rewritten short body that says the same thing more clearly")], b)
+    assert [s["target_ref"] for s in out["suggestions"]] == ["sec_01"]
+    assert out["discarded"] == [{"id": "proposal 1", "reason": "that section is too long to expand or rewrite as one atomic edit"}]
+
+
+def test_a_page_whose_only_sections_are_long_offers_no_expand_or_rewrite_but_still_allows_new_content():
+    page = make_page(markdown="## Long section\n\n" + ("A long sentence that goes on and on. " * 60))
+    a = plan.availability(page, CANDIDATES)
+    assert a["expand_section"] and a["rewrite_section"] and a["add_section"] is None and a["add_faq"] is None
 
 
 def test_unknown_content_blocks_content_types_but_not_title_and_meta():

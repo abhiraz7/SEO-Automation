@@ -21,6 +21,7 @@ from .. import models
 from . import gap_analysis
 
 SECTION_TEXT_CAP = 3000            # characters of a section's text kept for the model / the diff
+EDIT_MAX_CHARS = 1500              # a section longer than this is not rewritten or expanded as ONE atomic edit
 MIN_WORDS_FOR_CONTENT = 50         # below this (and with no headings) the page's content is treated as unknown
 MAX_SITE_PAGES = 500
 _MD_HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$")
@@ -101,6 +102,9 @@ def build_page_model(page) -> dict:
             "text": text[:SECTION_TEXT_CAP] if text is not None else None,
             "truncated": bool(text is not None and len(text) > SECTION_TEXT_CAP),
             "words": word_count(text) if text is not None else None,
+            # Rewriting or expanding replaces the WHOLE section body, so the model must be
+            # able to see all of it, and an atomic edit should not swallow a long section.
+            "editable": text is not None and len(text) <= EDIT_MAX_CHARS,
         })
 
     text = (page.fit_markdown or page.custom_content or page.markdown or "").strip()

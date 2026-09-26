@@ -97,6 +97,13 @@ def test_hindi_headings_and_text_are_kept_whole():
     assert m["sections"][0]["heading"] == "पात्रता मानदंड" and m["sections"][0]["words"] == 8
 
 
+def test_only_sections_whose_whole_text_is_short_enough_are_editable():
+    m = op.build_page_model(page(markdown="## Short\n\nA short body.\n\n## Long\n\n" + "word " * 400))
+    assert [(s["heading"], s["editable"]) for s in m["sections"]] == [("Short", True), ("Long", False)]
+    unknown = op.build_page_model(page(heading_structure=[{"tag": "h2", "text": "Eligibility"}]))
+    assert unknown["sections"][0]["editable"] is False                    # unknown text is never editable
+
+
 # ── the fields ────────────────────────────────────────────────────────────
 
 def test_missing_title_meta_and_h1_are_none_not_empty_strings():
