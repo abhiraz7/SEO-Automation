@@ -2,8 +2,17 @@ name: Tests
 
 # Runs on every pull request, so a bad change is stopped before it can be merged
 # (and, on a merge to main, deployed). It never deploys anything itself.
+#
+# "pytest" (this job) is a REQUIRED status check for main: a pull request whose
+# tests are red or missing cannot be merged.
+#
+# workflow_dispatch exists for pull requests opened by another workflow with the
+# built-in token (the plugin sync bot): GitHub does not start pull_request
+# workflows for those, so the sync workflow starts this one by hand on the bot's
+# branch. The check it reports is the same "pytest" on the same commit.
 on:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   pytest:
