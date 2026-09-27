@@ -122,6 +122,7 @@ def test_the_buttons_follow_the_state_of_each_suggestion(env):
     section, title = card_html(html, ids["## Do"]), card_html(html, ids["B.Ed "])
     for card in (section, title):
         assert 'data-do="accept"' in card and 'data-do="edit-open"' in card and 'data-do="reject"' in card and 'data-do="deploy"' not in card
+        assert "cannot be accepted as written" not in card                # the blocked note appears only when something is blocked
     assert "disabled" not in section.split('data-do="accept"')[1].split(">")[0].replace("data-needs-ack", "")     # ready to accept
 
 
@@ -137,6 +138,8 @@ def test_a_blocked_suggestion_is_shown_with_its_reasons_and_cannot_be_accepted_f
     accept = card.split('data-do="accept"')[1].split(">")[0]
     assert "disabled" in accept and "Blocked by validation: fix or edit it first" in accept
     assert "✕" in card and "Keyword repetition" in card and "blocked" in card and 'data-do="edit-open"' in card and 'data-do="reject"' in card
+    assert "cannot be accepted as written. Edit the text to fix them, or reject it." in card          # said in plain view, not only in a tooltip
+
 
 
 def test_claims_that_need_verification_require_an_explicit_tick_before_accept_is_enabled(env):

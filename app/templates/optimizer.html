@@ -15,6 +15,9 @@
 {% endblock %}
 
 {% block content %}
+<style>
+  .opt-btn:disabled { opacity: .4; cursor: not-allowed; filter: grayscale(.6); }
+</style>
 {# Everything on this page that came from a web page or from the model (titles, headings, drafts,
    claims, reasons) goes through Jinja autoescape. The only |safe value is the word diff, which
    app/services/text_diff.py builds from already-escaped fragments plus its own <ins>/<del>. #}
@@ -111,6 +114,9 @@
       {% if s.live.live_detail %}<span style="font-size:11px;color:#64748b;">{{ s.live.live_detail }}</span>{% endif %}
     {% endif %}
   </div>
+  {% if not s.ready and s.status in ('pending', 'rejected') %}
+  <div style="margin-top:6px;font-size:11px;color:#b91c1c;">Blocked by the check(s) marked ✕ above, so it cannot be accepted as written. Edit the text to fix them, or reject it.</div>
+  {% endif %}
   {% if s.status in ('accepted', 'edited') and not s.deployable %}
   <div style="margin-top:6px;font-size:11px;color:#64748b;">{{ s.deploy_note }}</div>
   {% endif %}
