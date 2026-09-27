@@ -1,0 +1,374 @@
+{# AI Competitor Gap Analysis. Included by competitors.html.
+   Context: project, gap_run (detail dict or None), gap_runs, gap_locations, gap_default_location, gap_page_urls.
+   Everything shown here was computed by the application from fetched pages; the AI only chose which
+   evidence to act on. There is deliberately no "score" anywhere on this card.
+   Competitor text (titles, headings) is untrusted: it only ever goes through Jinja autoescape. #}
+
+{% macro chip(text, tone) -%}
+{%- set tones = {'green': ('#dcfce7', '#166534'), 'amber': ('#fef3c7', '#92400e'), 'red': ('#fee2e2', '#991b1b'), 'slate': ('#f1f5f9', '#475569'), 'indigo': ('#eef2ff', '#4f46e5')} -%}
+{%- set c = tones.get(tone, tones['slate']) -%}
+<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:{{ c[0] }};color:{{ c[1] }};font-size:10px;font-weight:700;white-space:nowrap;">{{ text }}</span>
+{%- endmacro %}
+
+{% macro link(url, text) -%}
+{%- if url and url.startswith(('http://', 'https://')) -%}
+<a href="{{ url }}" target="_blank" rel="noopener noreferrer nofollow" style="color:#4f46e5;text-decoration:none;">{{ text }}</a>
+{%- else -%}{{ text }}{%- endif -%}
+{%- endmacro %}
+
+{% set status_tone = {'ok': 'green', 'partial': 'amber', 'no_data': 'slate', 'error': 'red', 'skipped': 'slate', 'pending': 'slate'} %}
+{% set status_label = {'ok': 'Complete', 'partial': 'Partial', 'no_data': 'No data', 'error': 'Failed'} %}
+{% set coverage_tone = {'missing': 'red', 'partial': 'amber', 'covered': 'green'} %}
+{% set priority_tone = {'high': 'red', 'medium': 'amber', 'low': 'slate'} %}
+{% set action_label = {'add': 'Add a section', 'expand': 'Expand a section', 'rewrite': 'Rewrite', 'restructure': 'Restructure the page', 'separate_page': 'Use a separate page', 'leave_unchanged': 'Leave unchanged'} %}
+{% set gap_groups = [('topic', 'Sections competitors cover'), ('question', 'Questions competitors answer'), ('query', 'Queries and related searches'), ('intent', 'Search intent'), ('format', 'Page format')] %}
+
+<div id="gap-card" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px 20px;margin-bottom:18px;">
+  <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:4px;">AI Competitor Gap Analysis</div>
+  <div style="font-size:12px;color:#64748b;margin-bottom:14px;line-height:1.5;">
+    Compare one of your pages with the pages that currently rank for a keyword, and get actions backed by what those pages actually contain.
+    Each analysis makes one search-results call, fetches up to 7 competitor pages once, and makes one AI call (each draft you ask for is one more).
+    Nothing is published: drafts are proposals for you to accept, edit or reject.
+  </div>
+
+  <form id="gap-form" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
+    <label style="flex:2 1 220px;min-width:0;font-size:11px;color:#64748b;font-weight:600;">Your page URL
+      <input type="text" name="target_url" list="gap-pages" required placeholder="{{ project.base_url }}/your-page"
+             style="display:block;width:100%;margin-top:3px;font-size:12px;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;">
+    </label>
+    <label style="flex:1.4 1 160px;min-width:0;font-size:11px;color:#64748b;font-weight:600;">Target keyword
+      <input type="text" name="keyword" required minlength="2" maxlength="200" placeholder="e.g. b ed admission"
+             style="display:block;width:100%;margin-top:3px;font-size:12px;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;">
+    </label>
+    <label style="flex:1 1 130px;min-width:0;font-size:11px;color:#64748b;font-weight:600;">Location
+      <select name="location" style="display:block;width:100%;margin-top:3px;font-size:12px;padding:7px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
+        {% for code, name in gap_locations.items() %}
+        <option value="{{ code }}" {% if code == gap_default_location %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label style="flex:1 1 100px;min-width:0;font-size:11px;color:#64748b;font-weight:600;">Device
+      <select name="device" style="display:block;width:100%;margin-top:3px;font-size:12px;padding:7px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
+        <option value="desktop">Desktop</option>
+        <option value="mobile">Mobile</option>
+      </select>
+    </label>
+    <button id="gap-run-btn" type="submit" style="padding:8px 14px;border-radius:6px;border:none;background:#4f46e5;color:#fff;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">Analyse</button>
+  </form>
+  <datalist id="gap-pages">{% for u in gap_page_urls %}<option value="{{ u }}"></option>{% endfor %}</datalist>
+  <div id="gap-status" role="status" style="margin-top:8px;font-size:12px;color:#64748b;min-height:16px;"></div>
+
+  {# ── history ─────────────────────────────────────── #}
+  {% if gap_runs %}
+  <div style="margin-top:12px;border-top:1px solid #f1f5f9;padding-top:12px;">
+    <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:8px;">Recent analyses</div>
+    {% for r in gap_runs %}
+    <div style="border-top:1px solid #f1f5f9;padding:7px 8px;font-size:12px;{% if gap_run and gap_run.id == r.id %}background:#f8fafc;{% endif %}">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <a href="/projects/{{ project.id }}/competitors?run={{ r.id }}" style="font-weight:600;color:#0f172a;text-decoration:none;overflow-wrap:anywhere;">{{ r.keyword }}</a>
+        {{ chip(status_label.get(r.status, r.status), status_tone.get(r.status)) }}
+        <span style="color:#94a3b8;font-size:11px;">{{ r.created_at ~ ' UTC' if r.created_at else '' }}</span>
+      </div>
+      <div style="color:#64748b;font-size:11px;overflow-wrap:anywhere;">{{ r.target_url }}</div>
+      {% if r.status in ('ok', 'partial') %}<div style="color:#475569;">{{ r.summary_line }}</div>
+      {% elif r.error %}<div style="color:#b91c1c;">{{ r.error }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ── the selected analysis ───────────────────────── #}
+  {% if gap_run %}
+  {% set run = gap_run %}
+  <div style="margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+      <div style="font-size:14px;font-weight:700;color:#0f172a;">
+        “{{ run.keyword }}”
+        <span style="font-size:11px;font-weight:500;color:#64748b;">
+          · {{ gap_locations.get(run.location, run.location) }} · {{ run.device }} · {{ run.created_at[:16].replace('T', ' ') if run.created_at else '' }} UTC
+        </span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        {{ chip(status_label.get(run.status, run.status), status_tone.get(run.status)) }}
+        <button type="button" id="gap-rerun" data-target-url="{{ run.target_url }}" data-keyword="{{ run.keyword }}" data-location="{{ run.location }}" data-device="{{ run.device }}"
+                style="padding:4px 10px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer;">Re-run (fresh results)</button>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:10px;word-break:break-all;">Your page: {{ link(run.target_url, run.target_url) }}</div>
+
+    {% if run.status in ('error', 'no_data') %}
+    <div style="padding:10px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;line-height:1.5;{% if run.status == 'error' %}background:#fef2f2;border:1px solid #fecaca;color:#991b1b;{% else %}background:#f8fafc;border:1px solid #e2e8f0;color:#475569;{% endif %}">
+      <strong>{% if run.status == 'error' %}This analysis failed.{% else %}Not enough data to analyse.{% endif %}</strong>
+      {{ run.error }}
+    </div>
+    {% else %}
+    <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:8px;">{{ run.summary_line }}</div>
+    {% endif %}
+
+    {% for n in run.notices %}
+    <div style="padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5;background:#fffbeb;border:1px solid #fde68a;color:#92400e;">{{ n }}</div>
+    {% endfor %}
+
+    {% if run.intent or run.format_distribution or run.serp_features %}
+    <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:12px;font-size:12px;color:#374151;">
+      {% if run.intent %}
+      <div><span style="color:#94a3b8;">Search intent:</span> <strong>{{ run.intent.label }}</strong>{% if run.intent.confidence %} {{ chip(run.intent.confidence ~ ' confidence', 'slate') }}{% endif %}</div>
+      {% endif %}
+      {% if run.format_distribution %}
+      <div><span style="color:#94a3b8;">Ranking page types:</span>
+        {% for fmt, count in run.format_distribution.items() %}<strong>{{ fmt }}</strong> ×{{ count }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </div>
+      {% endif %}
+      {% if run.serp_features %}
+      <div><span style="color:#94a3b8;">Also on the results page:</span> {{ run.serp_features|join(', ')|replace('_', ' ') }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# competitors, including the ones that failed or were skipped, with the reason #}
+    {% if run.snapshots %}
+    <div style="font-size:12px;font-weight:700;color:#0f172a;margin:12px 0 6px;">Search results and what happened to each</div>
+    <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:11px;">
+      <thead><tr style="text-align:left;color:#94a3b8;">
+        <th style="padding:5px 6px;">#</th><th style="padding:5px 6px;">Page</th><th style="padding:5px 6px;">Type</th>
+        <th style="padding:5px 6px;">Analysed</th><th style="padding:5px 6px;">Words</th><th style="padding:5px 6px;">Note</th>
+      </tr></thead>
+      <tbody>
+      {% for s in run.snapshots %}
+      <tr style="border-top:1px solid #f1f5f9;{% if not s.selected %}color:#94a3b8;{% endif %}">
+        <td style="padding:5px 6px;">{{ s.position }}</td>
+        <td style="padding:5px 6px;max-width:320px;">
+          <div style="font-weight:600;">{{ link(s.url, s.domain or s.url) }}</div>
+          {% if s.title %}<div style="color:#64748b;">{{ s.title }}</div>{% endif %}
+        </td>
+        <td style="padding:5px 6px;">{{ s.result_class|replace('_', ' ') if s.result_class else '' }}</td>
+        <td style="padding:5px 6px;white-space:nowrap;">
+          {{ chip(s.fetch_status, status_tone.get(s.fetch_status)) }}
+          {% if s.fetch_method and s.fetch_status == 'ok' %}<span style="color:#94a3b8;"> {{ s.fetch_method }}</span>{% endif %}
+        </td>
+        <td style="padding:5px 6px;">{{ s.word_count if s.word_count else '—' }}</td>
+        <td style="padding:5px 6px;color:{% if s.fetch_status == 'error' %}#b91c1c{% else %}#64748b{% endif %};">{{ s.error or '' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+
+    {# gaps: what the comparison found, with your page's coverage next to each #}
+    {% if run.gaps %}
+    <div style="font-size:13px;font-weight:700;color:#0f172a;margin:18px 0 4px;">What the comparison found</div>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">“Your page” shows whether your page already covers each item. Counts are measured over the pages that were successfully analysed.</div>
+    {% for gtype, gtitle in gap_groups %}
+    {% set items = run.gaps|selectattr('gap_type', 'equalto', gtype)|list %}
+    {% if items %}
+    <div style="font-size:12px;font-weight:700;color:#374151;margin:10px 0 4px;">{{ gtitle }}</div>
+    {% for g in items %}
+    <details style="border:1px solid #f1f5f9;border-radius:8px;padding:6px 10px;margin-bottom:4px;">
+      <summary style="cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-weight:600;color:#0f172a;">{{ g.label }}</span>
+        {{ chip('Your page: ' ~ g.target_coverage, coverage_tone.get(g.target_coverage)) }}
+        {% if g.gap_type in ('topic', 'question', 'query') %}<span style="color:#64748b;">{{ g.competitor_count }} of {{ g.competitor_total }} competitors</span>{% endif %}
+        {% if g.confidence %}<span style="color:#94a3b8;">{{ g.confidence }} confidence</span>{% endif %}
+      </summary>
+      <div style="margin-top:6px;font-size:11px;color:#475569;line-height:1.6;">
+        {% if g.recommended_action %}<div>Suggested: <strong>{{ action_label.get(g.recommended_action, g.recommended_action) }}</strong></div>{% endif %}
+        {% if g.evidence.competitors %}
+        <div>Found on:</div>
+        <ul style="margin:2px 0 0 16px;padding:0;">
+          {% for c in g.evidence.competitors %}
+          <li>#{{ c.position }} {{ link(c.url, c.domain or c.url) }}{% if c.heading %} — “{{ c.heading }}”{% endif %}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% if g.evidence.in_people_also_ask %}<div>Appears in “People also ask”.</div>{% endif %}
+        {% if g.evidence.target_format %}<div>Your page looks like a <strong>{{ g.evidence.target_format }}</strong> page{% if g.evidence.dominant_format %}; most ranking pages are <strong>{{ g.evidence.dominant_format }}</strong> pages{% endif %}.</div>{% endif %}
+        {% if g.evidence.signals %}<div>Signals: {{ g.evidence.signals|join(', ') }}</div>{% endif %}
+      </div>
+    </details>
+    {% endfor %}
+    {% endif %}
+    {% endfor %}
+    {% endif %}
+
+    {# the AI action plan #}
+    {% if run.status in ('ok', 'partial') %}
+    <div style="font-size:13px;font-weight:700;color:#0f172a;margin:20px 0 4px;">Recommended actions</div>
+    {% set plan = run.plan %}
+    {% if plan.status == 'error' %}
+    <div style="padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.5;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;">
+      <strong>The AI action plan could not be generated.</strong> {{ plan.error }}
+      The comparison above is still valid; run the analysis again to retry the plan.
+    </div>
+    {% elif plan.status == 'no_data' %}
+    <div style="padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.5;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;">{{ plan.error }}</div>
+    {% elif plan.status == 'ok' %}
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Each action cites the evidence above. Content-level drafts are proposals only: the built-in WordPress deploy handles just titles, meta descriptions, H1 and social/canonical fields, so text drafts are applied by you.</div>
+    {% for prio in ['high', 'medium', 'low'] %}
+    {% set group = plan.actions|selectattr('priority', 'equalto', prio)|list %}
+    {% for a in group %}
+    <div id="action-{{ a.id }}" data-action-id="{{ a.id }}" style="border:1px solid #e2e8f0;border-left:4px solid {% if prio == 'high' %}#dc2626{% elif prio == 'medium' %}#d97706{% else %}#94a3b8{% endif %};border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
+        {{ chip(prio ~ ' priority', priority_tone.get(prio)) }}
+        {{ chip(action_label.get(a.type, a.type), 'indigo') }}
+        {{ chip(a.confidence ~ ' confidence', 'slate') }}
+        {% if a.requires_fact_check %}{{ chip('verify facts', 'amber') }}{% endif %}
+      </div>
+      <div style="font-size:13px;font-weight:700;color:#0f172a;">{{ a.title }}</div>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;">{{ a.problem }}</div>
+      <div style="font-size:12px;color:#0f172a;margin-top:4px;line-height:1.5;">{{ a.recommendation }}</div>
+      <details style="margin-top:6px;">
+        <summary style="cursor:pointer;font-size:11px;color:#4f46e5;">Evidence ({{ a.evidence|length }})</summary>
+        <ul style="margin:4px 0 0 16px;padding:0;font-size:11px;color:#475569;line-height:1.6;">
+          {% for e in a.evidence %}
+          <li>{{ e.label }} — {{ e.competitor_count }} of {{ e.competitor_total }} competitors ({{ e.type|replace('_', ' ') }})</li>
+          {% endfor %}
+        </ul>
+      </details>
+
+      {% if a.draftable %}
+      {% set d = a.draft %}
+      <div style="margin-top:8px;border-top:1px dashed #e2e8f0;padding-top:8px;">
+        {% if d %}
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <span style="font-size:11px;font-weight:700;color:#374151;">Draft</span>
+          {% if d.status == 'pending' %}{{ chip('awaiting your decision', 'amber') }}
+          {% elif d.status == 'accepted' %}{{ chip('accepted', 'green') }}
+          {% elif d.status == 'edited' %}{{ chip('edited by you', 'green') }}
+          {% else %}{{ chip('rejected', 'slate') }}{% endif %}
+        </div>
+        <div style="white-space:pre-wrap;font-size:12px;color:#0f172a;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;line-height:1.55;">{{ d.edited_text if d.status == 'edited' else d.text }}</div>
+        {% if d.status == 'edited' %}
+        <details style="margin-top:4px;"><summary style="cursor:pointer;font-size:11px;color:#64748b;">Original AI draft</summary>
+          <div style="white-space:pre-wrap;font-size:11px;color:#64748b;margin-top:4px;">{{ d.text }}</div></details>
+        {% endif %}
+        {% if d.claims_to_verify %}
+        <div style="margin-top:6px;padding:6px 10px;border-radius:6px;background:#fffbeb;border:1px solid #fde68a;font-size:11px;color:#92400e;">
+          Verify before using:
+          <ul style="margin:2px 0 0 16px;padding:0;">{% for c in d.claims_to_verify %}<li>{{ c }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+        {% for w in d.warnings %}<div style="margin-top:4px;font-size:11px;color:#92400e;">{{ w }}</div>{% endfor %}
+
+        {% if d.status == 'pending' %}
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+          <button type="button" class="gap-btn" data-do="accept" style="padding:4px 12px;border-radius:6px;border:none;background:#16a34a;color:#fff;font-size:11px;font-weight:700;cursor:pointer;">Accept</button>
+          <button type="button" class="gap-btn" data-do="edit-open" style="padding:4px 12px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer;">Edit</button>
+          <button type="button" class="gap-btn" data-do="reject" style="padding:4px 12px;border-radius:6px;border:1px solid #fee2e2;background:#fff;color:#dc2626;font-size:11px;font-weight:700;cursor:pointer;">Reject</button>
+        </div>
+        <div class="gap-edit" style="display:none;margin-top:8px;">
+          <textarea rows="8" maxlength="3000" style="width:100%;font-size:12px;padding:8px;border:1px solid #cbd5e1;border-radius:6px;line-height:1.5;">{{ d.text }}</textarea>
+          <button type="button" class="gap-btn" data-do="edit-save" style="margin-top:4px;padding:4px 12px;border-radius:6px;border:none;background:#4f46e5;color:#fff;font-size:11px;font-weight:700;cursor:pointer;">Save my version</button>
+        </div>
+        {% elif d.status == 'rejected' %}
+        <button type="button" class="gap-btn" data-do="draft" style="margin-top:8px;padding:4px 12px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer;">Generate a new draft</button>
+        {% endif %}
+        {% else %}
+        <button type="button" class="gap-btn" data-do="draft" style="padding:4px 12px;border-radius:6px;border:1px solid #c7d2fe;background:#eef2ff;color:#4f46e5;font-size:11px;font-weight:700;cursor:pointer;">Draft this (1 AI call)</button>
+        {% endif %}
+        <div class="gap-msg" role="status" style="margin-top:4px;font-size:11px;min-height:14px;"></div>
+      </div>
+      {% else %}
+      <div style="margin-top:6px;font-size:11px;color:#94a3b8;">This changes the page’s structure or approach, so no draft text is produced.</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% endfor %}
+
+    {% if plan.rejected or plan.warnings %}
+    <details style="margin-top:8px;">
+      <summary style="cursor:pointer;font-size:11px;color:#64748b;">
+        {% if plan.rejected %}{{ plan.rejected|length }} AI suggestion{{ 's' if plan.rejected|length != 1 }} discarded{% endif %}{% if plan.rejected and plan.warnings %} · {% endif %}{% if plan.warnings %}{{ plan.warnings|length }} adjustment{{ 's' if plan.warnings|length != 1 }} made{% endif %}
+      </summary>
+      <ul style="margin:4px 0 0 16px;padding:0;font-size:11px;color:#64748b;line-height:1.6;">
+        {% for r in plan.rejected %}<li>Discarded {{ r.id }}: {{ r.reason }}</li>{% endfor %}
+        {% for w in plan.warnings %}<li>{{ w }}</li>{% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+    {% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  const PID = {{ project.id }};
+  const RUN = {{ gap_run.id if gap_run else 'null' }};
+  const form = document.getElementById('gap-form');
+  const runBtn = document.getElementById('gap-run-btn');
+  const statusEl = document.getElementById('gap-status');
+
+  function say(el, text, isError) {
+    el.textContent = text;                       // textContent, never innerHTML: messages can contain page text
+    el.style.color = isError ? '#dc2626' : '#64748b';
+  }
+
+  async function post(url, params) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(params || {}),
+    });
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* not JSON (e.g. a proxy timeout page) */ }
+    if (!res.ok) {
+      throw new Error(typeof data.detail === 'string' ? data.detail : 'The request failed (HTTP ' + res.status + ').');
+    }
+    return data;
+  }
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    runBtn.disabled = true;
+    say(statusEl, 'Running: fetching the search results and the competitor pages, then the AI. This can take a minute or two. Keep this tab open.', false);
+    try {
+      const data = await post('/projects/' + PID + '/competitors/gap-analysis', Object.fromEntries(new FormData(form)));
+      window.location.href = data.url;
+    } catch (err) {
+      say(statusEl, err.message + ' If this looked like a timeout, the analysis may still have finished: reload and check “Recent analyses”.', true);
+      runBtn.disabled = false;
+    }
+  });
+
+  const rerun = document.getElementById('gap-rerun');
+  if (rerun) {
+    rerun.addEventListener('click', function () {
+      form.elements.target_url.value = rerun.dataset.targetUrl;
+      form.elements.keyword.value = rerun.dataset.keyword;
+      form.elements.location.value = rerun.dataset.location;
+      form.elements.device.value = rerun.dataset.device;
+      form.requestSubmit();
+    });
+  }
+
+  document.querySelectorAll('.gap-btn').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      const card = btn.closest('[data-action-id]');
+      const actionId = card.dataset.actionId;
+      const msg = card.querySelector('.gap-msg');
+      const base = '/projects/' + PID + '/competitors/gap-analysis/' + RUN + '/actions/' + encodeURIComponent(actionId);
+      const what = btn.dataset.do;
+      if (what === 'edit-open') { card.querySelector('.gap-edit').style.display = 'block'; return; }
+      btn.disabled = true;
+      try {
+        if (what === 'draft') {
+          say(msg, 'Writing a draft (one AI call)…', false);
+          await post(base + '/draft');
+        } else if (what === 'edit-save') {
+          await post(base + '/decision', { decision: 'edit', text: card.querySelector('.gap-edit textarea').value });
+        } else {
+          await post(base + '/decision', { decision: what });
+        }
+        window.location.hash = 'action-' + actionId;
+        window.location.reload();
+      } catch (err) {
+        say(msg, err.message, true);
+        btn.disabled = false;
+      }
+    });
+  });
+})();
+</script>

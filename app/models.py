@@ -608,3 +608,85 @@ class CompetitorSnapshot(Base):
     backlinks_source = Column(String)  # which provider referring_domains/total_backlinks came from
     error = Column(Text)               # set (fields above stay NULL) if every provider call failed
     fetched_at = Column(DateTime, default=_utcnow)
+
+
+# ── AI Competitor Gap -> SEO Action Plan ─────────────────────────────────
+# Three NEW tables (created by Base.metadata.create_all at startup -- no
+# migration needed). Raw evidence (snapshots, gaps) is deliberately separate
+# from the AI's conclusions (run.action_plan_json), so a bad model answer can
+# never overwrite or fabricate the facts it was given.
+
+class CompetitorAnalysisRun(Base):
+    """One 'analyze this page for this keyword' run. status is the run's overall
+    outcome, using the codebase's ok / no_data / error discipline plus one
+    internal 'partial' (some competitor fetches failed): the UI must always show
+    'N of M competitors successfully analyzed', never a failed fetch as an empty
+    success."""
+    __tablename__ = "competitor_analysis_runs"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    page_id = Column(Integer, ForeignKey("pages.id"), nullable=True)  # the project's own crawled page, when there is one
+    target_url = Column(String, nullable=False)
+    keyword = Column(String, nullable=False)
+    location = Column(String)
+    device = Column(String, default="desktop")
+    status = Column(String, nullable=False, default="error")  # ok | partial | no_data | error
+    error = Column(Text)                                       # why, whenever status is error / no_data
+    source = Column(String)                                    # which SERP provider answered
+    serp_features = Column(JSON)
+    serp_total_results = Column(Integer)                       # organic results seen (before selection)
+    target_snapshot = Column(JSON)                             # the target page as analysed (headings, word count, ...)
+    intent = Column(JSON)                                      # {"label", "confidence", "signals": [...]}
+    format_distribution = Column(JSON)                         # e.g. {"guide": 4, "list": 2}
+    competitors_selected = Column(Integer)
+    competitors_analyzed = Column(Integer)                     # fetched AND usable
+    action_plan_json = Column(JSON)                            # validated AI plan, or NULL
+    plan_status = Column(String, default="not_run")            # not_run | ok | no_data | error
+    plan_error = Column(Text)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class CompetitorPageSnapshot(Base):
+    """One SERP result as fetched for a run. fetch_status is explicit per page
+    (ok / no_data / error); a failed page keeps its error text and NEVER looks
+    like a page that simply had no content."""
+    __tablename__ = "competitor_page_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    analysis_run_id = Column(Integer, ForeignKey("competitor_analysis_runs.id"), nullable=False)
+    url = Column(String, nullable=False)
+    position = Column(Integer)
+    result_class = Column(String)          # direct_content | publisher | forum | marketplace | government | social | homepage | category | other
+    selected = Column(Boolean, nullable=False, default=False)  # chosen as a comparable competitor
+    title = Column(Text)
+    h1 = Column(Text)
+    headings_json = Column(JSON)           # [{"tag": "h2", "text": "..."}]
+    text = Column(Text)                    # main text, truncated (evidence for analysis, never copied into content)
+    word_count = Column(Integer)           # shown as context only, never an optimisation target
+    fetch_method = Column(String)          # http | browser
+    fetch_status = Column(String)          # ok | no_data | error | skipped
+    extraction_confidence = Column(String) # high | medium | low
+    error = Column(Text)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class CompetitorGap(Base):
+    """One evidence-backed gap between the target page and the comparable
+    ranking pages. competitor_count / competitor_total are computed by the app
+    from the snapshots -- never supplied by the model. Drafts are NOT stored here:
+    a draft belongs to an ACTION (which can cite several gaps), so it lives inside
+    the run's action_plan_json next to that action."""
+    __tablename__ = "competitor_gaps"
+
+    id = Column(Integer, primary_key=True)
+    analysis_run_id = Column(Integer, ForeignKey("competitor_analysis_runs.id"), nullable=False)
+    gap_type = Column(String, nullable=False)       # topic | question | query | intent | format
+    label = Column(Text, nullable=False)            # the topic / question / query / intent / format
+    target_coverage = Column(String)                # covered | partial | missing | n/a
+    competitor_count = Column(Integer)
+    competitor_total = Column(Integer)
+    evidence_json = Column(JSON)                    # which competitors / headings / signals back this up
+    confidence = Column(String)                     # high | medium | low
+    recommended_action = Column(String)             # add | expand | rewrite | restructure | leave_unchanged | separate_page (filled from the validated plan)
+    created_at = Column(DateTime, default=_utcnow)
