@@ -1,19 +1,7 @@
 name: Deploy to EC2
 
 on:
-  push:
-    branches: [main]
-    # Merges that cannot change the running app do not restart production.
-    paths-ignore:
-      - "ai-seo-connector/**"
-      - "prompts/**"
-      - "docs/**"
-      - "tests/**"
-      - "AgentDailyLog/**"
-      - "LEARNING_JOURNAL.md"
-      - "*.md"
-      - ".github/workflows/test.yml"
-      - ".github/workflows/sync-plugin.yml"
+  workflow_dispatch: {}
 
 # One deploy at a time: two overlapping runs would race on the same server
 # (docker build, migrations, container restart).
@@ -76,7 +64,7 @@ jobs:
               "cd /opt/seo-automation",
               # Remember what is running now, so a rollback knows where to go back to.
               "sudo -u ec2-user bash -c 'git rev-parse HEAD > /opt/seo-automation/.app_commit.prev'",
-              "sudo -u ec2-user git pull origin main",
+              "sudo -u ec2-user bash -c 'git fetch origin && git checkout ${{ github.ref_name }} && git reset --hard origin/${{ github.ref_name }}'",
               # Record this deploy's commit; it ends up in the image and /version reports it.
               "sudo -u ec2-user bash -c 'git rev-parse HEAD > /opt/seo-automation/.app_commit'",
               "sudo -u ec2-user bash -c 'echo ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} > .env'",
@@ -161,7 +149,7 @@ jobs:
             fi
             if [ -n "$LIVE" ]; then
               # Pass if the server runs this commit, or a NEWER one deployed on top of it.
-              if [ "$LIVE" = "$EXPECTED" ] || { git fetch -q origin main && git merge-base --is-ancestor "$EXPECTED" "$LIVE"; }; then
+              if [ "$LIVE" = "$EXPECTED" ] || { git fetch -q origin ${{ github.ref_name }} && git merge-base --is-ancestor "$EXPECTED" "$LIVE"; }; then
                 MATCHED="yes"
                 break
               fi
