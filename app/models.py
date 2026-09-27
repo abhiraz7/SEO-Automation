@@ -757,6 +757,7 @@ class SuggestionOptimization(Base):
     problem = Column(Text)
     evidence_json = Column(JSON)                       # rebuilt by the APPLICATION from its own data, never taken from the model
     before_content = Column(Text)                      # the current text, resolved by the application; NULL for a new section
+    link_target = Column(Text)                         # improve_internal_link only: the ONE URL the edit may link to (re-checked when a person edits the text)
     confidence = Column(String)
     requires_fact_check = Column(Boolean, default=False)
     claims_to_verify = Column(JSON)
