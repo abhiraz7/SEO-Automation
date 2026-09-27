@@ -127,6 +127,15 @@ def get_evidence_run(db, project, inputs: dict, evidence_run_id: int | None = No
     return run, False
 
 
+def gather_evidence(db, project, page_id: int, keyword: str, location: str, device: str, refresh: bool = False):
+    """(analysis run, reused): step 1 of the two-step flow the page uses. Kept apart from
+    run_optimization so no single request has to wait for both the search evidence AND the
+    model; the run then names the analysis it should use."""
+    page = _get_page(db, project, page_id)
+    inputs = competitor_gap.validate_inputs(project, page.url, keyword, location, device)
+    return get_evidence_run(db, project, inputs, None, refresh)
+
+
 def _evidence_material(db, run: models.CompetitorAnalysisRun | None) -> dict:
     if run is None:
         return {"gaps": [], "competitor_texts": [], "competitor_domains": [], "serp_titles": []}

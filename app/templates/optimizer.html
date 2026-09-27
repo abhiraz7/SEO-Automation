@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+{% block title %}Content Optimizer — {{ project.name }}{% endblock %}
+
+{% block topbar %}
+<div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px;min-width:0;">
+  <div style="min-width:0;flex:1;">
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:3px;display:flex;align-items:center;gap:4px;">
+      <a href="/" style="color:#94a3b8;text-decoration:none;">Projects</a>
+      <span style="opacity:0.4;">/</span>
+      <span style="color:#0f172a;font-weight:600;">Content Optimizer</span>
+    </div>
+    <div style="font-size:14px;font-weight:700;color:#0f172a;">{{ project.name }}</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{# Everything on this page that came from a web page or from the model (titles, headings, drafts,
+   claims, reasons) goes through Jinja autoescape. The only |safe value is the word diff, which
+   app/services/text_diff.py builds from already-escaped fragments plus its own <ins>/<del>. #}
+
+{% macro chip(text, tone) -%}
+{%- set tones = {'green': ('#dcfce7', '#166534'), 'amber': ('#fef3c7', '#92400e'), 'red': ('#fee2e2', '#991b1b'), 'slate': ('#f1f5f9', '#475569'), 'indigo': ('#eef2ff', '#4f46e5'), 'violet': ('#ede9fe', '#5b21b6')} -%}
+{%- set c = tones.get(tone, tones['slate']) -%}
+<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:{{ c[0] }};color:{{ c[1] }};font-size:10px;font-weight:700;white-space:nowrap;">{{ text }}</span>
+{%- endmacro %}
+
+{% macro card(s, n, allow_actions) %}
+{%- set status_tone = {'pending': 'amber', 'accepted': 'green', 'edited': 'green', 'rejected': 'slate', 'deployed': 'indigo'} -%}
+{%- set prio_tone = {'high': 'red', 'medium': 'amber', 'low': 'slate'} -%}
+{%- set check_label = {'schema': 'Complete suggestion', 'structure': 'Structure', 'keyword_repetition': 'Keyword repetition', 'duplication': 'Duplication risk', 'competitor_copy': 'Original wording', 'fact_check': 'Facts', 'brand_tone': 'Brand and tone', 'cannibalization': 'Overlap with your other pages'} -%}
+{%- set icon = {'ok': ('✓', '#16a34a', 'passed'), 'warning': ('⚠', '#d97706', 'check this'), 'needs_human_verification': ('?', '#7c3aed', 'needs your verification'), 'blocked': ('✕', '#dc2626', 'blocked'), 'error': ('!', '#dc2626', 'could not run')} -%}
+{%- set needs_ack = s.requires_fact_check or s.claims_to_verify -%}
+<div id="sug-{{ s.suggestion_id }}" class="opt-card" data-sid="{{ s.suggestion_id }}"
+     style="border:1px solid #e2e8f0;border-left:4px solid {% if s.validation.status in ('blocked', 'error') %}#dc2626{% elif s.priority == 'high' %}#d97706{% else %}#94a3b8{% endif %};border-radius:8px;padding:12px 14px;margin-bottom:12px;background:#fff;">
+  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+    <span style="font-size:11px;font-weight:800;color:#64748b;letter-spacing:.04em;">ACTION{% if n %} #{{ n }}{% endif %}</span>
+    {{ chip(s.priority ~ ' priority', prio_tone.get(s.priority)) }}
+    {{ chip(s.confidence ~ ' confidence', 'slate') }}
+    {{ chip(s.status, status_tone.get(s.status)) }}
+    {% if s.live.live_status %}{{ chip('live: ' ~ s.live.live_status, 'indigo') }}{% endif %}
+  </div>
+  <div style="font-size:14px;font-weight:700;color:#0f172a;">{{ s.type_label }}: {{ s.target_label }}</div>
+  <div style="font-size:12px;color:#475569;margin-top:2px;line-height:1.5;">{{ s.problem }}</div>
+
+  <div style="font-size:11px;font-weight:700;color:#374151;margin:10px 0 3px;">Evidence</div>
+  <ul style="margin:0 0 0 16px;padding:0;font-size:12px;color:#475569;line-height:1.55;">
+    {% for e in s.evidence %}<li>{{ e.text }}</li>{% endfor %}
+  </ul>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:10px;">
+    <div>
+      <div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:3px;">BEFORE</div>
+      <div style="white-space:pre-wrap;font-size:12px;color:#334155;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;line-height:1.55;min-height:36px;overflow-wrap:anywhere;">{% if s.before %}{{ s.before }}{% else %}<span style="color:#94a3b8;">Nothing here yet: this is new content.</span>{% endif %}</div>
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:3px;">{% if s.status == 'edited' %}YOUR VERSION{% else %}AI DRAFT{% endif %} <span style="font-weight:500;color:#94a3b8;">(a draft: nothing is published automatically)</span></div>
+      <div style="white-space:pre-wrap;font-size:12px;color:#0f172a;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:8px 10px;line-height:1.55;min-height:36px;overflow-wrap:anywhere;">{{ s.final_text }}</div>
+    </div>
+  </div>
+  <details style="margin-top:6px;">
+    <summary style="cursor:pointer;font-size:11px;color:#4f46e5;">Show the changes</summary>
+    <div style="white-space:pre-wrap;font-size:12px;line-height:1.7;margin-top:4px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;overflow-wrap:anywhere;">{{ s.diff_html }}</div>
+  </details>
+  {% if s.status == 'edited' %}
+  <details style="margin-top:4px;"><summary style="cursor:pointer;font-size:11px;color:#64748b;">Original AI draft</summary>
+    <div style="white-space:pre-wrap;font-size:11px;color:#64748b;margin-top:4px;overflow-wrap:anywhere;">{{ s.after }}</div></details>
+  {% endif %}
+
+  <div style="font-size:11px;font-weight:700;color:#374151;margin:12px 0 3px;">Validation {{ chip(s.validation.status|replace('_', ' '), {'ok': 'green', 'warning': 'amber', 'needs_human_verification': 'violet', 'blocked': 'red', 'error': 'red'}.get(s.validation.status)) }}</div>
+  <ul style="list-style:none;margin:0;padding:0;font-size:12px;line-height:1.6;">
+    {% for c in s.validation.checks %}
+    {% set ic = icon.get(c.status, icon['error']) %}
+    <li style="display:flex;gap:6px;align-items:baseline;">
+      <span style="color:{{ ic[1] }};font-weight:800;width:14px;flex-shrink:0;text-align:center;">{{ ic[0] }}</span>
+      <span><strong>{{ check_label.get(c.name, c.name) }}</strong> <span style="color:{{ ic[1] }};">{{ ic[2] }}</span>{% if c.message %}<span style="color:#64748b;"> — {{ c.message }}</span>{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ul>
+
+  {% if s.claims_to_verify %}
+  <div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:#faf5ff;border:1px solid #e9d5ff;font-size:12px;color:#5b21b6;">
+    Check these against a reliable source before approving:
+    <ul style="margin:3px 0 0 16px;padding:0;">{% for c in s.claims_to_verify %}<li>{{ c }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  {% if allow_actions %}
+  <div style="margin-top:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+    {% if s.status in ('pending', 'rejected', 'accepted', 'edited') %}
+      {% if s.status in ('pending', 'rejected') %}
+      <button type="button" class="opt-btn" data-do="accept" {% if not s.ready or needs_ack %}disabled{% endif %} {% if needs_ack and s.ready %}data-needs-ack="1"{% endif %}
+              title="{% if not s.ready %}Blocked by validation: fix or edit it first{% elif needs_ack %}Tick the box to confirm you checked the claims{% endif %}"
+              style="padding:5px 14px;border-radius:6px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">Accept</button>
+      {% endif %}
+      <button type="button" class="opt-btn" data-do="edit-open" style="padding:5px 14px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:12px;font-weight:700;cursor:pointer;">Edit</button>
+      {% if s.status != 'rejected' %}
+      <button type="button" class="opt-btn" data-do="reject" style="padding:5px 14px;border-radius:6px;border:1px solid #fee2e2;background:#fff;color:#dc2626;font-size:12px;font-weight:700;cursor:pointer;">Reject</button>
+      {% endif %}
+      {% if s.ready and needs_ack and s.status in ('pending', 'rejected') %}
+      <label style="font-size:11px;color:#5b21b6;display:flex;gap:4px;align-items:center;"><input type="checkbox" class="opt-ack"> I checked the claims above</label>
+      {% endif %}
+      {% if s.status in ('accepted', 'edited') and s.deployable %}
+      <button type="button" class="opt-btn" data-do="deploy" style="padding:5px 14px;border-radius:6px;border:none;background:#4f46e5;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">Deploy to WordPress</button>
+      {% endif %}
+    {% elif s.status == 'deployed' %}
+      {% if s.live.live_revision_id %}
+      <button type="button" class="opt-btn" data-do="recheck" data-rid="{{ s.live.live_revision_id }}" style="padding:5px 14px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:12px;font-weight:700;cursor:pointer;">Re-check live page</button>
+      <button type="button" class="opt-btn" data-do="rollback" data-rid="{{ s.live.live_revision_id }}" style="padding:5px 14px;border-radius:6px;border:1px solid #fee2e2;background:#fff;color:#dc2626;font-size:12px;font-weight:700;cursor:pointer;">Roll back</button>
+      {% endif %}
+      {% if s.live.live_detail %}<span style="font-size:11px;color:#64748b;">{{ s.live.live_detail }}</span>{% endif %}
+    {% endif %}
+  </div>
+  {% if s.status in ('accepted', 'edited') and not s.deployable %}
+  <div style="margin-top:6px;font-size:11px;color:#64748b;">{{ s.deploy_note }}</div>
+  {% endif %}
+  <div class="opt-edit" style="display:none;margin-top:8px;">
+    <textarea rows="6" maxlength="6000" style="width:100%;font-size:12px;padding:8px;border:1px solid #cbd5e1;border-radius:6px;line-height:1.5;">{{ s.final_text }}</textarea>
+    <div style="font-size:11px;color:#64748b;margin:2px 0 4px;">Your edit is checked with the same rules before it is saved.</div>
+    <button type="button" class="opt-btn" data-do="edit-save" style="padding:5px 14px;border-radius:6px;border:none;background:#4f46e5;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">Save my version</button>
+  </div>
+  <div class="opt-msg" role="status" style="margin-top:4px;font-size:12px;min-height:16px;"></div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+<div style="padding:20px 24px;max-width:960px;">
+  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px 20px;margin-bottom:18px;">
+    <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:4px;">AI Content Optimizer</div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:14px;line-height:1.5;">
+      Pick one of your pages and a keyword. The tool compares the page with the pages that rank for it and proposes up to 5 small, specific edits, each backed by evidence and checked automatically before you see it as ready.
+      It can also say <em>no change recommended</em>. Every edit is a draft: you accept, edit or reject it, and nothing is published automatically.
+      Each run makes one search-results call (skipped if a recent analysis of this page and keyword exists) and one AI call.
+    </div>
+    <form id="opt-form" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
+      <label style="flex:3 1 260px;min-width:0;font-size:11px;color:#64748b;font-weight:600;">Page
+        <select name="page_id" required style="display:block;width:100%;margin-top:3px;font-size:12px;padding:7px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
+          <option value="">Choose a page…</option>
+          {% for p in pages %}<option value="{{ p.id }}" {% if run and run.page_id == p.id %}selected{% endif %}>{{ p.title }} — {{ p.url }}</option>{% endfor %}
+        </select>
+      </label>
+      <label style="flex:2 1 160px;min-width:0;font-size:11px;color:#64748b;font-weight:600;">Target keyword
+        <input type="text" name="keyword" required minlength="2" maxlength="200" value="{{ run.keyword if run else '' }}" placeholder="e.g. b ed admission"
+               style="display:block;width:100%;margin-top:3px;font-size:12px;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;">
+      </label>
+      <label style="flex:1 1 130px;min-width:0;font-size:11px;color:#64748b;font-weight:600;">Location
+        <select name="location" style="display:block;width:100%;margin-top:3px;font-size:12px;padding:7px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
+          {% for code, name in locations.items() %}<option value="{{ code }}" {% if code == (run.location if run else default_location) %}selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label style="flex:1 1 100px;min-width:0;font-size:11px;color:#64748b;font-weight:600;">Device
+        <select name="device" style="display:block;width:100%;margin-top:3px;font-size:12px;padding:7px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
+          <option value="desktop" {% if run and run.device == 'desktop' %}selected{% endif %}>Desktop</option>
+          <option value="mobile" {% if run and run.device == 'mobile' %}selected{% endif %}>Mobile</option>
+        </select>
+      </label>
+      <button id="opt-run-btn" type="submit" style="padding:8px 14px;border-radius:6px;border:none;background:#4f46e5;color:#fff;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">Find improvements</button>
+    </form>
+    <label style="display:inline-flex;gap:5px;align-items:center;margin-top:8px;font-size:11px;color:#64748b;"><input type="checkbox" form="opt-form" name="refresh"> Fetch fresh search results even if a recent analysis exists (costs one more search call)</label>
+    <div id="opt-status" role="status" style="margin-top:8px;font-size:12px;color:#64748b;min-height:16px;"></div>
+
+    {% if runs %}
+    <div style="margin-top:12px;border-top:1px solid #f1f5f9;padding-top:12px;">
+      <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:8px;">Recent runs</div>
+      {% for r in runs %}
+      <div style="border-top:1px solid #f1f5f9;padding:7px 8px;font-size:12px;{% if run and run.id == r.id %}background:#f8fafc;{% endif %}">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <a href="/projects/{{ project.id }}/optimizer?run={{ r.id }}" style="font-weight:600;color:#0f172a;text-decoration:none;overflow-wrap:anywhere;">{{ r.keyword }}</a>
+          {{ chip({'ok': 'Complete', 'no_change': 'No change', 'no_data': 'No data', 'error': 'Failed'}.get(r.status, r.status), {'ok': 'green', 'no_change': 'slate', 'no_data': 'slate', 'error': 'red'}.get(r.status)) }}
+          <span style="color:#94a3b8;font-size:11px;">{{ r.created_at ~ ' UTC' if r.created_at else '' }}</span>
+        </div>
+        <div style="color:#64748b;font-size:11px;overflow-wrap:anywhere;">{{ r.target_url }}</div>
+        <div style="{% if r.status == 'error' %}color:#b91c1c;{% else %}color:#475569;{% endif %}">{{ r.error if r.status in ('error', 'no_data') and r.error else r.summary_line }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  {% if run %}
+  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px 20px;margin-bottom:18px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+      <div style="font-size:14px;font-weight:700;color:#0f172a;">“{{ run.keyword }}”
+        <span style="font-size:11px;font-weight:500;color:#64748b;">· {{ locations.get(run.location, run.location) }} · {{ run.device }} · {{ run.created_at[:16].replace('T', ' ') if run.created_at else '' }} UTC</span></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        {{ chip({'ok': 'Complete', 'no_change': 'No change', 'no_data': 'No data', 'error': 'Failed'}.get(run.status, run.status), {'ok': 'green', 'no_change': 'slate', 'no_data': 'slate', 'error': 'red'}.get(run.status)) }}
+        <button type="button" id="opt-rerun" data-page-id="{{ run.page_id }}" data-keyword="{{ run.keyword }}" data-location="{{ run.location }}" data-device="{{ run.device }}"
+                style="padding:4px 10px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:11px;font-weight:700;cursor:pointer;">Re-run (fresh results)</button>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:10px;overflow-wrap:anywhere;">Page: {{ run.target_url }}</div>
+
+    {% if run.evidence %}
+    <div style="font-size:12px;color:#475569;margin-bottom:8px;">
+      Evidence: <strong>{{ run.evidence.summary_line }}</strong>
+      · {% if run.evidence.reused %}reused from a recent analysis ({{ run.evidence.created_at[:16].replace('T', ' ') if run.evidence.created_at else '' }} UTC){% else %}gathered for this run{% endif %}
+    </div>
+    {% for n in run.evidence.notices %}<div style="padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:11px;line-height:1.5;background:#fffbeb;border:1px solid #fde68a;color:#92400e;">{{ n }}</div>{% endfor %}
+    {% endif %}
+
+    {% if run.status == 'error' %}
+    <div style="padding:10px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;line-height:1.5;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;"><strong>This run failed.</strong> {{ run.error }}</div>
+    {% elif run.status == 'no_data' %}
+    <div style="padding:10px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;line-height:1.5;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;">{{ run.error }}</div>
+    {% elif run.status == 'no_change' %}
+    <div style="padding:10px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;line-height:1.5;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;"><strong>No change recommended.</strong> {{ run.no_change_reason }}</div>
+    {% endif %}
+
+    {% if run.suggestions %}
+    <div style="font-size:13px;font-weight:700;color:#0f172a;margin:14px 0 8px;">{{ run.summary_line }}</div>
+    {% for s in run.suggestions %}{{ card(s, s.number, true) }}{% endfor %}
+    {% endif %}
+
+    {% if run.discarded or run.warnings %}
+    <details style="margin-top:8px;">
+      <summary style="cursor:pointer;font-size:11px;color:#64748b;">
+        {% if run.discarded %}{{ run.discarded|length }} AI proposal{{ 's' if run.discarded|length != 1 }} not used{% endif %}{% if run.discarded and run.warnings %} · {% endif %}{% if run.warnings %}{{ run.warnings|length }} adjustment{{ 's' if run.warnings|length != 1 }} made{% endif %}
+      </summary>
+      <ul style="margin:4px 0 0 16px;padding:0;font-size:11px;color:#64748b;line-height:1.6;">
+        {% for d in run.discarded %}<li>{{ d.id }}: {{ d.reason }}</li>{% endfor %}
+        {% for w in run.warnings %}<li>{{ w }}</li>{% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </div>
+
+  {% if run.earlier_decisions %}
+  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px 20px;margin-bottom:18px;">
+    <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:4px;">Earlier decisions on this page</div>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">Suggestions from earlier runs that you accepted, edited or deployed. They are kept: a new run never removes them.</div>
+    {% for s in run.earlier_decisions %}{{ card(s, none, true) }}{% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  const PID = {{ project.id }};
+  const form = document.getElementById('opt-form');
+  const runBtn = document.getElementById('opt-run-btn');
+  const statusEl = document.getElementById('opt-status');
+
+  function say(el, text, isError) {
+    el.textContent = text;                      // textContent, never innerHTML: messages can contain page or model text
+    el.style.color = isError ? '#dc2626' : '#64748b';
+  }
+
+  async function call(url, opts) {
+    const res = await fetch(url, opts);
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* not JSON (e.g. a proxy timeout page) */ }
+    if (!res.ok) {
+      const d = data.detail;
+      throw new Error(typeof d === 'string' ? d : (d && d.message) || 'The request failed (HTTP ' + res.status + ').');
+    }
+    return data;
+  }
+  const post = (url, params) => call(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params || {}) });
+  const postJson = (url, obj) => call(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj || {}) });
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    runBtn.disabled = true;
+    const v = Object.fromEntries(new FormData(form));
+    try {
+      say(statusEl, 'Step 1 of 2: getting search evidence (reused if a recent analysis exists; otherwise this takes a minute or two)…', false);
+      const ev = await post('/projects/' + PID + '/optimizer/evidence', v);
+      say(statusEl, 'Step 2 of 2: writing and checking suggestions (' + ev.summary_line + ')…', false);
+      const out = await post('/projects/' + PID + '/optimizer/run', { page_id: v.page_id, keyword: v.keyword, location: v.location, device: v.device, evidence_run_id: ev.evidence_run_id });
+      window.location.href = out.url;
+    } catch (err) {
+      say(statusEl, err.message + ' If this looked like a timeout, the run may still have finished: reload and check “Recent runs”.', true);
+      runBtn.disabled = false;
+    }
+  });
+
+  const rerun = document.getElementById('opt-rerun');
+  if (rerun) {
+    rerun.addEventListener('click', function () {
+      form.elements.page_id.value = rerun.dataset.pageId;
+      form.elements.keyword.value = rerun.dataset.keyword;
+      form.elements.location.value = rerun.dataset.location;
+      form.elements.device.value = rerun.dataset.device;
+      form.elements.refresh.checked = true;
+      form.requestSubmit();
+    });
+  }
+
+  document.querySelectorAll('.opt-card').forEach(function (card) {
+    const sid = card.dataset.sid;
+    const msg = card.querySelector('.opt-msg');
+    const ack = card.querySelector('.opt-ack');
+    const accept = card.querySelector('[data-do=accept]');
+    if (ack && accept) { ack.addEventListener('change', function () { accept.disabled = !ack.checked; }); }
+
+    card.querySelectorAll('.opt-btn').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        const what = btn.dataset.do;
+        if (what === 'edit-open') { card.querySelector('.opt-edit').style.display = 'block'; return; }
+        if (what === 'deploy' && !confirm('Deploy this change to your live WordPress site? You can roll it back afterwards.')) { return; }
+        if (what === 'rollback' && !confirm('Roll this change back on the live site?')) { return; }
+        btn.disabled = true;
+        try {
+          if (what === 'accept' || what === 'reject') { await post('/suggestions/' + sid + '/' + what); }
+          else if (what === 'edit-save') { await postJson('/suggestions/' + sid + '/edit', { content: card.querySelector('.opt-edit textarea').value }); }
+          else if (what === 'deploy') { say(msg, 'Deploying…', false); await postJson('/suggestions/' + sid + '/deploy', {}); }
+          else if (what === 'rollback') { await post('/revisions/' + btn.dataset.rid + '/rollback'); }
+          else if (what === 'recheck') { say(msg, 'Checking the live page…', false); await post('/revisions/' + btn.dataset.rid + '/verify'); }
+          window.location.hash = 'sug-' + sid;
+          window.location.reload();
+        } catch (err) {
+          say(msg, err.message, true);
+          btn.disabled = false;
+        }
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}

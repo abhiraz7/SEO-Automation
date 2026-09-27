@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from . import build_info, schema_check, scheduler as job_scheduler
 from .database import Base, engine
-from .routes import audit, competitors, crawl, jobs, keywords, links, onpage_semrush, projects, security, settings, suggestions, visibility, wordpress
+from .routes import audit, competitors, crawl, jobs, keywords, links, onpage_semrush, optimizer, projects, security, settings, suggestions, visibility, wordpress
 
 Base.metadata.create_all(bind=engine)
 schema_check.log_drift_at_startup(engine)
@@ -39,6 +39,7 @@ app.include_router(settings.router)
 app.include_router(security.router)
 app.include_router(visibility.router)
 app.include_router(competitors.router)
+app.include_router(optimizer.router)
 app.include_router(links.router)
 
 
