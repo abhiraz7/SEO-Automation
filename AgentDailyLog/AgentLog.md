@@ -1573,3 +1573,34 @@ real WordPress install yet.
 
 ### Not verified
 - The WAL explanation is inferred, not reproduced. Badges/re-check wording never viewed in a browser. Real cache expiry between re-check attempts. Refusal on real AIOSEO/SEOPress sites. End-to-end term deploy through the UI.
+
+
+## 2026-09-27 (overnight) — Built the AI Competitor Gap Analysis and the AI Content Optimizer (PRs only: nothing merged, nothing deployed)
+
+### Built
+- **Feature 1, platform PR #19 (draft, CI green):** per-page competitor gap analysis. Live SERP -> up to 7 comparable competitors (own domain, forums, marketplaces, social, home and category pages excluded) -> each page fetched once (SSRF-guarded, headless browser only for JS-only pages) -> deterministic gaps (topics, questions, queries, intent, format) -> AI action plan that can only cite numbered evidence -> optional atomic drafts to accept, edit or reject. No SEO score. 3 new tables, no migration. 360 new tests.
+- **Feature 2, branch `feature/ai-content-optimizer` (stacked on Feature 1, NOT pushed at the time of writing):** page + keyword -> reuse or gather evidence -> at most 5 atomic suggestions (title, meta, heading, add/expand/rewrite section, FAQ, internal link) -> 8 deterministic validation checks -> stored as ordinary Suggestions -> reviewed with the EXISTING accept / edit / reject / deploy / rollback routes. Only title, meta description and H1 can be deployed (all the connector can write). 2 new tables, no migration. About 370 more tests (948 in total).
+- Existing code changed for Feature 2: suggestions.py (accept / edit / legacy-generate guards), wordpress.py (deploy guard), onpage_semrush.py, routes/audit.py, jobs/handlers/audit.py (they must not delete optimizer issues), sidebar, main.py.
+
+### Decisions worth knowing
+- **New tables, not new columns:** the user types migrations; a side table (suggestion_optimizations) keeps this PR migration-free. Trade-off: one extra join.
+- **The Issue bridge is fragile:** the on-page refresh deletes every Issue the provider no longer flags (cascading to accepted/deployed suggestions), and the audit that follows every crawl bulk-deletes all Issues. Optimizer issues use the rule prefix `opt_` and all three paths skip them (LIKE wildcard escaped: `optimized_title` is still an ordinary audit rule).
+- **The model can cite, never assert:** it returns evidence ids and a target id; the application rebuilds every count and looks up every "before" text itself.
+- **A blocked suggestion is stored and shown**, with reasons, but cannot be accepted, edited into approval, or deployed (enforced server-side on accept, edit and deploy).
+- BusinessProfile has no language or forbidden-phrase field, so those checks use built-in rules and the page's language; adding fields would need a migration (not done).
+
+### Mistakes made and fixed
+- Tests that could not fail: mutation testing (about 100 deliberate code breaks) found several, including one where an invented internal-link URL would have passed. Each got a test that goes red.
+- A repeated-phrase check blamed an edit for repetition the page already had; tokenizers shredded Devanagari and cut "B.Ed?" at the dot; a disabled Accept button looked enabled. All fixed after a test or the browser showed them.
+- The Feature 2 branch was tracking `origin/main`; caught before any push. Pushes use an explicit branch name only.
+- A local dev database kept a table without a column added later (`create_all` never alters tables): the schema-drift check caught it. Local file only.
+
+### Not verified
+- **Nothing has run against a live search provider, a live AI provider or a live site.** Everything is mocked; the browser checks used mocks with a guard that fails on any real provider call. Suggestion QUALITY on real pages is unknown.
+- Request duration: both analyses run inside one HTTP request (Feature 2 splits evidence and AI into two requests); any proxy timeout in front of the app is unknown.
+- Concurrency guards are per process. The SSRF guard resolves then connects (no IP pinning); the browser fallback checks only the top-level URL.
+- Content-level drafts (sections, FAQ, links, H2) cannot be deployed by the existing deployers.
+
+### Still to do
+- A supervised trial on one non-critical page with real keys, then read the real suggestions critically before any merge.
+- If wanted: move analysis onto the job queue; add forbidden-phrase and language fields to the business profile (needs a migration the user types).
