@@ -558,3 +558,99 @@ def test_recent_runs_are_newest_first_limited_and_scoped_to_the_project(db):
     assert rows[0]["summary_line"] == "5 of 5 comparable competitors successfully analysed" and rows[0]["status"] == "ok"
     assert [r["keyword"] for r in cg.recent_runs(db, other.id)] == ["someone else's keyword"]
     assert cg.recent_runs(db, other.id)[0]["status"] == "error"
+
+
+# ── every failure is logged (once, with the reason the user sees) ─────────
+
+import logging
+
+GAP_LOG = "competitor_gap"
+
+
+def warnings_in(caplog):
+    return [r for r in caplog.records if r.name == GAP_LOG and r.levelno >= logging.WARNING]
+
+
+def test_a_successful_run_logs_no_warning(db, caplog):
+    project, _ = make_project(db)
+    with caplog.at_level(logging.INFO, logger=GAP_LOG):
+        out, *_ = run(db, project)
+    assert out.status == "ok" and warnings_in(caplog) == []
+
+
+def test_a_search_provider_failure_is_logged_once_with_the_reason(db, caplog):
+    project, _ = make_project(db)
+    with caplog.at_level(logging.INFO, logger=GAP_LOG):
+        out, *_ = run(db, project, serp=se.normalize_serp({"error": "dataforseo: 402 payment required; semrush: no key"}))
+    recs = warnings_in(caplog)
+    assert len(recs) == 1 and recs[0].levelno == logging.WARNING
+    msg = recs[0].getMessage()
+    assert msg.startswith("gap.run_failed ") and f"run={out.id}" in msg and "402 payment required" in msg and "keyword=" in msg and "market=IN" in msg
+
+
+def test_too_little_evidence_is_logged_as_no_data_not_as_a_failure_event(db, caplog):
+    project, _ = make_project(db)
+    with caplog.at_level(logging.INFO, logger=GAP_LOG):
+        run(db, project, serp=se.normalize_serp({"items": [], "_source": "dataforseo"}))
+    recs = warnings_in(caplog)
+    assert len(recs) == 1 and recs[0].getMessage().startswith("gap.run_no_data ")
+
+
+def test_each_competitor_page_that_could_not_be_analysed_is_logged_with_its_reason(db, caplog):
+    project, _ = make_project(db)
+    results = full_results()
+    results[COMP_URLS[3]] = page_result(status="error", error="blocked (HTTP 403: login, paywall or access control)")
+    results[COMP_URLS[4]] = page_result(status="no_data", error="the page had no extractable text")
+    with caplog.at_level(logging.INFO, logger=GAP_LOG):
+        out, *_ = run(db, project, results=results)
+    msgs = [r.getMessage() for r in warnings_in(caplog)]
+    assert out.status == "partial" and len(msgs) == 2 and all(m.startswith("gap.page_fetch_failed ") for m in msgs)
+    assert any(COMP_URLS[3] in m and "status=error" in m and "403" in m for m in msgs) and any(COMP_URLS[4] in m and "status=no_data" in m for m in msgs)
+
+
+def test_an_ai_plan_failure_is_logged(db, caplog):
+    project, _ = make_project(db)
+    with caplog.at_level(logging.INFO, logger=GAP_LOG):
+        run(db, project, plan_effect=AIGenerationError("AI provider call failed: 529"))
+    msgs = [r.getMessage() for r in warnings_in(caplog)]
+    assert len(msgs) == 1 and msgs[0].startswith("gap.plan_failed ") and "529" in msgs[0]
+
+
+def test_ai_proposals_rejected_for_lack_of_evidence_are_logged_with_reasons(db, caplog):
+    project, _ = make_project(db)
+    plan = {"status": "no_data", "actions": [], "rejected": [{"id": "a1", "reason": "cites no evidence"}, {"id": "a2", "reason": "claims Google requires something"}], "warnings": []}
+    with caplog.at_level(logging.INFO, logger=GAP_LOG):
+        run(db, project, plan=plan)
+    msgs = [r.getMessage() for r in warnings_in(caplog)]
+    assert len(msgs) == 1 and msgs[0].startswith("gap.plan_proposals_rejected ") and "rejected=2" in msgs[0] and "cites no evidence" in msgs[0] and "Google requires" in msgs[0]
+
+
+def test_a_crash_is_logged_as_an_error_with_a_traceback_and_the_run_failure_too(db, caplog):
+    project, _ = make_project(db)
+    with caplog.at_level(logging.INFO, logger=GAP_LOG):
+        with patch.object(cg.gap_analysis, "analyse", side_effect=RuntimeError("kaboom")):
+            run(db, project)
+    crash = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(crash) == 1 and crash[0].getMessage().startswith("gap.run_crashed ") and crash[0].exc_info and "kaboom" in caplog.text
+    assert any(r.getMessage().startswith("gap.run_failed ") and "Unexpected error: kaboom" in r.getMessage() for r in caplog.records)
+
+
+def test_a_failed_draft_generation_is_logged_and_still_raises(db, caplog):
+    r = make_run_with_plan(db)
+    with caplog.at_level(logging.INFO, logger=GAP_LOG):
+        with patch.object(cg.ai_provider, "generate_gap_draft", side_effect=AIGenerationError("no good draft")):
+            with pytest.raises(AIGenerationError):
+                cg.generate_draft(db, r, "action_001")
+    msgs = [x.getMessage() for x in warnings_in(caplog)]
+    assert len(msgs) == 1 and msgs[0].startswith("gap.draft_failed ") and "action=action_001" in msgs[0] and "no good draft" in msgs[0]
+
+
+def test_input_and_busy_errors_are_the_users_mistakes_not_system_failures_and_are_not_logged(db, caplog):
+    project, _ = make_project(db)
+    cg._running.add(project.id)
+    with caplog.at_level(logging.INFO, logger=GAP_LOG):
+        with pytest.raises(cg.BusyError):
+            cg.run_analysis(db, project, TARGET, KW, "IN", "desktop")
+        with pytest.raises(cg.InputError):
+            cg.validate_inputs(project, "https://other.com/x", KW, "IN", "desktop")
+    assert warnings_in(caplog) == []

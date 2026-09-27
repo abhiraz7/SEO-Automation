@@ -30,7 +30,7 @@ from .. import ai_provider, models
 from ..ai_errors import AIGenerationError
 from ..domain_utils import normalize_domain
 from ..keyword_locations import supported_locations
-from . import action_plan, gap_analysis, page_evidence, serp_evidence
+from . import action_plan, failure_log, gap_analysis, page_evidence, serp_evidence
 
 logger = logging.getLogger("competitor_gap")
 
@@ -130,6 +130,12 @@ def _finish(db, run: models.CompetitorAnalysisRun, status: str, error: str | Non
     run.status = status
     run.error = error
     db.commit()
+    # The ONE place a run ends badly, so every failure (an unreadable target page, a
+    # search-provider error, too little evidence, a crash) is logged exactly once, with
+    # the same reason the user sees on the page.
+    if status in ("error", "no_data"):
+        failure_log.failure(logger, "gap.run_failed" if status == "error" else "gap.run_no_data",
+                            run=run.id, project=run.project_id, keyword=run.keyword, market=run.location, device=run.device, reason=error)
     return run
 
 
@@ -157,7 +163,7 @@ def run_analysis(db, project: models.Project, target_url: str, keyword: str, loc
         try:
             _execute(db, run, project, page)
         except Exception as exc:  # noqa: BLE001 -- last resort: per-stage failures are handled inside _execute
-            logger.exception("competitor gap analysis %s crashed", run_id)
+            failure_log.crash(logger, "gap.run_crashed", run=run_id, project=project.id)     # our bug: with the traceback
             db.rollback()
             run = db.get(models.CompetitorAnalysisRun, run_id)
             _finish(db, run, "error", f"Unexpected error: {exc}")
@@ -226,6 +232,8 @@ def _execute(db, run: models.CompetitorAnalysisRun, project: models.Project, pag
         snap.h1, snap.headings_json, snap.text = f["h1"], f["headings"], f["text"]
         snap.word_count, snap.fetch_method = f["word_count"], f["fetch_method"]
         snap.fetch_status, snap.extraction_confidence, snap.error = f["status"], f["extraction_confidence"], f["error"]
+        if f["status"] != "ok":
+            failure_log.failure(logger, "gap.page_fetch_failed", run=run.id, position=r["position"], url=r["url"], status=f["status"], method=f["fetch_method"], reason=f["error"])
         if f["status"] == "ok":
             usable.append({
                 "position": r["position"], "domain": r["domain"], "url": r["url"], "title": f["title"], "h1": f["h1"],
@@ -300,10 +308,14 @@ def _plan_stage(db, run, project, target, serp, rows, analysis) -> None:
     try:
         plan = ai_provider.generate_action_plan(db, bundle, profile)
     except AIGenerationError as exc:
-        logger.warning("action plan for run %s failed: %s", run.id, exc)
+        failure_log.failure(logger, "gap.plan_failed", run=run.id, project=run.project_id, reason=str(exc))
         run.plan_status, run.plan_error = "error", str(exc)
         db.commit()
         return
+    if plan["rejected"]:
+        # The AI answered, but some (or all) of its actions were not backed by the evidence it was given.
+        failure_log.failure(logger, "gap.plan_proposals_rejected", run=run.id, rejected=len(plan["rejected"]), kept=len(plan["actions"]),
+                            reasons=[f"{r['id']}: {r['reason']}" for r in plan["rejected"][:5]])
     run.action_plan_json = {"actions": plan["actions"], "rejected": plan["rejected"], "warnings": plan["warnings"], "generated_at": _now()}
     run.plan_status = "ok" if plan["actions"] else "no_data"
     run.plan_error = None if plan["actions"] else "The AI's suggestions were all rejected because they were not backed by the supplied evidence."
@@ -434,7 +446,11 @@ def generate_draft(db, run: models.CompetitorAnalysisRun, action_id: str) -> dic
                        "excerpt": ts.get("excerpt")},
         }
         profile = db.query(models.BusinessProfile).filter(models.BusinessProfile.project_id == run.project_id).first()
-        result = ai_provider.generate_gap_draft(db, bundle, action, competitor_texts, profile)
+        try:
+            result = ai_provider.generate_gap_draft(db, bundle, action, competitor_texts, profile)
+        except AIGenerationError as exc:
+            failure_log.failure(logger, "gap.draft_failed", run=run.id, action=action_id, reason=str(exc))
+            raise
         draft = {"text": result["draft"], "status": "pending", "claims_to_verify": result["claims_to_verify"],
                  "warnings": result["warnings"], "generated_at": _now()}
         _save_action(db, run, action_id, draft=draft)

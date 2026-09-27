@@ -243,6 +243,7 @@ def _browser_fetch(url: str) -> dict:
             proc = subprocess.run(
                 [sys.executable, "-c", _BROWSER_SNIPPET, url],
                 capture_output=True, text=True, timeout=BROWSER_TIMEOUT_SECONDS, cwd=_REPO_ROOT,
+                stdin=subprocess.DEVNULL,           # the child never reads stdin; an inherited handle can be invalid (WinError 6) or block
             )
     except subprocess.TimeoutExpired:
         return {"error": f"browser fetch timed out after {BROWSER_TIMEOUT_SECONDS}s"}
