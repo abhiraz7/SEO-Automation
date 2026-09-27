@@ -5,10 +5,11 @@ load_dotenv()
 
 from fastapi import FastAPI
 
-from . import build_info, schema_check, scheduler as job_scheduler
+from . import build_info, logging_setup, schema_check, scheduler as job_scheduler
 from .database import Base, engine
 from .routes import audit, competitors, crawl, jobs, keywords, links, onpage_semrush, optimizer, projects, security, settings, suggestions, visibility, wordpress
 
+logging_setup.configure_logging()   # timestamps + levels on every WARNING and above, before anything below can log
 Base.metadata.create_all(bind=engine)
 schema_check.log_drift_at_startup(engine)
 
