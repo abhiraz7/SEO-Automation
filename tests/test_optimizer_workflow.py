@@ -290,3 +290,109 @@ def test_legacy_deploy_is_unchanged(db, plugin):
     rev = deploy(db, s)
     plugin.set_meta.assert_called_once_with(SITE, "tok", 77, seo_title="Legacy title")
     assert rev["after_value"] == "Legacy title"
+
+
+# ── refusals and WordPress failures are logged; legitimate use is silent ──
+
+import logging
+
+
+def warn_records(caplog):
+    return [r for r in caplog.records if r.name in ("content_optimizer", "wordpress_deploy", "optimizer_validation") and r.levelno >= logging.WARNING]
+
+
+def test_approving_deploying_and_editing_a_good_suggestion_logs_nothing(db, plugin, caplog):
+    _, _, s = make(db)
+    with caplog.at_level(logging.INFO):
+        sr.edit_suggestion(s.id, sr.SuggestionEditIn(content="B.Ed admission: a complete guide for teachers"), db)
+        sr.accept_suggestion(s.id, db)
+        rev = deploy(db, s)
+        wp_routes.rollback_revision(rev["id"], db)
+    assert warn_records(caplog) == []
+
+
+def test_a_refused_accept_is_logged_with_the_suggestion_and_the_reasons(db, caplog):
+    _, _, s = make(db, validation_status="blocked", checks=BLOCKED_CHECKS)
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(HTTPException):
+            sr.accept_suggestion(s.id, db)
+    recs = warn_records(caplog)
+    assert len(recs) == 1 and recs[0].levelno == logging.WARNING
+    msg = recs[0].getMessage()
+    assert msg.startswith("optimizer.approval_refused ") and "action=accept" in msg and f"suggestion={s.id}" in msg and "Duplication risk" in msg
+
+
+def test_a_refused_edit_is_logged_and_the_text_the_person_typed_is_not(db, caplog):
+    _, _, s = make(db)
+    typed = "b ed admission | b ed admission | b ed admission"
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(HTTPException):
+            sr.edit_suggestion(s.id, sr.SuggestionEditIn(content=typed), db)
+    msgs = [r.getMessage() for r in warn_records(caplog)]
+    assert len(msgs) == 1 and msgs[0].startswith("optimizer.approval_refused ") and "action=edit" in msgs[0] and "keyword_repetition" in msgs[0]
+    assert typed not in caplog.text
+
+
+def test_a_refused_deploy_is_logged(db, plugin, caplog):
+    _, _, s = make(db, status="accepted", validation_status="blocked", checks=BLOCKED_CHECKS)
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(HTTPException):
+            deploy(db, s)
+    msgs = [r.getMessage() for r in warn_records(caplog)]
+    assert len(msgs) == 1 and "action=deploy" in msgs[0] and f"suggestion={s.id}" in msgs[0]
+
+
+def test_a_wordpress_write_failure_is_logged_with_the_reason(db, plugin, caplog):
+    _, _, s = make(db, status="accepted")
+    plugin.set_meta.return_value = wordpress.WordPressResult(status="error", error="HTTP 500 from the plugin")
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(HTTPException) as e:
+            deploy(db, s)
+    assert e.value.status_code == 502
+    msgs = [r.getMessage() for r in warn_records(caplog)]
+    assert len(msgs) == 1 and msgs[0].startswith("wp.deploy_failed ") and f"suggestion={s.id}" in msgs[0] and "field=title" in msgs[0] and "HTTP 500 from the plugin" in msgs[0]
+    assert db.query(models.SuggestionRevision).count() == 0
+
+
+def test_a_wordpress_read_failure_is_logged(db, plugin, caplog):
+    _, _, s = make(db, status="accepted")
+    plugin.get_meta.return_value = wordpress.WordPressResult(status="error", error="connection timed out")
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(HTTPException) as e:
+            deploy(db, s)
+    assert e.value.status_code == 502
+    msgs = [r.getMessage() for r in warn_records(caplog)]
+    assert len(msgs) == 1 and msgs[0].startswith("wp.deploy_read_failed ") and "connection timed out" in msgs[0]
+    plugin.set_meta.assert_not_called()
+
+
+def test_a_failed_rollback_is_logged(db, plugin, caplog):
+    _, _, s = make(db, status="accepted")
+    rev = deploy(db, s)
+    plugin.set_meta.return_value = wordpress.WordPressResult(status="error", error="site unreachable")
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(HTTPException):
+            wp_routes.rollback_revision(rev["id"], db)
+    msgs = [r.getMessage() for r in warn_records(caplog)]
+    assert len(msgs) == 1 and msgs[0].startswith("wp.rollback_failed ") and f"revision={rev['id']}" in msgs[0] and "site unreachable" in msgs[0]
+    assert db.get(models.Suggestion, s.id).status == "deployed"                       # nothing was rolled back, and the record still says so
+
+
+def test_a_legacy_suggestions_deploy_failure_is_logged_too(db, plugin, caplog):
+    project = models.Project(name="P", base_url=SITE)
+    db.add(project)
+    db.flush()
+    page = models.Page(project_id=project.id, url="https://site.com/some-post/", wp_post_id=77)
+    db.add(page)
+    db.flush()
+    issue = models.Issue(project_id=project.id, page_id=page.id, category="title", rule="too_short", message="m")
+    db.add(issue)
+    db.flush()
+    s = models.Suggestion(project_id=project.id, page_id=page.id, issue_id=issue.id, content="Legacy title", content_hash="h", status="accepted")
+    db.add(s)
+    db.commit()
+    plugin.set_meta.return_value = wordpress.WordPressResult(status="error", error="HTTP 500")
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(HTTPException):
+            deploy(db, s)
+    assert [r.getMessage().split(" ")[0] for r in warn_records(caplog)] == ["wp.deploy_failed"]

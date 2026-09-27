@@ -1604,3 +1604,25 @@ real WordPress install yet.
 ### Still to do
 - A supervised trial on one non-critical page with real keys, then read the real suggestions critically before any merge.
 - If wanted: move analysis onto the job queue; add forbidden-phrase and language fields to the business profile (needs a migration the user types).
+
+
+## 2026-09-27 (morning) — Owner decisions; every failure is now logged
+
+### Decisions (owner)
+- **New tables instead of new columns on `suggestions`: keep.** The product will be sold to several agencies; a new table is created on any install at startup, with no migration to run on each customer's database (migration 025 was lost twice).
+- **Blocked suggestions stay visible, and every failure must be logged.**
+
+### Built
+- `services/failure_log.py`: one greppable line per failure, `event key=value ...`. `failure` = WARNING (the system worked but something it depends on or produced was unusable), `crash` = ERROR with traceback (our own code broke), `note` = INFO. Values are one line and truncated; a field whose NAME is a secret (api_key, token, password...) is never written; draft and page text are never logged.
+- `logging_setup.py`, called from `main.py`: the app had no logging configuration, so warnings reached `docker logs` as bare text. Now every WARNING and above has a timestamp, level and logger name. Level is WARNING on purpose (library INFO would bury failures).
+- Logged now: every optimizer or gap-analysis run that ends as error or no_data (once, with the reason shown on the page), each competitor page that could not be analysed, AI plan and draft failures, AI proposals rejected or discarded (with reason), each suggestion the checks blocked (which checks and why), a validation check that crashed (traceback), each refused accept / edit / deploy of a blocked suggestion, and WordPress read / write / rollback failures (this also covers legacy suggestions).
+- The browser-fetch subprocess no longer inherits stdin (it caused `WinError 6` in a host with no stdin).
+- 1004 tests pass; the logging was mutation-tested (each log call silenced, a test goes red) and shown in a local demo.
+
+### Found (not fixed)
+- **The app has no users, logins or tenants.** Anyone who can reach it sees every project. Selling to several agencies needs either one install per agency, or authentication plus tenant isolation on every table. Not started.
+- PostgreSQL: all 27 migrations are raw `sqlite3` scripts and `DATABASE_URL` is hard-coded. Recommendation: stay on SQLite for now; before a move, make the URL an environment variable, run the test suite against Postgres in CI, and adopt Alembic. Open question: is the SQLite file backed up off the server?
+
+### Not verified
+- The log lines were verified in tests and a local demo, not on the real server's `docker logs`.
+- PR #19's description on GitHub does not mention the failure logging yet (no network to run `gh pr edit`).

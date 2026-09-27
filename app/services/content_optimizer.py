@@ -33,7 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from .. import ai_provider, deploy_status, models
 from ..ai_errors import AIGenerationError
 from ..domain_utils import normalize_domain
-from . import competitor_gap, optimizer_page, optimizer_plan, optimizer_validation as ov, text_diff
+from . import competitor_gap, failure_log, optimizer_page, optimizer_plan, optimizer_validation as ov, text_diff
 
 logger = logging.getLogger("content_optimizer")
 
@@ -188,6 +188,15 @@ def _finish(db, run: models.ContentOptimizationRun, status: str, error: str | No
     if notes is not None:
         run.notes = notes
     db.commit()
+    # The ONE place a run ends, so a failure is logged exactly once, with the same reason
+    # the page shows. (A failed search, an unusable AI answer and a crash all end here.)
+    fields = dict(run=run.id, project=run.project_id, keyword=run.keyword, market=run.location, device=run.device)
+    if status == "error":
+        failure_log.failure(logger, "optimizer.run_failed", **fields, reason=error)
+    elif status == "no_data":
+        failure_log.failure(logger, "optimizer.run_no_data", **fields, reason=error)
+    elif status == "no_change":
+        failure_log.note(logger, "optimizer.no_change", **fields)         # a real answer, not a failure
     return run
 
 
@@ -218,7 +227,7 @@ def run_optimization(db, project, page_id: int, keyword: str, location: str, dev
         try:
             _execute(db, run, project, page, evidence_run)
         except Exception as exc:  # noqa: BLE001 -- last resort: per-stage failures are handled inside _execute
-            logger.exception("content optimization %s crashed", run_id)
+            failure_log.crash(logger, "optimizer.run_crashed", run=run_id, project=project.id)      # our bug: with the traceback
             db.rollback()
             run = db.get(models.ContentOptimizationRun, run_id)
             _finish(db, run, "error", f"Unexpected error: {exc}")
@@ -260,13 +269,16 @@ def _execute(db, run, project, page, evidence_run) -> None:
     try:
         answer = ai_provider.generate_optimizer_suggestions(db, bundle, a["profile"])
     except AIGenerationError as exc:
-        logger.warning("optimizer run %s: AI failed: %s", run.id, exc)
-        _finish(db, run, "error", f"The AI could not produce usable suggestions: {exc}")
+        _finish(db, run, "error", f"The AI could not produce usable suggestions: {exc}")      # logged by _finish
         return
 
     # 4. resolve against the application's own data
     resolved = optimizer_plan.resolve_suggestions(answer["items"], answer["malformed"], bundle)
     notes = {"discarded": resolved["discarded"], "warnings": resolved["warnings"], "no_change_reason": answer["no_change_reason"]}
+    for d in resolved["discarded"][:10]:
+        # An AI proposal that was unusable (unsupported type, no evidence, a target that does
+        # not fit...): the AI's mistake, recorded even when the rest of the run succeeds.
+        failure_log.failure(logger, "optimizer.proposal_discarded", run=run.id, proposal=d["id"], reason=d["reason"])
     if not resolved["suggestions"]:
         if not answer["items"] and not answer["malformed"]:
             notes["no_change_reason"] = answer["no_change_reason"] or NO_CHANGE
@@ -329,6 +341,25 @@ def _target_label(model: dict, type_: str, target_ref: str) -> str:
     return "New section" if type_ == "add_section" else "New FAQ entry" if type_ == "add_faq" else "New content"
 
 
+def _log_validation(run, s: dict, validation: dict) -> None:
+    """A suggestion the checks BLOCKED (or could not check) is a failure of the AI's draft:
+    logged with which checks said so and why. Warnings and 'needs verification' are for a
+    person to weigh, not failures, so they are INFO only."""
+    bad = [c for c in validation["checks"] if c["status"] in ("blocked", "error")]
+    fields = dict(run=run.id, type=s["type"], target=s["target_ref"], status=validation["status"])
+    if bad:
+        failure_log.failure(logger, "optimizer.suggestion_blocked", **fields, checks=[c["name"] for c in bad],
+                            reasons=[f"{c['name']}: {c.get('message', c['status'])}" for c in bad])
+    elif validation["status"] != "ok":
+        failure_log.note(logger, "optimizer.suggestion_flagged", **fields)
+
+
+def log_refusal(action: str, suggestion_id: int, reasons: list[str]) -> None:
+    """A blocked suggestion was refused approval (accept / edit) or deployment: recorded,
+    because someone (or a script) tried, and 'why was this refused?' must be answerable."""
+    failure_log.failure(logger, "optimizer.approval_refused", action=action, suggestion=suggestion_id, reasons=reasons)
+
+
 def _persist(db, run, project, page, suggestions: list[dict], a: dict) -> tuple[int, list[dict]]:
     _clear_pending(db, run)
     stored, skipped = 0, []
@@ -341,6 +372,7 @@ def _persist(db, run, project, page, suggestions: list[dict], a: dict) -> tuple[
                 skipped.append({"id": s["id"], "reason": f"the same wording was already proposed for this page (its status: {existing.status})"})
                 continue
             validation = ov.validate_suggestion(s, a["ctx"])
+            _log_validation(run, s, validation)
             fact = next((c for c in validation["checks"] if c["name"] == "fact_check"), None)
             row = models.Suggestion(
                 project_id=project.id, page_id=page.id, issue_id=issue.id, content=s["after"], content_hash=h,

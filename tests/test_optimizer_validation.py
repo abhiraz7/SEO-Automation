@@ -601,3 +601,27 @@ def test_several_matches_are_counted_and_no_matches_pass():
 def test_cannibalization_never_blocks_it_hands_the_decision_to_a_person():
     ctx = make_ctx(related=[rel("https://mine.com/a", [{"type": "keyword"}])])
     assert run(ctx=ctx)["status"] in ("warning", "needs_human_verification")
+
+
+# ── a check that crashes is reported on the card AND logged with a traceback ──
+
+def test_a_crashing_check_is_logged_as_an_error_with_a_traceback(monkeypatch, caplog):
+    import logging
+
+    def boom(s, ctx):
+        raise RuntimeError("kaboom in the check")
+    monkeypatch.setattr(ov, "_RUNNERS", [("schema", ov._schema), ("structure", boom)])
+    with caplog.at_level(logging.INFO):
+        r = run()
+    assert check(r, "structure")["status"] == "error"                                       # visible on the card
+    errors = [x for x in caplog.records if x.levelno == logging.ERROR]
+    assert len(errors) == 1 and errors[0].name == "optimizer_validation"
+    assert errors[0].getMessage() == "optimizer.check_crashed check=structure type=add_section"
+    assert errors[0].exc_info and "kaboom in the check" in caplog.text and "Traceback" in caplog.text
+
+
+def test_a_normal_validation_logs_nothing(caplog):
+    import logging
+    with caplog.at_level(logging.DEBUG):
+        run()
+    assert [x for x in caplog.records if x.name == "optimizer_validation"] == []

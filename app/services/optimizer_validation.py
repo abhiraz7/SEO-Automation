@@ -25,11 +25,14 @@ Checks: schema, structure, keyword_repetition, duplication, competitor_copy,
 fact_check, brand_tone, and (for edits that add substantial content) cannibalization.
 """
 import html.parser
+import logging
 import re
 import unicodedata
 from collections import Counter
 
-from . import action_plan, gap_analysis
+from . import action_plan, failure_log, gap_analysis
+
+logger = logging.getLogger("optimizer_validation")
 
 TYPES = (
     "add_section", "expand_section", "rewrite_section", "improve_heading",
@@ -615,6 +618,9 @@ def validate_suggestion(s: dict, ctx: dict) -> dict:
         try:
             result = fn(s, ctx)
         except Exception as exc:  # noqa: BLE001 -- a broken check must be visible, not fatal
+            # Visible on the card as 'could not run' AND logged with the traceback: without the
+            # log, the bug behind it would never be seen, only its symptom.
+            failure_log.crash(logger, "optimizer.check_crashed", check=name, type=s.get("type"))
             result = _check(name, "error", f"This check could not run: {exc}")
         details = result.get("details") or {}
         claims = details.pop("_claims", claims)

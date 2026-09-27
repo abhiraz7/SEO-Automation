@@ -305,6 +305,7 @@ def accept_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
     # cannot be approved as written. (None for every other suggestion: unchanged.)
     blocked = content_optimizer.blocking_reasons(db, suggestion.id)
     if blocked:
+        content_optimizer.log_refusal("accept", suggestion.id, blocked)
         raise HTTPException(status_code=409, detail="Blocked by validation, so it cannot be approved as written: " + "; ".join(blocked))
     suggestion.status = "accepted"
     suggestion.accepted_at = datetime.now(timezone.utc)
@@ -342,6 +343,7 @@ def edit_suggestion(suggestion_id: int, payload: SuggestionEditIn, db: Session =
     if validation is not None:
         blocked = content_optimizer.validation_blockers(validation)
         if blocked:
+            content_optimizer.log_refusal("edit", suggestion.id, blocked)
             raise HTTPException(status_code=422, detail="Your edit is blocked by validation, so it was not saved: " + "; ".join(blocked))
     suggestion.status = "edited"
     suggestion.edited_content = content

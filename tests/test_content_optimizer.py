@@ -648,3 +648,120 @@ def test_a_suggestion_that_is_not_an_optimizer_one_is_never_revalidated_or_block
     db.add(s)
     db.commit()
     assert co.revalidate(db, s, "anything") is None and co.blocking_reasons(db, s.id) is None and co.is_optimizer_suggestion(db, s.id) is False
+
+
+# ── every failure is logged once, with its reason; the happy path is silent ─
+
+import logging
+
+
+def opt_records(caplog, min_level=logging.WARNING):
+    return [r for r in caplog.records if r.name in ("content_optimizer", "optimizer_validation") and r.levelno >= min_level]
+
+
+def test_a_clean_run_logs_no_warning_and_a_flagged_suggestion_is_only_info(db, caplog):
+    project, page = make_world(db)
+    make_evidence(db, project, page)
+    with caplog.at_level(logging.INFO):
+        optimize(db, project, page, ai_says(model_item()))
+        optimize(db, project, page, ai_says(model_item(after="## Fees\n\nThe application fee is 5000 rupees for every applicant to the course each year.")))
+    assert opt_records(caplog) == []                                                           # nothing at WARNING or above
+    assert any(r.getMessage().startswith("optimizer.suggestion_flagged ") and r.levelno == logging.INFO for r in caplog.records)
+
+
+def test_an_ai_failure_is_logged_exactly_once_with_the_reason(db, caplog):
+    project, page = make_world(db)
+    make_evidence(db, project, page)
+    def boom(*a, **k):
+        raise AIGenerationError("AI provider call failed: 529 overloaded")
+    with caplog.at_level(logging.INFO):
+        run, _ = optimize(db, project, page, boom)
+    recs = opt_records(caplog)
+    assert len(recs) == 1 and recs[0].levelno == logging.WARNING
+    msg = recs[0].getMessage()
+    assert msg.startswith("optimizer.run_failed ") and f"run={run.id}" in msg and f"project={project.id}" in msg and "529 overloaded" in msg and "keyword=" in msg
+
+
+def test_a_failed_search_and_too_little_evidence_are_logged_as_different_events(db, caplog):
+    project, page = make_world(db)
+    bad = make_evidence(db, project, page, status="error", error="The search results could not be fetched: dataforseo: 402 payment required", with_gaps=False)
+    thin = make_evidence(db, project, page, status="no_data", error="Only 1 of 5 comparable pages could be analysed", with_gaps=False, keyword="other keyword")
+    with caplog.at_level(logging.INFO):
+        optimize(db, project, page, ai_says(model_item()), evidence_run_id=bad.id)
+        with patch.object(co.ai_provider, "generate_optimizer_suggestions"):
+            co.run_optimization(db, project, page.id, "other keyword", "IN", "desktop", thin.id)
+    msgs = [r.getMessage() for r in opt_records(caplog)]
+    assert len(msgs) == 2
+    assert msgs[0].startswith("optimizer.run_failed ") and "402 payment required" in msgs[0]
+    assert msgs[1].startswith("optimizer.run_no_data ") and "Only 1 of 5" in msgs[1]
+
+
+def test_no_change_is_an_info_note_not_a_failure(db, caplog):
+    project, page = make_world(db)
+    make_evidence(db, project, page)
+    with caplog.at_level(logging.INFO):
+        optimize(db, project, page, ai_says(no_change_reason="No change recommended."))
+    assert opt_records(caplog) == [] and any(r.getMessage().startswith("optimizer.no_change ") and r.levelno == logging.INFO for r in caplog.records)
+
+
+def test_each_discarded_ai_proposal_is_logged_with_its_reason(db, caplog):
+    project, page = make_world(db)
+    make_evidence(db, project, page)
+    with caplog.at_level(logging.INFO):
+        run, _ = optimize(db, project, page, ai_says(model_item("rewrite_entire_article"), model_item(evidence_ids=["E98"], label="nothing matches"), model_item()))
+    msgs = [r.getMessage() for r in opt_records(caplog)]
+    assert run.status == "ok" and len(msgs) == 2 and all(m.startswith("optimizer.proposal_discarded ") for m in msgs)
+    assert any("unsupported suggestion type" in m and "proposal=" in m for m in msgs) and any("cites no evidence" in m for m in msgs)
+
+
+def test_a_blocked_suggestion_is_logged_with_the_checks_that_blocked_it_and_never_its_text(db, caplog):
+    project, page = make_world(db)
+    make_evidence(db, project, page)
+    filler = " ".join(f"term{chr(97 + i)}" for i in range(26))
+    stuffed = "## Documents required\n\n" + " ".join(["b ed admission"] * 7) + " " + filler
+    with caplog.at_level(logging.INFO):
+        optimize(db, project, page, ai_says(model_item(after=stuffed)))
+    recs = opt_records(caplog)
+    assert len(recs) == 1
+    msg = recs[0].getMessage()
+    assert msg.startswith("optimizer.suggestion_blocked ") and "type=add_section" in msg and "target=new" in msg and "status=blocked" in msg
+    assert "keyword_repetition" in msg and "7 more times" in msg
+    assert "termz" not in caplog.text                                                          # the draft itself is never written to the log
+
+
+def test_a_crash_is_an_error_with_a_traceback_and_the_run_failure_is_logged_too(db, caplog):
+    project, page = make_world(db)
+    make_evidence(db, project, page)
+    with caplog.at_level(logging.INFO):
+        with patch.object(co.optimizer_plan, "build_evidence", side_effect=RuntimeError("kaboom")):
+            run, _ = optimize(db, project, page, ai_says(model_item()))
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1 and errors[0].getMessage().startswith("optimizer.run_crashed ") and errors[0].exc_info and "kaboom" in caplog.text
+    assert any(r.getMessage().startswith("optimizer.run_failed ") and "Unexpected error: kaboom" in r.getMessage() for r in caplog.records)
+
+
+def test_a_duplicate_of_decided_wording_is_not_logged_itself_but_the_resulting_failed_run_is(db, caplog):
+    project, page = make_world(db)
+    make_evidence(db, project, page)
+    text = "## Documents required\n\nBring your degree certificate, photographs and photo identity to the counter on the day of registration."
+    optimize(db, project, page, ai_says(model_item(after=text)))
+    rows(db)[0][0].status = "accepted"
+    db.commit()
+    with caplog.at_level(logging.INFO):
+        run, _ = optimize(db, project, page, ai_says(model_item(after=text)))
+    msgs = [r.getMessage() for r in opt_records(caplog)]
+    assert run.status == "error" and len(msgs) == 1 and msgs[0].startswith("optimizer.run_failed ") and "repeated wording" in msgs[0]
+
+
+def test_input_and_busy_errors_are_the_users_mistakes_and_are_not_logged(db, caplog):
+    project, page = make_world(db)
+    co._running.add((project.id, page.id))
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(co.BusyError):
+            optimize(db, project, page, ai_says(model_item()))
+        co._running.clear()
+        with pytest.raises(co.InputError):
+            co.run_optimization(db, project, page.id, "x", "IN", "desktop")
+        with pytest.raises(LookupError):
+            co.run_optimization(db, project, 9999, KW, "IN", "desktop")
+    assert opt_records(caplog) == []

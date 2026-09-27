@@ -818,3 +818,25 @@ Chrome blocking the download was a symptom: the platform, which handles logins a
 - What does `create_all` do and not do, and when do you need a migration?
 - How can an overly broad cleanup query silently destroy user decisions, and how do you scope it safely?
 - Why keep "no data", "error" and "no change" as separate outcomes?
+
+
+## 2026-09-27 (morning): A failure you did not log is a failure you cannot debug
+
+**What happened.** The owner asked that any failure be logged, not merely shown on screen. Looking at the app showed that nothing configured logging at all, so a `logger.warning` reached `docker logs` as bare text with no time, level or source, and INFO messages vanished.
+
+**The concept: log at the place the decision is made, once.** A run can fail in many ways (search provider down, AI answer unusable, a crash) but every one of them ends in one function, `_finish`. Logging there records each failure exactly once, with the same reason the user sees, instead of scattering log calls that duplicate or miss cases. QA analogy: one shared assertion helper beats copy-pasted checks, because a fix or a format change happens in one place.
+
+**Two levels, on purpose.** WARNING means the system worked but something it depends on or produced was unusable (a provider error, an AI proposal discarded, a suggestion the checks blocked). ERROR with a traceback means our own code broke. Mixing them makes both useless: if everything is an error, nobody reads the errors.
+
+**A structured line beats a sentence.** `optimizer.run_failed run=12 project=3 reason="..."` can be found with one search and split into fields; a free-form f-string cannot. It costs nothing to write and saves the debugging session later.
+
+**A logging helper must not become a leak.** Fields whose names look like secrets are never written, values are truncated and kept on one line, and page text, drafts and prompts are deliberately not logged. The first version of the secret filter matched any name containing "key", so it hid the SEO field called `keyword`: a test caught it, and the fix was to match whole name-parts (`api_key`, `access_token`) rather than substrings.
+
+**Also learned.** A check that crashes was already shown on the card as "could not run", but without a logged traceback nobody would ever see the bug behind it, only its symptom. Showing a failure to the user and recording it for the developer are two different jobs.
+
+### Interview questions this session answers
+- Where should a failure be logged in a multi-stage pipeline, and why once?
+- What is the difference between a WARNING and an ERROR, and how do you decide?
+- Why use `key=value` lines instead of sentences in logs?
+- How do you stop a logging helper from leaking secrets or user content, and how do you test that?
+- Why does Python print a bare message when logging is not configured?
