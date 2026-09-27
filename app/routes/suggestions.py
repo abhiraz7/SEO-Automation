@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, object_session
 from .. import ai_provider, deploy_status, models, prompt_builder
 from ..ai_errors import AIGenerationError, ImageFetchError
 from ..database import get_db
-from ..services import context_builder
+from ..services import content_optimizer, context_builder
 
 router = APIRouter()
 logger = logging.getLogger("image_alt")
@@ -301,6 +301,11 @@ def accept_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
     suggestion = _get_suggestion(db, suggestion_id)
     if suggestion.status == "deployed":
         raise HTTPException(status_code=409, detail="Already deployed -- roll it back before changing its status.")
+    # AI Content Optimizer suggestions carry a validation result; one the checks blocked
+    # cannot be approved as written. (None for every other suggestion: unchanged.)
+    blocked = content_optimizer.blocking_reasons(db, suggestion.id)
+    if blocked:
+        raise HTTPException(status_code=409, detail="Blocked by validation, so it cannot be approved as written: " + "; ".join(blocked))
     suggestion.status = "accepted"
     suggestion.accepted_at = datetime.now(timezone.utc)
     db.commit()
@@ -330,8 +335,18 @@ def edit_suggestion(suggestion_id: int, payload: SuggestionEditIn, db: Session =
     content = payload.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="content is required")
+    # An edit is an approval ('edited' is deployable), so an optimizer suggestion's NEW
+    # text is held to the same checks as the AI's draft BEFORE anything is saved. None
+    # for every other suggestion: unchanged.
+    validation = content_optimizer.revalidate(db, suggestion, content)
+    if validation is not None:
+        blocked = content_optimizer.validation_blockers(validation)
+        if blocked:
+            raise HTTPException(status_code=422, detail="Your edit is blocked by validation, so it was not saved: " + "; ".join(blocked))
     suggestion.status = "edited"
     suggestion.edited_content = content
     suggestion.accepted_at = datetime.now(timezone.utc)
+    if validation is not None:
+        content_optimizer.apply_validation(db, suggestion.id, validation)   # the card now shows the checks for the text that would deploy
     db.commit()
     return _suggestion_out(suggestion)

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, wordpress
 from ..database import SessionLocal, get_db
+from ..services import content_optimizer
 
 router = APIRouter()
 
@@ -595,6 +596,12 @@ def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depen
         raise HTTPException(status_code=404, detail="Suggestion not found")
     if suggestion.status not in ("accepted", "edited"):
         raise HTTPException(status_code=409, detail=f"Suggestion must be accepted or edited first (current status: {suggestion.status}).")
+    # Deploy is the one step that changes a live site, so it does not rely on accept
+    # having refused: an AI Content Optimizer suggestion blocked by validation is never
+    # written. (None for every other suggestion: unchanged.)
+    blocked = content_optimizer.blocking_reasons(db, suggestion.id)
+    if blocked:
+        raise HTTPException(status_code=409, detail="Blocked by validation, so it was not deployed: " + "; ".join(blocked))
 
     issue = db.get(models.Issue, suggestion.issue_id)
     field_name = issue.category if issue else None

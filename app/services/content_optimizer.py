@@ -389,14 +389,24 @@ def apply_validation(db, suggestion_id: int, validation: dict) -> None:
     meta.requires_fact_check = bool(fact and fact["status"] != "ok")
 
 
+def validation_blockers(validation: dict) -> list[str]:
+    """Why a validation result stops a suggestion being approved: the messages of the
+    blocked / errored checks. Empty when it may be approved. One rule, shared by accept,
+    edit and deploy, so the three can never disagree."""
+    if ov.is_ready_for_approval(validation):
+        return []
+    checks = validation.get("checks", [])
+    return [f"{c['name']}: {c.get('message', c['status'])}" for c in checks if c["status"] in ("blocked", "error")] or [f"validation status is {validation.get('status')}"]
+
+
 def blocking_reasons(db, suggestion_id: int) -> list[str] | None:
     """None when the suggestion may be approved / deployed (or is not an optimizer
     suggestion); else the messages of the checks that block it."""
     meta = _meta_for(db, suggestion_id)
-    if meta is None or ov.is_ready_for_approval({"status": meta.validation_status}):
+    if meta is None:
         return None
-    checks = (meta.validation_json or {}).get("checks", [])
-    return [f"{c['name']}: {c.get('message', c['status'])}" for c in checks if c["status"] in ("blocked", "error")] or [f"validation status is {meta.validation_status}"]
+    stored = meta.validation_json or {"status": meta.validation_status, "checks": []}
+    return validation_blockers({**stored, "status": meta.validation_status}) or None
 
 
 # ── reading ───────────────────────────────────────────────────────────────
