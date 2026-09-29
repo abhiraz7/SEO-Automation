@@ -314,6 +314,29 @@ task above that first needs it)
 
 1. Task 0 (Google Cloud OAuth client) — done or not yet?
 
+## Parked (2026-09-29) — prod domain + TLS
+
+Discovered while doing Task 0: Google's OAuth redirect URI validation rejects a bare IP
+(`http://54.80.253.215/gsc/callback`) outright -- "Must end with a public top-level domain".
+Prod currently has no domain name and no TLS termination in front of the app at all, so this
+blocks a prod redirect URI, not just GSC specifically -- any future OAuth-based integration
+would hit the same wall.
+
+Task 0 was completed with **localhost only** registered as the redirect URI, so local dev/
+testing is unblocked. The prod side is explicitly **paused, not solved** -- picked up later.
+
+Leading option when this resumes: point a subdomain of vtechys.com (candidates: `app.
+vtechys.com`, `seo.vtechys.com`) at 54.80.253.215 via an A record, then add Caddy in front of
+the existing Docker Compose app for automatic Let's Encrypt TLS. Needs: which subdomain, and
+where vtechys.com's DNS is managed (owner said "Other" when asked, not yet identified).
+Alternatives considered: an AWS ALB + ACM cert (more AWS-native, more moving parts), or a free
+dynamic-DNS domain (fast but unprofessional-looking for a product being resold to agencies --
+ruled out for that reason).
+
+Until this resumes, GSC in prod stays disconnected -- the app already degrades gracefully
+(`is_configured()` returns False, nothing crashes) rather than needing this to ship the rest
+of the feature.
+
 ## Research complete (both background agents finished, cross-checked against Google's live
 discovery document, not just doc pages)
 
