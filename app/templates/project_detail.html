@@ -886,6 +886,41 @@
       {% endif %}
     </details>
 
+    <!-- 🔎 Google Search Console -->
+    <details class="dsec" id="gsc">
+      <summary>🔎 Google Search Console<svg class="dc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg></summary>
+      {% if not gsc_configured %}
+        <div style="font-size:11px;color:#94a3b8;">Not configured on this server -- add the Google OAuth env vars to enable this.</div>
+      {% elif not gsc_connection %}
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">Connect using the Google account that has Search Console access to this site -- your own account, or one your agency was added to as a user.</div>
+        <a href="/projects/{{ project.id }}/gsc/connect" style="display:block;text-align:center;padding:7px 10px;border-radius:7px;border:none;background:#4f46e5;color:#fff;font-size:12px;font-weight:700;text-decoration:none;">Connect Google Search Console</a>
+      {% else %}
+        <div style="font-size:12px;font-weight:700;color:{% if gsc_connection.status == 'active' %}#15803d{% else %}#dc2626{% endif %};margin-bottom:4px;">
+          {% if gsc_connection.status == 'active' %}Connected{% elif gsc_connection.status == 'revoked' %}Reconnect needed{% else %}Connection error{% endif %}
+        </div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:10px;">as {{ gsc_connection.google_account_email }}</div>
+        {% if gsc_properties %}
+          <div style="font-size:12px;color:#475569;font-weight:500;margin-bottom:5px;">Properties</div>
+          {% for p in gsc_properties %}
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;">
+            <div>
+              <div style="font-size:12px;color:#334155;">{{ p.site_url }}</div>
+              <div style="font-size:10px;color:#94a3b8;">{{ p.permission_level or 'permission unknown' }}</div>
+            </div>
+            {% if p.selected %}
+              <span style="font-size:10px;font-weight:700;color:#4f46e5;">Selected</span>
+            {% else %}
+              <button type="button" onclick="selectGscProperty({{ p.id }})" style="padding:4px 8px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#374151;font-size:11px;font-weight:600;cursor:pointer;">Select</button>
+            {% endif %}
+          </div>
+          {% endfor %}
+        {% else %}
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">No properties found for this account yet -- make sure it has Search Console access to the site, then reconnect.</div>
+        {% endif %}
+        <button type="button" onclick="disconnectGsc()" style="width:100%;margin-top:10px;padding:7px 10px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#dc2626;font-size:12px;font-weight:700;cursor:pointer;">Disconnect</button>
+      {% endif %}
+    </details>
+
   </div>
   <div class="drawer-foot">
     <button onclick="closeDrawer('settings-drawer')" style="padding:7px 16px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#64748b;font-size:13px;font-weight:600;cursor:pointer;">Cancel</button>
@@ -1455,6 +1490,21 @@ function resolveWordPressPages() {
     })
     .catch(function(err) { showToast('Resolve failed: ' + err.message, 'error'); })
     .finally(function() { if (btn) { btn.disabled = false; btn.textContent = '🔗 Resolve WordPress IDs'; } });
+}
+
+// ── Google Search Console (Task 5) ──────────────────
+function selectGscProperty(propertyId) {
+  fetch('/projects/{{ project.id }}/gsc/properties/' + propertyId + '/select', { method: 'POST' })
+    .then(function(res) { if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); }); return res.json(); })
+    .then(function() { location.reload(); })
+    .catch(function(err) { showToast('Could not select property: ' + err.message, 'error'); });
+}
+function disconnectGsc() {
+  if (!confirm('Disconnect Google Search Console for this project? You can reconnect any time.')) return;
+  fetch('/projects/{{ project.id }}/gsc/disconnect', { method: 'POST' })
+    .then(function(res) { if (!res.ok) return res.json().then(function(d){ throw new Error(d.detail || ('HTTP ' + res.status)); }); return res.json(); })
+    .then(function() { location.reload(); })
+    .catch(function(err) { showToast('Could not disconnect: ' + err.message, 'error'); });
 }
 
 // ── Backlinks (Task 5.1) ────────────────────────────
