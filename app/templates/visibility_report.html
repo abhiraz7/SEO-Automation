@@ -33,6 +33,43 @@
   </div>
 
   <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
+      <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;">LLM Mentions (ChatGPT + Google)</div>
+      <form method="post" action="/projects/{{ project.id }}/llm-mentions/refresh">
+        <button type="submit" style="padding:5px 12px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#4f46e5;font-size:11px;font-weight:700;cursor:pointer;">Refresh (paid call)</button>
+      </form>
+    </div>
+    {% if not latest_llm_mentions %}
+    <div style="font-size:11px;color:#94a3b8;">Not checked yet. Each refresh is a separately-billed DataForSEO call (~$0.10 + $0.001/row), unlike the free AI Overview data above -- click Refresh deliberately, it isn't run automatically.</div>
+    {% elif latest_llm_mentions.error %}
+    <div style="font-size:11px;color:#b91c1c;">⚠️ {{ latest_llm_mentions.error }}</div>
+    {% else %}
+    <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:8px;">
+      <div>
+        <div style="font-size:22px;font-weight:800;color:#0f172a;">{{ latest_llm_mentions.total_mentions if latest_llm_mentions.total_mentions is not none else '—' }}</div>
+        <div style="font-size:10px;color:#94a3b8;">Total mentions</div>
+      </div>
+      <div>
+        <div style="font-size:22px;font-weight:800;color:#0f172a;">{{ '{:,}'.format(latest_llm_mentions.ai_search_volume) if latest_llm_mentions.ai_search_volume is not none else '—' }}</div>
+        <div style="font-size:10px;color:#94a3b8;">AI search volume</div>
+      </div>
+    </div>
+    {% if latest_llm_mentions.sources_domain %}
+    <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">Top citing domains</div>
+    <div style="display:flex;flex-direction:column;gap:3px;">
+      {% for s in latest_llm_mentions.sources_domain[:5] %}
+      <div style="font-size:11px;color:#475569;display:flex;justify-content:space-between;">
+        <span>{{ s.key }}</span>
+        <span style="color:#94a3b8;">{{ s.mentions }} mentions</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div style="font-size:9px;color:#cbd5e1;margin-top:8px;">Fetched {{ latest_llm_mentions.fetched_at.strftime('%d %b %Y, %H:%M') }} UTC{% if latest_llm_mentions.cost %} &middot; cost ${{ latest_llm_mentions.cost }}{% endif %}</div>
+    {% endif %}
+  </div>
+
+  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;margin-bottom:20px;">
     <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:2px;">{{ domain }}</div>
     <div style="font-size:11px;color:#94a3b8;margin-bottom:14px;">Every check below is a live DataForSEO SERP lookup — the AI Overview text/citations and organic ranks shown are exactly what Google returned for that query, at that moment.</div>
 

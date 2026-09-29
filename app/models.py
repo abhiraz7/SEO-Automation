@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 def _utcnow():
     return datetime.now(timezone.utc)
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -690,3 +690,26 @@ class CompetitorGap(Base):
     confidence = Column(String)                     # high | medium | low
     recommended_action = Column(String)             # add | expand | rewrite | restructure | leave_unchanged | separate_page (filled from the validated plan)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class LlmMentionSnapshot(Base):
+    """One dataforseo.fetch_llm_mentions_target_metrics() pull for a project
+    -- a SEPARATE, separately-billed DataForSEO product ($0.10/request +
+    $0.001/row) from the free SERP-based AI Overview data VisibilityCheck
+    already stores. Manual-refresh only (same reasoning as
+    SemrushOnPageSnapshot/BacklinkSnapshot's explicit-refresh pattern) --
+    never auto-scheduled, since every pull costs real money regardless of
+    whether anything changed. One row per fetch, never overwritten, so
+    history/trend is possible later the same way BacklinkSnapshot's history
+    already works."""
+    __tablename__ = "llm_mention_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    platform = Column(String, nullable=False, default="both")  # both | chat_gpt | google
+    total_mentions = Column(Integer)
+    ai_search_volume = Column(Integer)
+    sources_domain = Column(JSON)  # [{key, mentions, ai_search_volume}, ...] straight from DataForSEO, top citing domains
+    cost = Column(Float)           # DataForSEO's own reported cost for this call, in USD -- kept for spend auditing
+    error = Column(Text)
+    fetched_at = Column(DateTime, default=_utcnow)
