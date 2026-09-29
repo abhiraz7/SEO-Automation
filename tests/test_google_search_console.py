@@ -271,3 +271,33 @@ def test_list_sites_invalid_grant_marks_revoked(monkeypatch):
         result = gsc.list_sites("access-tok", "refresh-tok")
     assert result.status == "error"
     assert result.data["revoked"] is True
+
+
+# ── Signed state (CSRF-protection substitute for a session) ─────────────
+
+def test_sign_and_verify_state_round_trip(gsc_token_key):
+    state = gsc.sign_state(42)
+    assert gsc.verify_state(state) == 42
+
+
+def test_verify_state_rejects_garbage(gsc_token_key):
+    assert gsc.verify_state("not-a-real-token") is None
+
+
+def test_verify_state_rejects_tampered_value(gsc_token_key):
+    state = gsc.sign_state(42)
+    tampered = state[:-4] + "abcd"
+    assert gsc.verify_state(tampered) is None
+
+
+def test_verify_state_rejects_wrong_key(gsc_token_key):
+    state = gsc.sign_state(42)
+    import os
+    os.environ[gsc._ENV_TOKEN_KEY] = Fernet.generate_key().decode()
+    assert gsc.verify_state(state) is None
+
+
+def test_verify_state_rejects_expired(gsc_token_key, monkeypatch):
+    state = gsc.sign_state(42)
+    monkeypatch.setattr(gsc, "_STATE_MAX_AGE_SECONDS", -1)
+    assert gsc.verify_state(state) is None

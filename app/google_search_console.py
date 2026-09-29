@@ -25,7 +25,9 @@ google-api-python-client calls) but NOT yet verified against a live Google
 account -- that verification happens once Task 0 is done and Task 4's
 routes exist to drive a real browser click-through.
 """
+import json
 import os
+import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -128,6 +130,39 @@ def _client_config() -> dict:
             "redirect_uris": [os.environ[_ENV_REDIRECT_URI]],
         }
     }
+
+
+_STATE_MAX_AGE_SECONDS = 600  # 10 minutes -- generous for a human to click through Google's consent screen, tight enough that a captured/replayed state link goes stale fast
+
+
+def sign_state(project_id: int) -> str:
+    """Builds the tamper-proof `state` value Task 4's /gsc/connect passes to
+    build_auth_url() and /gsc/callback verifies. The app has no session/
+    login system to keep state server-side (see build_auth_url's docstring),
+    so the state string itself must carry project_id AND prove it wasn't
+    forged or reused from elsewhere. Reuses the same GSC_TOKEN_KEY Fernet
+    key already justified for token-at-rest encryption -- Fernet gives both
+    tamper-detection (an HMAC under the hood) and a built-in TTL via
+    decrypt(ttl=...), so no extra signing library (e.g. itsdangerous) is
+    needed for this."""
+    payload = json.dumps({"project_id": project_id, "nonce": secrets.token_urlsafe(8)})
+    return _get_fernet().encrypt(payload.encode()).decode()
+
+
+def verify_state(state: str) -> int | None:
+    """Returns the project_id embedded in a state string sign_state()
+    produced, or None if it's missing, forged, or older than
+    _STATE_MAX_AGE_SECONDS. Task 4's /gsc/callback must reject the request
+    (400) on None rather than guessing a project_id from anywhere else."""
+    try:
+        payload = _get_fernet().decrypt(state.encode(), ttl=_STATE_MAX_AGE_SECONDS)
+    except Exception:
+        return None
+    try:
+        data = json.loads(payload.decode())
+        return int(data["project_id"])
+    except (ValueError, KeyError, TypeError):
+        return None
 
 
 def build_auth_url(state: str) -> str:
