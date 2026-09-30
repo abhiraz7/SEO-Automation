@@ -178,28 +178,7 @@
   </details>
 </div>
 
-{% set ns = namespace(max_count=0) %}
-{% for category, cat_issues in grouped_issues.items() %}
-  {% if cat_issues|length > ns.max_count %}{% set ns.max_count = cat_issues|length %}{% endif %}
-{% endfor %}
-{% if ns.max_count > 0 %}
-<div style="margin:16px 24px 0;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px 18px;">
-  <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:12px;">Issue breakdown by category</div>
-  <div style="display:flex;flex-direction:column;gap:8px;">
-    {% for category, cat_issues in grouped_issues.items() if cat_issues %}
-    {% set accent = cat_colors.get(category, '#4f46e5') %}
-    {% set label = cat_labels.get(category, category|replace('_',' ')|title) %}
-    <div style="display:flex;align-items:center;gap:10px;">
-      <div style="width:120px;flex-shrink:0;font-size:11px;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ label }}</div>
-      <div style="flex:1;height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
-        <div style="height:100%;width:{{ (cat_issues|length / ns.max_count * 100)|round(1) }}%;background:{{ accent }};border-radius:4px;"></div>
-      </div>
-      <div style="width:24px;flex-shrink:0;text-align:right;font-size:11px;font-weight:700;color:#0f172a;">{{ cat_issues|length }}</div>
-    </div>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
+{% include "onpage/_category_strip.html" %}
 
 {% if tasks %}
 <div style="margin:16px 24px 0;">
@@ -252,7 +231,7 @@
   {% set label = cat_labels.get(category, category|replace('_',' ')|title) %}
   {% set is_clean = not cat_issues %}
 
-  <details class="ig" style="border-left:3px solid {{ '#e2e8f0' if is_clean else accent }};">
+  <details class="ig" data-cat="{{ category }}" style="border-left:3px solid {{ '#e2e8f0' if is_clean else accent }};">
     <summary>
       <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.5" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
       <span style="width:8px;height:8px;border-radius:50%;background:{{ '#cbd5e1' if is_clean else accent }};flex-shrink:0;"></span>
