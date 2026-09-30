@@ -721,6 +721,74 @@ class CompetitorGap(Base):
     created_at = Column(DateTime, default=_utcnow)
 
 
+# ── Google Search Console (Feature 3, Phase 1) ───────────────────────────
+# Two NEW tables (Base.metadata.create_all, no migration). Strictly one
+# google_connections row per project -- never a shared/reusable connection
+# across projects (confirmed decision 2026-09-29, see
+# prompts/CLAUDE_FEATURE_3_GOOGLE_SEARCH_CONSOLE.md). Whichever Google
+# account already has Search Console access to the project's property is
+# the one that completes OAuth for it -- this schema doesn't care whose
+# account it is, only that a connection belongs to exactly one project.
+
+class GoogleConnection(Base):
+    """One Google account's OAuth grant for one project. access/refresh
+    tokens are Fernet-encrypted at rest (app/google_search_console.py owns
+    encrypt/decrypt, mirroring wordpress.py's WP_TOKEN_KEY pattern exactly,
+    just pointed at GSC_TOKEN_KEY) -- nothing else should touch the raw
+    tokens. Google's Credentials object can mutate token/expiry in place on
+    ANY API call that triggers an auto-refresh, not only an explicit
+    refresh() -- every provider function that calls Google must re-persist
+    these two columns afterward, or the DB can hold a stale access token
+    while Google has already rotated it.
+
+    status distinguishes a token that's merely expired (refresh normally)
+    from a token whose refresh Google has rejected outright (invalid_grant
+    -- the user revoked access, or the account was removed as a GSC user);
+    the latter needs a human to reconnect, not a retry loop."""
+    __tablename__ = "google_connections"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, unique=True)
+    google_account_email = Column(String, nullable=False)
+    access_token_encrypted = Column(Text, nullable=False)
+    refresh_token_encrypted = Column(Text, nullable=False)
+    token_expiry = Column(DateTime)
+    scope = Column(String, nullable=False)  # space-separated scope string Google actually granted
+    status = Column(String, nullable=False, default="active")  # active | revoked | error
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    properties = relationship(
+        "SearchConsoleProperty", back_populates="connection", cascade="all, delete-orphan"
+    )
+
+
+class SearchConsoleProperty(Base):
+    """One property (site_url, in Google's exact form -- e.g.
+    'sc-domain:example.com' or 'https://example.com/') the connected account
+    can access, as returned by Sites API's list(). permission_level is
+    stored as a plain string, not a constrained enum: Google's real-world
+    casing for this field (siteOwner vs SITE_OWNER) is unconfirmed (see task
+    list's "Research complete" notes) -- log the actual value seen and only
+    constrain it once that's settled. `selected` marks which one property
+    (of possibly several the account can see) this project actually uses;
+    enforced as at most one True per connection in application code, same
+    style as ProviderSetting's enabled flag."""
+    __tablename__ = "search_console_properties"
+    __table_args__ = (
+        UniqueConstraint("connection_id", "site_url", name="uq_gsc_property_connection_site_url"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    connection_id = Column(Integer, ForeignKey("google_connections.id"), nullable=False)
+    site_url = Column(String, nullable=False)
+    permission_level = Column(String)  # raw value from Google, e.g. siteOwner/siteFullUser/siteRestrictedUser
+    selected = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=_utcnow)
+
+    connection = relationship("GoogleConnection", back_populates="properties")
+
+
 class LlmMentionSnapshot(Base):
     """One dataforseo.fetch_llm_mentions_target_metrics() pull for a project
     -- a SEPARATE, separately-billed DataForSEO product ($0.10/request +

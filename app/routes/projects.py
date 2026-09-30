@@ -9,6 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import audit, audit_classification, backlinks_provider, deploy_status, models, schemas
+from .. import google_search_console as gsc
 from ..database import get_db
 from ..services.ai_visibility_score import compute_ai_visibility_score
 from .settings import is_crawler_enabled, register_crawler_global
@@ -367,6 +368,18 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
         .filter(models.WordPressConnection.project_id == project_id)
         .first()
     )
+    gsc_connection = (
+        db.query(models.GoogleConnection)
+        .filter(models.GoogleConnection.project_id == project_id)
+        .first()
+    )
+    gsc_properties = (
+        db.query(models.SearchConsoleProperty)
+        .filter(models.SearchConsoleProperty.connection_id == gsc_connection.id)
+        .order_by(models.SearchConsoleProperty.site_url)
+        .all()
+        if gsc_connection else []
+    )
     visibility_checks = (
         db.query(models.VisibilityCheck)
         .filter(models.VisibilityCheck.project_id == project_id)
@@ -383,6 +396,9 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
             "profile": profile,
             "crawl_settings": _crawl_settings_out(crawl_schedule),
             "wordpress_connection": wordpress_connection,
+            "gsc_configured": gsc.is_configured(),
+            "gsc_connection": gsc_connection,
+            "gsc_properties": gsc_properties,
             "ai_visibility": compute_ai_visibility_score(visibility_checks),
             "crawler_enabled": is_crawler_enabled(db),
         }

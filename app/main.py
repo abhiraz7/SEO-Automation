@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from . import build_info, logging_setup, schema_check, scheduler as job_scheduler
 from .database import Base, engine
-from .routes import audit, competitors, crawl, jobs, keywords, links, onpage_semrush, optimizer, projects, security, settings, suggestions, visibility, wordpress
+from .routes import audit, competitors, crawl, jobs, keywords, links, onpage_semrush, optimizer, projects, search_console, security, settings, suggestions, visibility, wordpress
 
 logging_setup.configure_logging()   # timestamps + levels on every WARNING and above, before anything below can log
 Base.metadata.create_all(bind=engine)
@@ -42,6 +42,7 @@ app.include_router(visibility.router)
 app.include_router(competitors.router)
 app.include_router(optimizer.router)
 app.include_router(links.router)
+app.include_router(search_console.router)
 
 
 @app.get("/version")

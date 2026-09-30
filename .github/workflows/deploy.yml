@@ -52,6 +52,10 @@ jobs:
           DATAFORSEO_LOGIN: ${{ secrets.DATAFORSEO_LOGIN }}
           DATAFORSEO_PASSWORD: ${{ secrets.DATAFORSEO_PASSWORD }}
           WP_TOKEN_KEY: ${{ secrets.WP_TOKEN_KEY }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REDIRECT_URI: ${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}
+          GSC_TOKEN_KEY: ${{ secrets.GSC_TOKEN_KEY }}
         run: |
           # Write .env line-by-line via plain echo (no heredoc) -- avoids the
           # nested-quoting/newline problem heredocs hit once wrapped inside a
@@ -72,6 +76,10 @@ jobs:
               "sudo -u ec2-user bash -c 'echo DATAFORSEO_LOGIN=${{ secrets.DATAFORSEO_LOGIN }} >> .env'",
               "sudo -u ec2-user bash -c 'echo DATAFORSEO_PASSWORD=${{ secrets.DATAFORSEO_PASSWORD }} >> .env'",
               "sudo -u ec2-user bash -c 'echo WP_TOKEN_KEY=${{ secrets.WP_TOKEN_KEY }} >> .env'",
+              "sudo -u ec2-user bash -c 'echo GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }} >> .env'",
+              "sudo -u ec2-user bash -c 'echo GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }} >> .env'",
+              "sudo -u ec2-user bash -c 'echo GOOGLE_OAUTH_REDIRECT_URI=${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }} >> .env'",
+              "sudo -u ec2-user bash -c 'echo GSC_TOKEN_KEY=${{ secrets.GSC_TOKEN_KEY }} >> .env'",
               "mkdir -p /opt/seo-automation/data",
               "if [ -d /opt/seo-automation/data/seo_automation.db ]; then rmdir /opt/seo-automation/data/seo_automation.db; fi",
               "if [ ! -f /opt/seo-automation/data/seo_automation.db ]; then touch /opt/seo-automation/data/seo_automation.db; fi",
