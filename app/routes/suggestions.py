@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
-from .. import ai_provider, deploy_status, models, prompt_builder
+from .. import ai_provider, deploy_status, issue_copy, models, prompt_builder
 from ..ai_errors import AIGenerationError, ImageFetchError
 from ..database import get_db
 from ..services import context_builder
@@ -42,6 +42,10 @@ def _generate_and_store(
     issue = db.get(models.Issue, issue_id)
     if not page or not issue:
         raise HTTPException(status_code=404)
+    paused = issue_copy.ai_paused_reason(issue.category, issue.rule)
+    if paused:
+        # Server-side so no client (or stale tab) can trigger generation.
+        raise HTTPException(status_code=409, detail=paused)
 
     # Fetch/create the page's understanding (cached per crawl snapshot) before
     # generating, so the prompt gets the distilled JSON instead of raw fit_markdown.
@@ -172,8 +176,17 @@ def _suggestion_out(s: models.Suggestion) -> dict:
         live = deploy_status.suggestion_live_fields(
             deploy_status.live_status_for_suggestions(object_session(s), [s.id]), s
         )
+    # Same code-computed checks the On-Page page load attaches, so a suggestion
+    # generated or edited in the open modal shows its checks immediately instead
+    # of a badge with nothing behind it.
+    db = object_session(s)
+    issue = db.get(models.Issue, s.issue_id) if db else None
+    page = db.get(models.Page, s.page_id) if db else None
+    checks = issue_copy.check_suggestion(issue.category, s.edited_content or s.content, page) if issue else []
     return {
         **live,
+        "checks": checks,
+        "checks_summary": issue_copy.checks_summary(checks),
         "id": s.id,
         "status": s.status,
         "image_src": s.image_src,

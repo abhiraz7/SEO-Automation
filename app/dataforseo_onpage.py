@@ -161,6 +161,21 @@ def _issue(category, rule, severity, message):
     }
 
 
+def social_tags(item: dict) -> dict:
+    """The og:/twitter: tags of a raw on-page item. DataForSEO nests them under
+    `meta` (verified against a live instant_pages response, 2026-09-30); the
+    top-level lookup is kept so older fixtures/payloads keep working. Reading
+    only the top level made EVERY page look like it had no Open Graph or Twitter
+    tags."""
+    return item.get("social_media_tags") or (item.get("meta") or {}).get("social_media_tags") or {}
+
+
+def content_block(item: dict) -> dict:
+    """The `content` block (plain_text_word_count, readability scores, ...) of a
+    raw on-page item; nested under `meta` in the live response (see social_tags)."""
+    return item.get("content") or (item.get("meta") or {}).get("content") or {}
+
+
 def issues_from_item(item: dict) -> list[dict]:
     checks = item.get("checks") or {}
     meta = item.get("meta") or {}
@@ -202,7 +217,7 @@ def issues_from_item(item: dict) -> list[dict]:
     if checks.get("irrelevant_description"):
         issues.append(_issue("meta_description", "irrelevant", "warning", "Meta description does not appear relevant to the page content."))
 
-    social = item.get("social_media_tags") or {}
+    social = social_tags(item)
     if not social.get("og:title") and not social.get("og:description"):
         issues.append(_issue("opengraph", "missing", "warning", "OpenGraph title/description tags are missing."))
     if not social.get("twitter:card"):
@@ -249,8 +264,8 @@ def normalize_page(item: dict) -> dict:
     that's the only case a per-image list is actually needed."""
     meta = item.get("meta") or {}
     htags = meta.get("htags") or {}
-    content = item.get("content") or {}
-    social = item.get("social_media_tags") or {}
+    content = content_block(item)
+    social = social_tags(item)
 
     return {
         "url": item.get("url"),
