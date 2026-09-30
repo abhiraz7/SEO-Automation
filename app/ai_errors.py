@@ -15,6 +15,14 @@ class ImageFetchError(Exception):
     visible, controlled failure, never a pretended one."""
 
 
+class AIProviderError(Exception):
+    """The AI provider could not be used at all for this request: a missing or
+    invalid API key, an exhausted credit balance, a rate limit, a network or
+    provider outage. Distinct from AIGenerationError (the provider answered but
+    the answer was unusable). The message is safe to show the user: it names
+    the failure, never a secret."""
+
+
 class AIGenerationError(Exception):
     """The AI provider's response for an image_alt suggestion request could
     not be parsed into the required JSON schema even after one retry (see
