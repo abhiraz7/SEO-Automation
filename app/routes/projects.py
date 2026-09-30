@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit, audit_classification, backlinks_provider, deploy_status, models, schemas
 from ..database import get_db
+from ..services.ai_visibility_score import compute_ai_visibility_score
 from .settings import is_crawler_enabled, register_crawler_global
 
 router = APIRouter()
@@ -366,6 +367,11 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
         .filter(models.WordPressConnection.project_id == project_id)
         .first()
     )
+    visibility_checks = (
+        db.query(models.VisibilityCheck)
+        .filter(models.VisibilityCheck.project_id == project_id)
+        .all()
+    )
 
     return templates.TemplateResponse(
         request, "project_detail.html", {
@@ -377,6 +383,7 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
             "profile": profile,
             "crawl_settings": _crawl_settings_out(crawl_schedule),
             "wordpress_connection": wordpress_connection,
+            "ai_visibility": compute_ai_visibility_score(visibility_checks),
             "crawler_enabled": is_crawler_enabled(db),
         }
     )
