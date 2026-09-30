@@ -9,11 +9,11 @@ the other off. Keyword Research is deliberately NOT governed by this switch
 import os
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import ai_provider, dataforseo_onpage, models, semrush, semrush_audit
+from .. import ai_provider, api_keys, dataforseo_onpage, models, semrush, semrush_audit
 from ..database import SessionLocal, get_db
 
 router = APIRouter()
@@ -67,9 +67,48 @@ def register_crawler_global(templates_env: Jinja2Templates) -> None:
 register_crawler_global(templates)
 
 
+LOG_LEVELS = ("WARNING", "ERROR", "CRITICAL")
+LOG_DEFAULT_LIMIT, LOG_MAX_LIMIT = 200, 1000
+
+
+def _query_logs(db: Session, level: str = "all", q: str = "", limit: int = LOG_DEFAULT_LIMIT):
+    """(rows newest-first, total matching). `level` is all or one of LOG_LEVELS;
+    `q` is a case-insensitive substring over logger + message."""
+    query = db.query(models.AppLog)
+    if level in LOG_LEVELS:
+        query = query.filter(models.AppLog.level == level)
+    q = (q or "").strip()
+    if q:
+        like = f"%{q}%"
+        query = query.filter(models.AppLog.message.ilike(like) | models.AppLog.logger.ilike(like))
+    total = query.count()
+    limit = max(1, min(int(limit), LOG_MAX_LIMIT))
+    return query.order_by(models.AppLog.id.desc()).limit(limit).all(), total
+
+
+def _log_block(row: models.AppLog) -> str:
+    stamp = row.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if row.created_at else "?"
+    return f"{stamp}  {row.level}  {row.logger}\n{row.message}"
+
+
+@router.get("/settings/logs.txt")
+def download_logs(level: str = "all", q: str = "", limit: int = LOG_MAX_LIMIT, db: Session = Depends(get_db)):
+    """The raw (already credential-redacted) log as plain text, newest first."""
+    rows, _ = _query_logs(db, level, q, limit)
+    return PlainTextResponse("\n\n".join(_log_block(r) for r in rows) or "(no log entries)", media_type="text/plain; charset=utf-8")
+
+
+@router.post("/settings/logs/clear")
+def clear_logs(db: Session = Depends(get_db)):
+    db.query(models.AppLog).delete(synchronize_session=False)
+    db.commit()
+    return RedirectResponse(url="/settings#logs", status_code=303)
+
+
 @router.get("/settings")
-def settings_page(request: Request, db: Session = Depends(get_db)):
+def settings_page(request: Request, level: str = "all", q: str = "", limit: int = LOG_DEFAULT_LIMIT, db: Session = Depends(get_db)):
     active = get_active_provider(db)
+    log_rows, log_total = _query_logs(db, level, q, limit)
 
     dataforseo_status = {
         "configured": dataforseo_onpage.is_configured(),
@@ -100,6 +139,12 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
             "gemini_status": gemini_status,
             "claude_status": claude_status,
             "site_audit_cooldown_hours": get_site_audit_cooldown_hours(db),
+            "api_keys": api_keys.key_status(),
+            "log_entries": [{"row": r, "text": _log_block(r)} for r in log_rows],
+            "log_total": log_total,
+            "log_level": level if level in LOG_LEVELS else "all",
+            "log_q": q,
+            "log_levels": LOG_LEVELS,
         }
     )
 

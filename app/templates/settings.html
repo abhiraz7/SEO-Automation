@@ -144,5 +144,76 @@
     </div>
 
   </div>
+
+  <!-- API keys: status only, never values -->
+  <div id="api-keys" style="margin-top:36px;">
+    <div style="font-size:18px;font-weight:800;color:#0f172a;margin-bottom:4px;">API keys</div>
+    <div style="font-size:13px;color:#64748b;margin-bottom:12px;line-height:1.5;">Which keys this server has. Only the status is shown, never the value: this page has no login, so anyone who can open it would read a raw key. To check that a key actually <em>works</em>, look at the error log below.</div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+      {% for k in api_keys %}
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;{% if not loop.last %}border-bottom:1px solid #f1f5f9;{% endif %}">
+        <div style="flex:1;min-width:0;">
+          <div style="font-family:ui-monospace,Consolas,monospace;font-size:12px;font-weight:700;color:#0f172a;">{{ k.name }}</div>
+          <div style="font-size:11px;color:#94a3b8;">{{ k.purpose }}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          {% if k.is_set %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#dcfce7;color:#15803d;">Set</span>
+          <div style="font-size:11px;color:#64748b;margin-top:2px;">{{ k.masked }}</div>
+          {% else %}<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;">Missing</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- API error log: raw, credentials redacted -->
+  <div id="logs" style="margin-top:36px;">
+    <div style="font-size:18px;font-weight:800;color:#0f172a;margin-bottom:4px;">API error log</div>
+    <div style="font-size:13px;color:#64748b;margin-bottom:12px;line-height:1.5;">Every warning and error the server logged, raw, with tracebacks, newest first (the last 2,000 are kept). Credentials are replaced with <code>[redacted]</code> before anything is stored. Provider failures (DataForSEO, SEMrush, Claude, WordPress, Google) show up here with the endpoint and the reason the provider gave.</div>
+
+    <form method="get" action="/settings#logs" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+      <select name="level" style="font-size:12px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;">
+        <option value="all" {{ 'selected' if log_level == 'all' }}>All levels</option>
+        {% for lv in log_levels %}<option value="{{ lv }}" {{ 'selected' if log_level == lv }}>{{ lv }}</option>{% endfor %}
+      </select>
+      <input type="search" name="q" value="{{ log_q }}" placeholder="Search message or logger (e.g. dataforseo, 402, provider_failed)" style="flex:1;min-width:200px;font-size:12px;padding:6px 10px;border:1px solid #e2e8f0;border-radius:8px;">
+      <button type="submit" style="font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid #c7d2fe;background:#eef2ff;color:#4338ca;cursor:pointer;">Filter</button>
+      <a href="/settings/logs.txt?level={{ log_level }}&q={{ log_q|urlencode }}" style="font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;color:#334155;text-decoration:none;">Download raw .txt</a>
+      <button type="button" onclick="copyLogs(this)" style="font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;color:#334155;cursor:pointer;">Copy shown</button>
+    </form>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Showing {{ log_entries|length }} of {{ log_total }} matching entr{{ 'y' if log_total == 1 else 'ies' }}.</div>
+
+    <div id="log-box" style="background:#0f172a;border-radius:12px;padding:12px 14px;max-height:520px;overflow:auto;">
+      {% for e in log_entries %}
+      <div style="padding:8px 0;{% if not loop.last %}border-bottom:1px solid #1e293b;{% endif %}">
+        <div style="font-family:ui-monospace,Consolas,monospace;font-size:11px;margin-bottom:3px;">
+          <span style="color:#94a3b8;">{{ e.row.created_at.strftime('%Y-%m-%d %H:%M:%S') if e.row.created_at else '?' }} UTC</span>
+          <span style="margin-left:8px;font-weight:700;color:{% if e.row.level == 'WARNING' %}#fbbf24{% else %}#f87171{% endif %};">{{ e.row.level }}</span>
+          <span style="margin-left:8px;color:#7dd3fc;">{{ e.row.logger }}</span>
+        </div>
+        <pre class="log-text" style="margin:0;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;line-height:1.5;color:#e2e8f0;white-space:pre-wrap;word-break:break-word;">{{ e.row.message }}</pre>
+      </div>
+      {% else %}
+      <div style="font-size:12px;color:#94a3b8;padding:14px 4px;">No log entries{% if log_level != 'all' or log_q %} match this filter{% endif %}. Errors appear here as they happen.</div>
+      {% endfor %}
+    </div>
+
+    {% if log_total %}
+    <form method="post" action="/settings/logs/clear" onsubmit="return confirm('Delete every stored log entry? This cannot be undone.');" style="margin-top:10px;">
+      <button type="submit" style="font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid #fecaca;background:#fff;color:#dc2626;cursor:pointer;">Clear the log</button>
+    </form>
+    {% endif %}
+  </div>
 </div>
+
+<script>
+  function copyLogs(btn) {
+    var text = Array.prototype.map.call(document.querySelectorAll('#log-box > div'), function (d) { return d.innerText.trim(); }).join('\n\n');
+    var done = function () { var old = btn.textContent; btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = old; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, done); return; }
+    var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta); done();
+  }
+</script>
 {% endblock %}

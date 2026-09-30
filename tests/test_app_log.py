@@ -88,7 +88,6 @@ def test_a_broken_database_never_raises_into_the_caller():
 
 
 def test_full_pipeline_logger_to_queue_to_background_thread_to_database():
-    import time
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     models.Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
@@ -98,9 +97,9 @@ def test_full_pipeline_logger_to_queue_to_background_thread_to_database():
         assert logging_setup.start_db_logging(Session) is logging_setup._listener      # idempotent
         logging.getLogger("uvicorn.error").error("Exception in ASGI application")       # uvicorn does not propagate to root
         logging.getLogger("suggestions").warning("suggestions.provider_failed project=3")
-        deadline = time.time() + 5
-        while time.time() < deadline and len(rows(Session)) < 2:
-            time.sleep(0.05)
+        # stop() puts a sentinel on the queue and joins the worker thread, so every record
+        # already queued has been written when it returns -- no sleeping, no flakiness.
+        logging_setup.stop_db_logging()
         stored = {r.logger: r.message for r in rows(Session)}
         assert "Exception in ASGI application" in stored["uvicorn.error"]
         assert "provider_failed" in stored["suggestions"]
@@ -112,6 +111,19 @@ def test_full_pipeline_logger_to_queue_to_background_thread_to_database():
                 if h not in handlers:
                     lg.removeHandler(h)
         engine.dispose()
+
+
+def test_console_formatter_redacts_message_and_traceback(monkeypatch):
+    monkeypatch.setenv("SOME_SERVICE_TOKEN", "tok_live_0123456789abcdef")
+    fmt = logging_setup.RedactingFormatter(logging_setup.LOG_FORMAT)
+    try:
+        raise RuntimeError("upstream said token=tok_live_0123456789abcdef")
+    except RuntimeError:
+        import sys
+        rec = logging.LogRecord("x", logging.ERROR, __file__, 1, "call failed for https://h/?key=abcdef1234567890", (), sys.exc_info())
+    line = fmt.format(rec)
+    assert "0123456789abcdef" not in line and "abcdef1234567890" not in line
+    assert "call failed" in line and "Traceback (most recent call last)" in line
 
 
 def test_test_suite_keeps_log_storage_off_the_real_database():

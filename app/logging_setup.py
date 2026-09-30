@@ -97,7 +97,17 @@ def stop_db_logging() -> None:
         _listener = None
 
 
+class RedactingFormatter(logging.Formatter):
+    """Console formatter that redacts the finished line (message and traceback)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact(super().format(record))
+
+
 def configure_logging() -> None:
     logging.basicConfig(level=logging.WARNING, format=LOG_FORMAT)
+    for handler in logging.getLogger().handlers:      # the console handler basicConfig just added
+        if type(handler) is logging.StreamHandler:
+            handler.setFormatter(RedactingFormatter(LOG_FORMAT))
     if os.environ.get("APP_LOG_TO_DB", "1") != "0":
         start_db_logging()
