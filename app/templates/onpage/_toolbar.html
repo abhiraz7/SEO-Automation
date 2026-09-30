@@ -1,0 +1,52 @@
+{# Issue toolbar: filter tabs with real counts, free-text search, sort.
+   Tabs call filterIssues(kind) (defined in onpage_semrush.html) so the tabs,
+   the KPI cards and the search box all share one filter path. There is no
+   "Ignored" tab on purpose: the app has no ignore feature to back it. #}
+{% set with_sugg = issues_js.values()|selectattr('suggestions')|list|length %}
+<style>
+  .it-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+  .it-tabs { display:flex; gap:4px; flex-wrap:wrap; }
+  .it-tab { display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border:1px solid transparent; border-radius:8px; background:transparent; font-size:12px; font-weight:600; color:#475569; cursor:pointer; }
+  .it-tab:hover { background:#f3f4fb; }
+  .it-tab .n { font-size:11px; font-weight:700; color:#64748b; background:#eef0f6; border-radius:999px; padding:0 6px; }
+  .it-tab.active { background:#eef0ff; border-color:#d9defc; color:#4338ca; }
+  .it-tab.active .n { background:#dfe3ff; color:#4338ca; }
+  .it-search { flex:1; min-width:180px; max-width:340px; font-size:12px; padding:6px 10px; border:1px solid #e2e8f0; border-radius:8px; outline:none; }
+  .it-search:focus { border-color:#818cf8; box-shadow:0 0 0 2px rgba(99,102,241,.12); }
+  .it-sort { font-size:12px; padding:6px 8px; border:1px solid #e2e8f0; border-radius:8px; background:#fff; color:#334155; }
+</style>
+<div class="it-bar">
+  <div class="it-tabs" id="it-tabs">
+    <button type="button" class="it-tab active" data-kind="all" onclick="filterIssues('all',{noScroll:true})">All Issues <span class="n">{{ total_issues }}</span></button>
+    <button type="button" class="it-tab" data-kind="needs" onclick="filterIssues('needs',{noScroll:true})">Needs Fixing <span class="n">{{ error_count + warning_count }}</span></button>
+    <button type="button" class="it-tab" data-kind="opportunity" onclick="filterIssues('opportunity',{noScroll:true})">Opportunities <span class="n">{{ opportunity_count }}</span></button>
+    <button type="button" class="it-tab" data-kind="suggestions" onclick="filterIssues('suggestions',{noScroll:true})">AI Suggestions <span class="n">{{ with_sugg }}</span></button>
+  </div>
+  <input type="search" id="it-search" class="it-search" placeholder="Search pages, titles, issues…" oninput="window.ISSUE_Q=this.value;filterIssues(window.ISSUE_KIND||'all',{noScroll:true})">
+  <select id="it-sort" class="it-sort" onchange="sortIssues(this.value)" title="Sort">
+    <option value="priority">Sort: Priority (high to low)</option>
+    <option value="page">Sort: Page (A to Z)</option>
+  </select>
+</div>
+<script>
+  // Highlight the tab matching the active filter. Kinds without a tab
+  // (error / warning, reached from the KPI cards) leave no tab highlighted.
+  function syncToolbar(kind) {
+    document.querySelectorAll('#it-tabs .it-tab').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.kind === kind);
+    });
+  }
+  // Re-order rows inside every category table. Priority = error, warning,
+  // then opportunity; ties keep their current order (Array.sort is stable).
+  var IT_RANK = { error: 0, warning: 1, opportunity: 2 };
+  function sortIssues(mode) {
+    document.querySelectorAll('#issues-section .ig-table tbody').forEach(function (tb) {
+      var rows = Array.prototype.slice.call(tb.querySelectorAll('tr[data-issue-row]'));
+      rows.sort(function (a, b) {
+        if (mode === 'page') return (a.cells[0].textContent || '').trim().localeCompare((b.cells[0].textContent || '').trim());
+        return (IT_RANK[a.dataset.severity] ?? 3) - (IT_RANK[b.dataset.severity] ?? 3);
+      });
+      rows.forEach(function (r) { tb.appendChild(r); });
+    });
+  }
+</script>

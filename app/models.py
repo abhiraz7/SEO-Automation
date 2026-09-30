@@ -161,6 +161,14 @@ class Issue(Base):
     category = Column(String, nullable=False)  # title, meta_description, h1, h2, image_alt, schema, canonical, opengraph, twitter, lang, content
     rule = Column(String, nullable=False)  # missing, too_short, too_long, multiple, duplicate, poor_structure, empty, invalid, thin
     severity = Column(String, default="warning")  # error | warning
+    # impact/score_eligible/classification_version (migration 028) -- a
+    # materialized snapshot of app/audit_classification.classify() at the
+    # moment this Issue was created, NOT a live lookup. Preserves how an
+    # old audit was actually interpreted even if the registry's rules
+    # change later -- see audit_classification.py's module docstring.
+    impact = Column(String, default="medium")  # high | medium | low
+    score_eligible = Column(Boolean, default=True)  # counts toward the technical health score?
+    classification_version = Column(Integer, default=0)
     message = Column(Text, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
 

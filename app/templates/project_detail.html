@@ -29,6 +29,9 @@
       <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:#f8fafc;color:#94a3b8;">
         🛡️ Firecrawl: Not configured
       </span>
+      <a href="/projects/{{ project.id }}/visibility" title="Our own metric, computed from Google's real AI Overview citation data (see /visibility) -- not a number Google reports" style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;text-decoration:none;{% if not ai_visibility.has_data %}background:#f8fafc;color:#94a3b8;{% elif ai_visibility.score >= 50 %}background:#dcfce7;color:#15803d;{% else %}background:#fee2e2;color:#dc2626;{% endif %}">
+        🤖 AI Visibility: {% if ai_visibility.has_data %}{{ "%.0f"|format(ai_visibility.score) }}%{% else %}No data yet{% endif %}
+      </a>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
@@ -99,7 +102,10 @@
   {% for s in pd.suggestions %}{% set pf.n = pf.n + 1 %}{% endfor %}
 {% endfor %}
 {% set pw = namespace(n=0) %}
-{% for p in pages %}{% if p.issues|length > 0 %}{% set pw.n = pw.n + 1 %}{% endif %}{% endfor %}
+{# Only score_eligible issues count a page as unhealthy here -- a page with
+   nothing but informational findings (missing canonical/OG/Twitter tag,
+   etc; see audit_classification.RULES) shouldn't read as "has issues". #}
+{% for p in pages %}{% if p.issues|selectattr('score_eligible')|list|length > 0 %}{% set pw.n = pw.n + 1 %}{% endif %}{% endfor %}
 {% set health = ((total_pages - pw.n) / total_pages * 100)|int if total_pages > 0 else 0 %}
 
 <style>

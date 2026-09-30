@@ -14,6 +14,7 @@ import os
 import httpx
 from bs4 import BeautifulSoup
 
+from . import audit_classification
 from .html_extract import extract_image_alts
 
 DATAFORSEO_BASE = "https://api.dataforseo.com/v3"
@@ -154,7 +155,25 @@ def fetch_task_links(task_id: str, limit: int = 1000) -> dict:
 # same vocabulary regardless of which app sourced the issue.
 
 def _issue(category, rule, severity, message):
-    return {"category": category, "rule": rule, "severity": severity, "message": message}
+    return {
+        "category": category, "rule": rule, "severity": severity, "message": message,
+        **audit_classification.classify(category, rule),
+    }
+
+
+def social_tags(item: dict) -> dict:
+    """The og:/twitter: tags of a raw on-page item. DataForSEO nests them under
+    `meta` (verified against a live instant_pages response, 2026-09-30); the
+    top-level lookup is kept so older fixtures/payloads keep working. Reading
+    only the top level made EVERY page look like it had no Open Graph or Twitter
+    tags."""
+    return item.get("social_media_tags") or (item.get("meta") or {}).get("social_media_tags") or {}
+
+
+def content_block(item: dict) -> dict:
+    """The `content` block (plain_text_word_count, readability scores, ...) of a
+    raw on-page item; nested under `meta` in the live response (see social_tags)."""
+    return item.get("content") or (item.get("meta") or {}).get("content") or {}
 
 
 def issues_from_item(item: dict) -> list[dict]:
@@ -173,7 +192,7 @@ def issues_from_item(item: dict) -> list[dict]:
             issues.append(_issue("title", "duplicate", "warning", "Title tag is duplicated on another crawled page."))
 
     if checks.get("no_description"):
-        issues.append(_issue("meta_description", "missing", "error", "Meta description is missing."))
+        issues.append(_issue("meta_description", "missing", "warning", "Meta description is missing."))
     elif checks.get("duplicate_meta_tags"):
         issues.append(_issue("meta_description", "duplicate", "warning", "Meta tags are duplicated on another crawled page."))
 
@@ -198,7 +217,7 @@ def issues_from_item(item: dict) -> list[dict]:
     if checks.get("irrelevant_description"):
         issues.append(_issue("meta_description", "irrelevant", "warning", "Meta description does not appear relevant to the page content."))
 
-    social = item.get("social_media_tags") or {}
+    social = social_tags(item)
     if not social.get("og:title") and not social.get("og:description"):
         issues.append(_issue("opengraph", "missing", "warning", "OpenGraph title/description tags are missing."))
     if not social.get("twitter:card"):
@@ -245,8 +264,8 @@ def normalize_page(item: dict) -> dict:
     that's the only case a per-image list is actually needed."""
     meta = item.get("meta") or {}
     htags = meta.get("htags") or {}
-    content = item.get("content") or {}
-    social = item.get("social_media_tags") or {}
+    content = content_block(item)
+    social = social_tags(item)
 
     return {
         "url": item.get("url"),
