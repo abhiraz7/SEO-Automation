@@ -376,7 +376,7 @@
 
 <div id="drawer-backdrop" onclick="closeAllDrawers()"></div>
 
-{% include "onpage/_fix_drawer.html" %}
+{% include "onpage/_fix_modal.html" %}
 
 <!-- Refresh cost confirmation modal (API reminder) -->
 <div id="refresh-modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:900;" onclick="closeRefreshModal()"></div>
@@ -789,8 +789,12 @@ function openFixModal(issueId) {
   fmCurrentIssueId = issueId;
   fmExpandedImages = {};
   document.getElementById('fix-modal-message').textContent = issue.message || '';
-  document.getElementById('fix-modal-url').textContent = issue.url || '';
+  var urlEl = document.getElementById('fix-modal-url');
+  urlEl.textContent = issue.url || '';
+  urlEl.href = issue.url || '#';
+  document.getElementById('fd-title').textContent = fdTitleFor(issue);
   renderFixModal(issue);
+  fmUpdateNav();
   document.getElementById('fix-modal-backdrop').classList.add('open');
   var drawer = document.getElementById('fix-modal');
   drawer.classList.add('open');
