@@ -30,7 +30,8 @@ everything, which is why old projects look unchanged until they are re-audited.
 | A1 | Registry, migration 028, `Issue` columns, `_issue()` stamping | Done, merged (PR #22) |
 | A2 | Reclassify canonical, Open Graph, Twitter, meta-description-missing, thin-content as `score_eligible=False`; missing meta description severity error to warning; version 2 | Done, merged |
 | A3 | One health function (`health_from_counts`, `project_health_score`) replacing three formulas; `page_score()` and `project_detail.html` respect `score_eligible` | Done, merged |
-| A4 | Dashboard wording (below) | Next |
+| A4 | Dashboard wording (below) | Done on this branch, not pushed |
+| UI | Compact On-Page screen: KPI strip, category chips, toolbar (tabs/search/sort), compact rows with AI status and Fix/View, right-side fix drawer (partials in `app/templates/onpage/`) | Done on this branch, not pushed. Omitted for lack of backing data: an Ignored tab, suggestion reasons and confidence. Not click-tested in a browser. |
 | A5 | Schema applicability (page-type-aware "missing schema") | Deferred, known gap |
 | A6 | Tests: no canonical/OG/Twitter must not lower the score (12 tests in `tests/test_audit_classification.py`) | Done, merged |
 
