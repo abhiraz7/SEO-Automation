@@ -789,6 +789,21 @@ class SearchConsoleProperty(Base):
     connection = relationship("GoogleConnection", back_populates="properties")
 
 
+class AppLog(Base):
+    """One WARNING-or-above log record (see logging_setup.DBLogHandler), stored
+    so the Settings page can show API/provider errors raw instead of them living
+    only in `docker logs`. `message` already includes any traceback and has been
+    through redact(), so it never holds a credential. Capped to the newest few
+    thousand rows. New table: created by create_all, no migration."""
+    __tablename__ = "app_logs"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    level = Column(String, nullable=False)       # WARNING | ERROR | CRITICAL
+    logger = Column(String)                      # e.g. "suggestions", "uvicorn.error"
+    message = Column(Text, nullable=False)
+
+
 class LlmMentionSnapshot(Base):
     """One dataforseo.fetch_llm_mentions_target_metrics() pull for a project
     -- a SEPARATE, separately-billed DataForSEO product ($0.10/request +
