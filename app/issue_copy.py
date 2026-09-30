@@ -10,6 +10,8 @@ this (specific to the page and site) is Part B of prompts/Audit-Classification-
 Task-List.md; this module is its deterministic fallback and the facts layer it
 would build on.
 """
+import re
+
 from . import audit
 
 # (category, rule) -> short tag shown on the row.
@@ -140,6 +142,60 @@ def facts(page, category: str) -> dict | None:
     lo, hi = ranges[category]
     n = len(text)
     return {"length": n, "min": lo, "max": hi, "over_by": max(0, n - hi), "under_by": max(0, lo - n)}
+
+
+_STOP = {"a", "an", "the", "and", "or", "of", "for", "to", "in", "on", "with", "at", "by", "is", "are", "your"}
+
+
+def _tokens(text: str) -> set[str]:
+    return {t for t in re.findall(r"[\w']+", (text or "").casefold()) if t not in _STOP}
+
+
+def _norm(text: str) -> str:
+    return " ".join((text or "").split()).casefold()
+
+
+def check_suggestion(category: str, suggested: str, page=None) -> list[dict]:
+    """Deterministic checks on a suggested replacement, computed in code (never
+    by the model) so a green tick always means "we verified this". Each check is
+    {label, passed, hard}. A failed hard check means the suggestion isn't ready
+    to use; a failed soft check is a caution. Length checks only apply to the
+    categories that have a real range (title / meta description); nothing here
+    judges relevance or intent -- that stays an unverified AI claim in the UI."""
+    text = (suggested or "").strip()
+    current = _stored_text(page, category)
+    out = [{"label": "Suggestion is not empty", "passed": bool(text), "hard": True}]
+    if not text:
+        return out
+    ranges = {"title": (audit.TITLE_MIN, audit.TITLE_MAX), "meta_description": (audit.META_DESC_MIN, audit.META_DESC_MAX)}
+    if category in ranges:
+        lo, hi = ranges[category]
+        n = len(text)
+        out.append({"label": f"Length is {n} characters (guideline {lo}-{hi})", "passed": lo <= n <= hi, "hard": True})
+        if current:
+            out.append({"label": "Differs from the current text", "passed": _norm(text) != _norm(current), "hard": False})
+            cur_tokens = _tokens(current)
+            if cur_tokens:
+                kept = len(_tokens(text) & cur_tokens) / len(cur_tokens)
+                out.append({"label": "Keeps key terms from the current text", "passed": kept >= 0.3, "hard": False})
+            source = " ".join([current, getattr(page, "title", None) or "", getattr(page, "meta_description", None) or "",
+                               " ".join(getattr(page, "h1", None) or [])])
+            new_numbers = set(re.findall(r"\d+", text)) - set(re.findall(r"\d+", source))
+            out.append({"label": "Adds no new numbers or years", "passed": not new_numbers, "hard": False})
+    return out
+
+
+def checks_summary(checks: list[dict]) -> dict:
+    """{state, passed, total}: state is 'review' if any hard check failed,
+    'partial' if only soft checks failed, else 'ok'."""
+    passed = sum(1 for c in checks if c["passed"])
+    if any(not c["passed"] and c["hard"] for c in checks):
+        state = "review"
+    elif passed < len(checks):
+        state = "partial"
+    else:
+        state = "ok"
+    return {"state": state, "passed": passed, "total": len(checks)}
 
 
 def explain(category: str, rule: str, message: str, page=None) -> dict:

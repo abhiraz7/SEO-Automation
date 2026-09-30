@@ -533,6 +533,12 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
         db, [s.id for group in suggestions_by_issue.values() for s in group if s.status == "deployed"]
     )
 
+    def _suggestion_checks(issue: models.Issue, s: models.Suggestion) -> dict:
+        checks = issue_copy.check_suggestion(
+            issue.category, s.edited_content or s.content, pages_by_id.get(issue.page_id)
+        )
+        return {"checks": checks, "checks_summary": issue_copy.checks_summary(checks)}
+
     issues_js = {
         issue.id: {
             "id": issue.id,
@@ -568,6 +574,10 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
                     "edited_content": s.edited_content,
                     "source": "claude",
                     "rank": s.rank,
+                    # Deterministic checks on the suggested text, computed in
+                    # code (issue_copy.check_suggestion) -- the "Checks passed"
+                    # badge; never a model-reported confidence.
+                    **_suggestion_checks(issue, s),
                     **deploy_status.suggestion_live_fields(live_map, s),
                 }
                 for s in sorted(suggestions_by_issue.get(issue.id, []), key=lambda s: s.rank)

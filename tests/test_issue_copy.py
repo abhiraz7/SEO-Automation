@@ -42,6 +42,46 @@ def test_unknown_rule_falls_back_to_message_and_humanised_tag():
     assert e["headline"] == "H2 structure is poor." and e["tag"] == "Poor structure"
 
 
+def _page_with(title):
+    return SimpleNamespace(title=title, meta_description="", h1=["Behaviour and Emotional Difficulties"])
+
+
+def test_good_title_suggestion_passes_every_check():
+    page = _page_with("Behaviour Attention Emotional Difficulties Primary Children DSSSB Notes 2026")
+    checks = issue_copy.check_suggestion("title", "DSSSB 2026: Behaviour & Emotional Difficulties Notes", page)
+    assert all(c["passed"] for c in checks)
+    assert issue_copy.checks_summary(checks)["state"] == "ok"
+
+
+def test_out_of_range_length_is_a_hard_failure():
+    page = _page_with("Some existing title for this page")
+    checks = issue_copy.check_suggestion("title", "x" * 90, page)
+    assert issue_copy.checks_summary(checks)["state"] == "review"
+
+
+def test_empty_suggestion_is_a_hard_failure():
+    assert issue_copy.checks_summary(issue_copy.check_suggestion("title", "  ", _page_with("abc")))["state"] == "review"
+
+
+def test_invented_number_is_a_soft_failure_not_a_hard_one():
+    page = _page_with("Indian Polity Notes for BPSC TRE exam preparation")
+    checks = issue_copy.check_suggestion("title", "Indian Polity Notes 2031 for BPSC TRE preparation", page)
+    failed = [c for c in checks if not c["passed"]]
+    assert [c["label"] for c in failed] == ["Adds no new numbers or years"]
+    assert issue_copy.checks_summary(checks)["state"] == "partial"
+
+
+def test_unchanged_suggestion_is_flagged():
+    title = "Indian Polity Notes for BPSC TRE exam preparation"
+    checks = issue_copy.check_suggestion("title", title, _page_with(title))
+    assert any(c["label"] == "Differs from the current text" and not c["passed"] for c in checks)
+
+
+def test_categories_without_a_range_only_get_the_emptiness_check():
+    checks = issue_copy.check_suggestion("canonical", "https://example.com/", _page_with("t"))
+    assert len(checks) == 1 and checks[0]["passed"]
+
+
 def test_every_registered_rule_has_a_tag_and_copy_pair_is_well_formed():
     for (cat, rule), (headline, detail, why) in issue_copy.COPY.items():
         assert headline and detail and why
