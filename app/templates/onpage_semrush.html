@@ -215,6 +215,8 @@
     <span style="font-size:11px;color:#94a3b8;margin-left:auto;">{{ total_issues }} total on-page issues across {{ total_pages }} pages</span>
   </div>
 
+  {% include "onpage/_toolbar.html" %}
+
   <div id="issues-filter-banner" style="display:none;align-items:center;gap:8px;margin-bottom:14px;padding:8px 12px;border-radius:8px;background:#eef2ff;border:1px solid #e0e7ff;">
     <span style="font-size:12px;color:#4338ca;font-weight:600;">Showing: <span id="issues-filter-label"></span></span>
     <button type="button" onclick="filterIssues('all')" style="margin-left:auto;font-size:11px;font-weight:700;color:#4f46e5;background:none;border:none;cursor:pointer;padding:0;">Clear filter ✕</button>
@@ -754,22 +756,29 @@ var fmCurrentIssueId = null;
 // function or the panel a user just opened would collapse on its own action.
 var fmExpandedImages = {};
 
-var FILTER_LABELS = { all: 'All issues', error: 'Critical errors only', warning: 'Warnings only', opportunity: 'Opportunities (not scored)', suggestions: 'Pages with AI suggestions' };
-function filterIssues(kind) {
+var FILTER_LABELS = { all: 'All issues', needs: 'Needs fixing (scored errors + warnings)', error: 'Critical errors only', warning: 'Warnings only', opportunity: 'Opportunities (not scored)', suggestions: 'Pages with AI suggestions' };
+function filterIssues(kind, opts) {
   var section = document.getElementById('issues-section');
   if (!section) return;
-  section.scrollIntoView({ behavior: 'smooth' });
+  if (!(opts && opts.noScroll)) section.scrollIntoView({ behavior: 'smooth' });
 
   var rows = section.querySelectorAll('tr[data-issue-row]');
   if (!rows.length) return; // empty-state page has no table to filter
 
+  // Toolbar state: the active tab (kind) plus the free-text search box (q).
+  window.ISSUE_KIND = kind;
+  var q = (window.ISSUE_Q || '').trim().toLowerCase();
+  var filtering = kind !== 'all' || q !== '';
+
   var detailsCounts = new Map();
   rows.forEach(function(row) {
-    var show = kind === 'all'
+    var matchesKind = kind === 'all'
+      || (kind === 'needs' && (row.dataset.severity === 'error' || row.dataset.severity === 'warning'))
       || (kind === 'error' && row.dataset.severity === 'error')
       || (kind === 'warning' && row.dataset.severity === 'warning')
       || (kind === 'opportunity' && row.dataset.severity === 'opportunity')
       || (kind === 'suggestions' && row.dataset.hasSugg === '1');
+    var show = matchesKind && (q === '' || row.textContent.toLowerCase().indexOf(q) !== -1);
     row.style.display = show ? '' : 'none';
     var details = row.closest('details');
     if (details) {
@@ -777,8 +786,8 @@ function filterIssues(kind) {
     }
   });
   detailsCounts.forEach(function(count, details) {
-    details.style.display = (kind === 'all' || count > 0) ? '' : 'none';
-    if (kind !== 'all') details.open = count > 0;
+    details.style.display = (!filtering || count > 0) ? '' : 'none';
+    if (filtering) details.open = count > 0;
   });
   // "Clean" categories (no rows at all, e.g. zero H1 issues) aren't in
   // detailsCounts since they never had a data-issue-row -- hide those too
@@ -786,9 +795,10 @@ function filterIssues(kind) {
   // contain the errors/warnings/suggestions being filtered for.
   section.querySelectorAll('details.ig').forEach(function(details) {
     if (!detailsCounts.has(details)) {
-      details.style.display = kind === 'all' ? '' : 'none';
+      details.style.display = !filtering ? '' : 'none';
     }
   });
+  if (window.syncToolbar) syncToolbar(kind);
 
   var banner = document.getElementById('issues-filter-banner');
   var label = document.getElementById('issues-filter-label');
