@@ -1,0 +1,63 @@
+{# Compact issue rows for one category. Expects (from the enclosing loop in
+   onpage_semrush.html): category, cat_issues, accent; and from the page
+   context: pages_by_id, issues_js. Row hooks the page JS relies on are kept:
+   tr[data-issue-row], data-severity (error|warning|opportunity), data-has-sugg,
+   and openFixModal(id). AI status is real: "Suggested" only when the issue
+   already has stored suggestions, otherwise "Review". #}
+<style>
+  .ig-table.compact th { padding:6px 12px; }
+  .ig-table.compact td { padding:8px 12px; }
+  .row-name { font-size:13px; font-weight:600; color:#0f172a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row-url { font-size:11px; color:#94a3b8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pill { display:inline-flex; align-items:center; font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; white-space:nowrap; }
+  .pill-ai { background:#f1eaff; color:#6d28d9; }
+  .pill-review { background:#f1f5f9; color:#64748b; }
+  .pill-len { background:#f1f5f9; color:#475569; margin-left:6px; }
+  .pill-tag { background:#fdecee; color:#b4232f; margin-left:8px; font-size:10px; vertical-align:middle; }
+  .btn-fix { font-size:12px; font-weight:600; color:#fff; background:#6d5ef5; border:0; border-radius:7px; padding:5px 12px; cursor:pointer; }
+  .btn-fix:hover { background:#5b4de0; }
+  .btn-view { font-size:12px; font-weight:600; color:#475569; text-decoration:none; padding:5px 8px; border-radius:7px; }
+  .btn-view:hover { background:#f1f5f9; }
+</style>
+<table class="ig-table compact">
+  <thead>
+    <tr>
+      <th style="width:26%">Page</th>
+      <th>Problem</th>
+      <th style="width:22%">Current value</th>
+      <th style="width:88px">Severity</th>
+      <th style="width:96px">AI</th>
+      <th style="width:120px;text-align:right;padding-right:14px;">Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for issue in cat_issues %}
+    {% set page = pages_by_id.get(issue.page_id) %}
+    {% set has_sugg = issues_js[issue.id].suggestions|length > 0 %}
+    {% set n_chars = measured_length(page, category) %}
+    <tr onclick="openFixModal({{ issue.id }})" style="cursor:pointer;" data-issue-row="{{ issue.id }}" data-severity="{{ issue.severity if issue.score_eligible else 'opportunity' }}" data-has-sugg="{{ '1' if has_sugg else '0' }}">
+      <td style="max-width:0;">
+        <div class="row-name" title="{{ page_display_name(page.url) if page else '' }}">{{ page_display_name(page.url) if page else '—' }}<span class="pill pill-tag">{{ issues_js[issue.id].explain.tag }}</span></div>
+        <div class="row-url" title="{{ page.url if page else '' }}">{{ page.url if page else '' }}</div>
+      </td>
+      <td style="font-size:12px;color:#0f172a;">{{ issue.message }}{% if n_chars %}<span class="pill pill-len" title="Measured length of the current value">{{ n_chars }} chars</span>{% endif %}</td>
+      {% set current_display = current_value_display(page, category) if page else '-Blank-' %}
+      <td style="font-size:12px;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:{{ '#cbd5e1' if current_display == '-Blank-' else '#374151' }};{{ 'font-style:italic;' if current_display == '-Blank-' }}" title="{{ current_display }}">{{ current_display }}</td>
+      <td>
+        {% if not issue.score_eligible %}<span class="pill" style="background:#e0f2fe;color:#0369a1;">Opportunity</span>
+        {% elif issue.severity == 'error' %}<span class="pill" style="background:#fee2e2;color:#dc2626;">Error</span>
+        {% else %}<span class="pill" style="background:#fef9c3;color:#a16207;">Warning</span>{% endif %}
+      </td>
+      <td>
+        {% if issues_js[issue.id].ai_paused %}<span class="pill pill-review" title="{{ issues_js[issue.id].ai_paused }}">Manual</span>
+        {% elif has_sugg %}<span class="pill pill-ai" title="{{ issues_js[issue.id].suggestions|length }} AI suggestion{{ 's' if issues_js[issue.id].suggestions|length != 1 }} ready">✦ Suggested</span>
+        {% else %}<span class="pill pill-review" title="No AI suggestion yet; needs human review">Review</span>{% endif %}
+      </td>
+      <td style="text-align:right;padding-right:14px;white-space:nowrap;">
+        <button type="button" class="btn-fix" onclick="event.stopPropagation();openFixModal({{ issue.id }})">Fix</button>
+        {% if page %}<a class="btn-view" href="{{ page.url }}" target="_blank" rel="noopener" onclick="event.stopPropagation()">View</a>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

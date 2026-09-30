@@ -1,0 +1,92 @@
+{# Wide two-column fix modal (problem + facts on the left, AI suggestion on the
+   right, Previous/Next in the footer). Element ids and the functions
+   openFixModal/closeFixModal/renderFixModal are unchanged from the older modal
+   and drawer, so generate / save / decide / deploy / rollback / per-image fixes
+   keep working -- this file is only the container, its open/close (CSS class)
+   and prev/next navigation. Below 800px it collapses to one full-screen column. #}
+<style>
+  .fd-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.42); z-index:900; opacity:0; pointer-events:none; transition:opacity .18s; }
+  .fd-backdrop.open { opacity:1; pointer-events:auto; }
+  .fd { position:fixed; top:50%; left:50%; width:min(1100px,96vw); max-height:92vh; background:#fff; border-radius:16px; z-index:901; display:flex; flex-direction:column; box-shadow:0 24px 64px rgba(15,23,42,.28); opacity:0; visibility:hidden; transform:translate(-50%,-48%); transition:opacity .18s, transform .18s, visibility 0s .18s; }
+  .fd.open { opacity:1; visibility:visible; transform:translate(-50%,-50%); transition:opacity .18s, transform .18s; }
+  .fd-head { display:flex; align-items:center; gap:12px; padding:16px 20px; border-bottom:1px solid #eef0f6; }
+  .fd-icon { width:38px; height:38px; border-radius:10px; background:#eef0ff; color:#6d5ef5; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+  .fd-title { font-size:17px; font-weight:700; color:#0f172a; line-height:1.2; }
+  .fd-url { font-size:12px; color:#64748b; word-break:break-all; margin-top:2px; }
+  .fd-url a { color:#64748b; text-decoration:none; } .fd-url a:hover { color:#4338ca; }
+  .fd-close { margin-left:auto; width:32px; height:32px; border-radius:8px; border:1px solid #e2e8f0; background:#fff; color:#475569; cursor:pointer; flex-shrink:0; font-size:16px; }
+  .fd-close:hover { background:#f1f5f9; }
+  .fd-body { flex:1; overflow-y:auto; padding:16px 20px; overscroll-behavior:contain; }
+  .fd-grid { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); gap:16px; align-items:start; }
+  .fd-foot { display:flex; align-items:center; gap:10px; padding:12px 20px; border-top:1px solid #eef0f6; }
+  .fd-pos { font-size:12px; color:#64748b; margin-right:auto; }
+  .fd-nav { font-size:13px; font-weight:600; padding:8px 14px; border-radius:9px; border:1px solid #d9defc; background:#fff; color:#334155; cursor:pointer; }
+  .fd-nav:hover:not(:disabled) { background:#f5f6ff; }
+  .fd-nav.primary { background:#4f46e5; border-color:#4f46e5; color:#fff; }
+  .fd-nav.primary:hover:not(:disabled) { background:#4338ca; }
+  .fd-nav:disabled { opacity:.45; cursor:default; }
+  @media (max-width: 800px) {
+    .fd { width:100vw; max-height:100vh; height:100vh; border-radius:0; top:0; left:0; transform:translateY(8px); }
+    .fd.open { transform:none; }
+    .fd-grid { grid-template-columns:minmax(0,1fr); }
+    .fd-nav { min-height:44px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .fd, .fd-backdrop { transition:none; } }
+</style>
+
+<div id="fix-modal-backdrop" class="fd-backdrop" onclick="closeFixModal()"></div>
+<div id="fix-modal" class="fd" role="dialog" aria-modal="true" aria-labelledby="fd-title" aria-hidden="true">
+  <div class="fd-head">
+    <div class="fd-icon" aria-hidden="true">📄</div>
+    <div style="min-width:0;">
+      <div id="fd-title" class="fd-title">Issue</div>
+      <div class="fd-url"><a id="fix-modal-url" href="#" target="_blank" rel="noopener"></a></div>
+    </div>
+    <button type="button" class="fd-close" onclick="closeFixModal()" aria-label="Close">✕</button>
+  </div>
+  {# Kept for the older code path that writes the plain message here. #}
+  <div id="fix-modal-message" style="display:none;"></div>
+  <div id="fix-modal-body" class="fd-body"></div>
+  <div class="fd-foot">
+    <span id="fd-pos" class="fd-pos" aria-live="polite"></span>
+    <button type="button" id="fd-prev" class="fd-nav" onclick="fmStep(-1)">← Previous issue</button>
+    <button type="button" id="fd-next" class="fd-nav primary" onclick="fmStep(1)">Next issue →</button>
+  </div>
+</div>
+<script>
+  // Category label for the modal title, without the leading emoji.
+  var FD_CAT_LABELS = {{ cat_labels | tojson }};
+  function fdTitleFor(issue) {
+    var raw = FD_CAT_LABELS[issue.category] || issue.category.replace(/_/g, ' ');
+    return raw.replace(/^[^A-Za-z0-9]+/, '') + ' issue';
+  }
+  // Issues in the same category, in the order the rows currently appear
+  // (respects sort and hides rows the toolbar filter has hidden).
+  function fmNeighbours() {
+    var row = document.querySelector('tr[data-issue-row="' + window.fmCurrentIssueId + '"]');
+    if (!row) return { ids: [], idx: -1 };
+    var ids = Array.prototype.slice.call(row.parentNode.querySelectorAll('tr[data-issue-row]'))
+      .filter(function (r) { return r.style.display !== 'none'; })
+      .map(function (r) { return Number(r.dataset.issueRow); });
+    return { ids: ids, idx: ids.indexOf(Number(window.fmCurrentIssueId)) };
+  }
+  function fmUpdateNav() {
+    var n = fmNeighbours();
+    document.getElementById('fd-prev').disabled = n.idx <= 0;
+    document.getElementById('fd-next').disabled = n.idx < 0 || n.idx >= n.ids.length - 1;
+    document.getElementById('fd-pos').textContent = n.idx < 0 ? '' : ('Issue ' + (n.idx + 1) + ' of ' + n.ids.length);
+  }
+  function fmStep(dir) {
+    var n = fmNeighbours();
+    var target = n.ids[n.idx + dir];
+    if (target != null) openFixModal(target);
+  }
+  document.addEventListener('keydown', function (e) {
+    if (!window.fmCurrentIssueId) return;
+    if (e.key === 'Escape') { closeFixModal(); return; }
+    var t = e.target, typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+    if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'ArrowRight') { fmStep(1); e.preventDefault(); }
+    if (e.key === 'ArrowLeft') { fmStep(-1); e.preventDefault(); }
+  });
+</script>
