@@ -7,6 +7,7 @@ shape; keyword_provider.py is the only caller.
 Auth: DataForSEO uses HTTP Basic Auth with a login/password pair (not a
 single API key like Semrush), read from DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD.
 """
+import logging
 import os
 from datetime import datetime, timezone
 
@@ -14,6 +15,9 @@ import httpx
 
 from .keyword_locations import DEFAULT_LOCATION, dataforseo_location_code
 from .schemas import NormalizedKeyword
+from .services import failure_log
+
+logger = logging.getLogger("dataforseo")
 
 DATAFORSEO_BASE = "https://api.dataforseo.com/v3"
 LANGUAGE_CODE_EN = "en"
@@ -74,9 +78,16 @@ def _post(path: str, payload: list[dict]) -> dict:
     auth = _auth()
     if not auth:
         return {"error": "No DataForSEO credentials"}
-    resp = httpx.post(f"{DATAFORSEO_BASE}{path}", json=payload, auth=auth, timeout=15)
-    resp.raise_for_status()
-    return resp.json()
+    try:
+        resp = httpx.post(f"{DATAFORSEO_BASE}{path}", json=payload, auth=auth, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:
+        failure_log.failure(logger, "dataforseo.request_failed", path=path, error=type(exc).__name__, reason=str(exc))
+        raise
+    if data.get("status_code") != 20000:   # DataForSEO reports most failures inside an HTTP 200
+        failure_log.failure(logger, "dataforseo.api_error", path=path, code=data.get("status_code"), reason=data.get("status_message"))
+    return data
 
 
 def fetch_keyword_overview(keyword: str, location: str = DEFAULT_LOCATION) -> dict:
