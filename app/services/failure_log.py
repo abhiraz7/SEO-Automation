@@ -1,56 +1,72 @@
 """
-Shared failure-logging helper -- the concrete implementation of the
-project-wide "every failure must be logged, not just shown" rule.
+One way to record a failure, so every failure can be found with one search.
 
-This did not exist as code anywhere in the repo before Feature 3 (Google
-Search Console); it was only a standing convention. Building it here because
-GSC is the first feature whose task list requires it explicitly, but it is
-deliberately general-purpose -- any provider module (semrush.py,
-dataforseo.py, wordpress.py, google_search_console.py, job handlers) can
-import and use it, the same way schema_check.py already uses
-logging.getLogger(name) + caplog for its own tests.
+    failure(logger, "optimizer.run_failed", run=12, project=3, reason="...")   # WARNING
+    crash(logger, "optimizer.run_crashed", run=12)                              # ERROR + traceback (inside an except)
+    note(logger, "optimizer.no_change", run=12)                                 # INFO: not a failure
 
-Two functions, two different situations:
+    ->  optimizer.run_failed run=12 project=3 reason="The search evidence could not be fetched: 402"
 
-- failure(where, reason, **context) -- an EXPECTED failure: a call returned
-  a non-2xx status, a token was revoked, a required env var was missing.
-  Logged at WARNING. This is not a bug, it's the ok/no_data/error discipline
-  working as designed -- something the caller already turned into a
-  structured error result. Logging it here just means it is not *only*
-  visible to whoever happens to be looking at that one response.
+Two levels, on purpose:
+  failure  WARNING  the system worked, but something it depends on or produced was
+                    unusable: a search-provider error, an AI answer that could not be
+                    used, a suggestion the checks blocked, an attempt to approve one.
+  crash    ERROR    OUR code broke (an unexpected exception, a validation check that
+                    raised). Logged with the traceback, because that is a bug to fix.
 
-- crash(where, exc, **context) -- an UNEXPECTED failure: an exception that
-  escaped normal handling (a bug, a library behaving unexpectedly, a network
-  error not already caught). Logged at ERROR with exc_info, so a stack trace
-  ends up in the logs.
+The message is `event key=value key=value`: the event name is greppable, values that
+contain spaces are quoted, and everything is one line, so a failure survives whatever
+collects the logs. Values are truncated, and any field whose NAME looks like a secret
+(key, token, password...) is replaced by [redacted]: a helper that logs must never be
+the way a credential leaks.
 
-Both take a required `where` (a short string identifying the call site --
-module.function, e.g. "google_search_console.list_sites") and free-form
-keyword context. NEVER pass a secret (token, password, API key) or draft/
-user-authored content as context -- these are LOG lines, not encrypted
-storage, and may end up in log aggregation tools with different retention/
-access rules than the DB. Pass identifiers (project_id, site_url, status
-code) instead.
+What is deliberately NOT logged: page text, drafts, prompts or model answers (only the
+reason a step failed).
 """
+import json
 import logging
-from typing import Any
+import re
 
-logger = logging.getLogger("failure_log")
-
-
-def _format(where: str, reason: str, context: dict[str, Any]) -> str:
-    ctx = " ".join(f"{k}={v!r}" for k, v in context.items())
-    return f"{where}: {reason}" + (f" ({ctx})" if ctx else "")
-
-
-def failure(where: str, reason: str, **context: Any) -> None:
-    """Log an expected/handled failure. Call once, at the point the
-    ok/no_data/error outcome is decided -- not at every layer that re-raises
-    or re-wraps it."""
-    logger.warning(_format(where, reason, context))
+MAX_VALUE_CHARS = 300
+# Matches whole name-parts ('api_key', 'access_token', 'client_secret'), NOT substrings: a
+# field called 'keyword' (this is an SEO tool) or 'tokens_used' is not a secret.
+_SECRET_NAME = re.compile(r"(^|[_\-])(api_?key|key|token|secret|password|passwd|authorization|credentials?|cookie)($|[_\-])", re.I)
+_PLAIN = re.compile(r"[\w./:@#%+\-]+", re.UNICODE)
 
 
-def crash(where: str, exc: BaseException, **context: Any) -> None:
-    """Log an unexpected exception, with traceback, at the boundary that
-    caught it."""
-    logger.error(_format(where, str(exc), context), exc_info=exc)
+def _one_line(text: str) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= MAX_VALUE_CHARS else text[:MAX_VALUE_CHARS - 1] + "…"
+
+
+def _render(value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, (list, tuple, set)):
+        value = ", ".join(_one_line(v) for v in value)
+    text = _one_line(value)
+    return text if text and _PLAIN.fullmatch(text) else json.dumps(text, ensure_ascii=False)
+
+
+def format_event(event: str, **fields) -> str:
+    parts = [event]
+    for name, value in fields.items():
+        if value is None:
+            continue
+        parts.append(f"{name}={'[redacted]' if _SECRET_NAME.search(name) else _render(value)}")
+    return " ".join(parts)
+
+
+def failure(logger: logging.Logger, event: str, **fields) -> None:
+    logger.warning(format_event(event, **fields))
+
+
+def crash(logger: logging.Logger, event: str, **fields) -> None:
+    """Call from inside an `except` block: records the traceback."""
+    logger.exception(format_event(event, **fields))
+
+
+def note(logger: logging.Logger, event: str, **fields) -> None:
+    logger.info(format_event(event, **fields))

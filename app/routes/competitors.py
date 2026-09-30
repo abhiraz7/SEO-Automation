@@ -153,14 +153,16 @@ def start_gap_analysis(
     keyword: str = Form(""),
     location: str = Form(""),
     device: str = Form("desktop"),
+    with_plan: bool = Form(True),
     db: Session = Depends(get_db),
 ):
     """Runs one analysis to completion (it can take a minute or two: SERP call, up to
     7 page fetches, one AI call). A run that ends as error / no_data is still a 200:
-    the run is saved and the page shows exactly what went wrong."""
+    the run is saved and the page shows exactly what went wrong. with_plan=false
+    gathers the evidence only (no AI call); the Content Optimizer asks for that."""
     project = _get_project(db, project_id)
     try:
-        run = competitor_gap.run_analysis(db, project, target_url, keyword, location, device)
+        run = competitor_gap.run_analysis(db, project, target_url, keyword, location, device, with_plan=with_plan)
     except competitor_gap.InputError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except competitor_gap.BusyError as exc:

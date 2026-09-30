@@ -4,7 +4,7 @@ alongside its move from flat scalar fields to entity lists, since list-shaped
 request bodies are naturally expressed as JSON, not HTML form fields.
 """
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -238,3 +238,66 @@ class ModelGapDraft(BaseModel):
     draft: str = Field(min_length=1, max_length=6000)
     claims_to_verify: list[str] = Field(default_factory=list)
 
+
+
+# ── AI Content Optimizer ─────────────────────────────────────────────────
+
+OptimizerType = Literal[
+    "add_section", "expand_section", "rewrite_section", "improve_heading",
+    "improve_title", "improve_meta_description", "add_faq", "improve_internal_link",
+]
+
+
+class ModelOptimizerSuggestion(BaseModel):
+    """One suggestion exactly as the model returns it. Every field is lenient text:
+    the APPLICATION decides what is valid (services/optimizer_plan.resolve_suggestions),
+    so a single unsupported or malformed suggestion is discarded -- and shown with its
+    reason -- instead of voiding the whole answer."""
+    model_config = {"extra": "ignore"}
+
+    type: str = ""
+    target: str = ""            # title | meta_description | h1 | sec_NN | new
+    priority: str = "medium"
+    problem: str = Field(default="", max_length=1500)
+    evidence_ids: list[str] = Field(default_factory=list)
+    after: str = Field(default="", max_length=6000)
+    link_target: str | None = None
+    requires_fact_check: bool = False
+    claims_to_verify: list[str] = Field(default_factory=list)
+    confidence: str = "low"
+
+
+class ModelOptimizerOutput(BaseModel):
+    """The top-level envelope. Each entry of `suggestions` is validated on its own."""
+    model_config = {"extra": "ignore"}
+
+    suggestions: list[Any] = Field(default_factory=list)
+    no_change_reason: str | None = None
+
+
+class OptimizerEvidence(BaseModel):
+    """One piece of evidence as STORED: rebuilt by the application from its own data,
+    never taken from the model."""
+    type: str
+    label: str
+    competitor_count: int = 0
+    competitor_total: int = 0
+    target_coverage: str | None = None
+    gap_id: int | None = None
+
+
+class OptimizerSuggestion(BaseModel):
+    """One suggestion as STORED. Strict: an invalid enum value or an empty required
+    field is an error here, never silently stored."""
+    id: str
+    type: OptimizerType
+    target_ref: str
+    priority: Priority
+    problem: str = Field(min_length=1)
+    evidence: list[OptimizerEvidence] = Field(min_length=1)
+    before: str | None = None
+    after: str = Field(min_length=1)
+    link_target: str | None = None
+    requires_fact_check: bool = False
+    claims_to_verify: list[str] = Field(default_factory=list)
+    confidence: Confidence

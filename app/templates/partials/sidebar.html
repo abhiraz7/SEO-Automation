@@ -89,9 +89,11 @@
     {% if project is defined %}
       {{ nav_link("/projects/" ~ project.id ~ "/links", "Link Analyzer", "link", active=path.startswith("/projects/" ~ project.id ~ "/links")) }}
       {{ nav_link("/projects/" ~ project.id ~ "/competitors", "Competitor Analysis", "competitor", active=path.startswith("/projects/" ~ project.id ~ "/competitors")) }}
+      {{ nav_link("/projects/" ~ project.id ~ "/optimizer", "Content Optimizer", "aiwriter", active=path.startswith("/projects/" ~ project.id ~ "/optimizer")) }}
     {% else %}
       {{ nav_link("#", "Link Analyzer", "link", enabled=False, disabled_reason="open a project first") }}
       {{ nav_link("#", "Competitor Analysis", "competitor", enabled=False, disabled_reason="open a project first") }}
+      {{ nav_link("#", "Content Optimizer", "aiwriter", enabled=False, disabled_reason="open a project first") }}
     {% endif %}
     {{ nav_link("#", "AI Writer", "aiwriter", enabled=False) }}
     {{ nav_link("/security", "Security Testing", "security", active=path.startswith("/security") or path.endswith("/security")) }}

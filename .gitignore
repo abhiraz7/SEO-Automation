@@ -10,7 +10,5 @@ Credentials and api/
 Credentials and api
 scripts/
 claude-wp-mcp final
-
-# Raw session-transcript dumps (auto-saved by the Claude Code environment) --
-# not the deliberate AgentLog.md / dated .md summaries, which stay tracked.
-AgentDailyLog/*.txt
+conversation/
+AgentDailyLog

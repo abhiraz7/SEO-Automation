@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from .. import dataforseo, models
 from ..database import get_db
+from ..services.ai_visibility_score import compute_ai_visibility_score
 from .security import _visible_projects
 from .settings import register_crawler_global
 
@@ -133,6 +134,7 @@ def visibility_report(project_id: int, request: Request, db: Session = Depends(g
             "suggested": suggested_queries(profile),
             "has_profile": profile is not None,
             "dataforseo_configured": dataforseo.is_configured(),
+            "ai_visibility": compute_ai_visibility_score(checks),
         }
     )
 

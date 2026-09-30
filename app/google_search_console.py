@@ -26,6 +26,7 @@ account -- that verification happens once Task 0 is done and Task 4's
 routes exist to drive a real browser click-through.
 """
 import json
+import logging
 import os
 import secrets
 from dataclasses import dataclass, field
@@ -41,6 +42,8 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from .services import failure_log
+
+logger = logging.getLogger("google_search_console")
 
 _ENV_CLIENT_ID = "GOOGLE_OAUTH_CLIENT_ID"
 _ENV_CLIENT_SECRET = "GOOGLE_OAUTH_CLIENT_SECRET"
@@ -213,7 +216,7 @@ def exchange_code_for_tokens(code: str) -> GSCResult:
         flow.redirect_uri = os.environ[_ENV_REDIRECT_URI]
         flow.fetch_token(code=code)
     except Exception as e:
-        failure_log.failure("google_search_console.exchange_code_for_tokens", str(e))
+        failure_log.failure(logger, "gsc.exchange_code_failed", reason=str(e))
         return GSCResult(status="error", error=f"Could not exchange authorization code: {e}")
 
     creds = flow.credentials
@@ -222,12 +225,12 @@ def exchange_code_for_tokens(code: str) -> GSCResult:
         # the auth URL, but if it does, storing a connection with no
         # refresh_token is worse than refusing it -- it would silently die
         # the moment the short-lived access token expires.
-        failure_log.failure("google_search_console.exchange_code_for_tokens", "no refresh_token in response")
+        failure_log.failure(logger, "gsc.exchange_code_no_refresh_token")
         return GSCResult(status="error", error="Google did not return a refresh token -- reconnect and make sure to approve consent.")
 
     email = _account_email(creds)
     if not email:
-        failure_log.failure("google_search_console.exchange_code_for_tokens", "could not resolve account email")
+        failure_log.failure(logger, "gsc.exchange_code_no_email")
         return GSCResult(status="error", error="Connected, but could not determine the Google account's email.")
 
     return GSCResult(status="ok", data={
@@ -258,10 +261,10 @@ def refresh_access_token(refresh_token: str) -> GSCResult:
         creds.refresh(Request())
     except RefreshError as e:
         revoked = "invalid_grant" in str(e)
-        failure_log.failure("google_search_console.refresh_access_token", str(e), revoked=revoked)
+        failure_log.failure(logger, "gsc.refresh_token_failed", reason=str(e), revoked=revoked)
         return GSCResult(status="error", error=str(e), data={"revoked": revoked})
     except Exception as e:
-        failure_log.crash("google_search_console.refresh_access_token", e)
+        failure_log.crash(logger, "gsc.refresh_token_crashed")
         return GSCResult(status="error", error=f"Could not refresh access token: {e}")
 
     return GSCResult(status="ok", data={"access_token": creds.token, "expiry": creds.expiry})
@@ -302,14 +305,14 @@ def list_sites(access_token: str, refresh_token: str, expiry: datetime | None = 
         service, creds = _build_service(access_token, refresh_token, expiry)
         response = service.sites().list().execute()
     except HttpError as e:
-        failure_log.failure("google_search_console.list_sites", f"HTTP {e.status_code}")
+        failure_log.failure(logger, "gsc.list_sites_failed", reason=f"HTTP {e.status_code}")
         return GSCResult(status="error", error=f"Google Sites API error (HTTP {e.status_code}): {e.reason}")
     except RefreshError as e:
         revoked = "invalid_grant" in str(e)
-        failure_log.failure("google_search_console.list_sites", str(e), revoked=revoked)
+        failure_log.failure(logger, "gsc.list_sites_failed", reason=str(e), revoked=revoked)
         return GSCResult(status="error", error=str(e), data={"revoked": revoked})
     except Exception as e:
-        failure_log.crash("google_search_console.list_sites", e)
+        failure_log.crash(logger, "gsc.list_sites_crashed")
         return GSCResult(status="error", error=f"Could not list Search Console properties: {e}")
 
     entries = response.get("siteEntry") or []

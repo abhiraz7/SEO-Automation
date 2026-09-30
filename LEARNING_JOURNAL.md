@@ -793,3 +793,50 @@ Chrome blocking the download was a symptom: the platform, which handles logins a
 - What does "fail closed" mean for a status badge?
 - Why put a derived status in one shared function instead of each endpoint?
 - How would you add delayed retries to a job queue without breaking existing schedules?
+
+
+## 2026-09-27 (overnight): Letting an AI propose changes without letting it assert facts
+
+**What happened.** We built two features that use a language model on a customer's own website: one compares a page with the pages that rank above it, the other proposes small edits. The hard part was not calling the model. It was deciding what the model is *allowed* to be trusted with.
+
+**The concept: the model can cite, but never assert.** The model receives a numbered evidence list (E01, E02...) that our own code computed, and replies "this edit is backed by E03". Our code then fills in "4 of 5 ranking pages cover this" from its own data. The model never writes a count, and never writes the "before" text of an edit: it names a target ("title", "sec_04") and we look the text up. QA analogy: if a test's expected value is computed by the system under test, the assertion is a tautology. The oracle has to come from something you trust.
+
+**Explicit states beat silent passes.** Every stage ends as ok, no_change, no_data or error, and a validation check that crashes is reported as `error` instead of being skipped. Same as never letting a skipped or errored test show as green. "No change recommended" is a real, honest answer; an API failure rendered as "no results" is a lie.
+
+**Mutation testing is testing your tests.** After the tests passed, we broke the code on purpose about a hundred times (remove a check, flip a condition) and required a test to go red each time. The survivors were the valuable finds: an invented internal-link URL would have passed validation, and two tests were secretly passing for the wrong reason (test data digits were read as "new figures", which disabled a button for a different cause than the one being tested). A green suite only proves something if it can go red.
+
+**Cleanup that is too broad is a bug.** Two existing code paths delete "all issues" or "issues the provider no longer flags". The new feature stored its data as issues, so a routine re-audit would have deleted accepted and deployed suggestions through a cascade. The fix is a scoped delete by an exact prefix, with a test for the SQL trap that `_` is a wildcard in LIKE (so `opt_%` also matched `optimized_title`). QA analogy: a teardown script that deletes rows it does not own.
+
+**`create_all` creates missing tables, never alters them.** A table created earlier in development lacked a column added later; the schema-drift check we built after production incident 025 flagged it immediately. This is exactly why adding a column to a live table needs a migration, and why this feature used new tables instead.
+
+**A trap avoided.** A blocked suggestion could still be "accepted" by calling the API directly, because only the button was disabled. Validation is enforced on the server (accept, edit and deploy), and the edit route validates the new text BEFORE saving, since "edited" counts as approved. Never trust client-side validation alone.
+
+### Interview questions this session answers
+- Why must an LLM's output be checked against data the application computed, and how do you design the prompt/response contract so it cannot invent numbers?
+- What is mutation testing, and what kind of bug does it find that code coverage does not?
+- Why is a disabled button not a security control?
+- What does `create_all` do and not do, and when do you need a migration?
+- How can an overly broad cleanup query silently destroy user decisions, and how do you scope it safely?
+- Why keep "no data", "error" and "no change" as separate outcomes?
+
+
+## 2026-09-27 (morning): A failure you did not log is a failure you cannot debug
+
+**What happened.** The owner asked that any failure be logged, not merely shown on screen. Looking at the app showed that nothing configured logging at all, so a `logger.warning` reached `docker logs` as bare text with no time, level or source, and INFO messages vanished.
+
+**The concept: log at the place the decision is made, once.** A run can fail in many ways (search provider down, AI answer unusable, a crash) but every one of them ends in one function, `_finish`. Logging there records each failure exactly once, with the same reason the user sees, instead of scattering log calls that duplicate or miss cases. QA analogy: one shared assertion helper beats copy-pasted checks, because a fix or a format change happens in one place.
+
+**Two levels, on purpose.** WARNING means the system worked but something it depends on or produced was unusable (a provider error, an AI proposal discarded, a suggestion the checks blocked). ERROR with a traceback means our own code broke. Mixing them makes both useless: if everything is an error, nobody reads the errors.
+
+**A structured line beats a sentence.** `optimizer.run_failed run=12 project=3 reason="..."` can be found with one search and split into fields; a free-form f-string cannot. It costs nothing to write and saves the debugging session later.
+
+**A logging helper must not become a leak.** Fields whose names look like secrets are never written, values are truncated and kept on one line, and page text, drafts and prompts are deliberately not logged. The first version of the secret filter matched any name containing "key", so it hid the SEO field called `keyword`: a test caught it, and the fix was to match whole name-parts (`api_key`, `access_token`) rather than substrings.
+
+**Also learned.** A check that crashes was already shown on the card as "could not run", but without a logged traceback nobody would ever see the bug behind it, only its symptom. Showing a failure to the user and recording it for the developer are two different jobs.
+
+### Interview questions this session answers
+- Where should a failure be logged in a multi-stage pipeline, and why once?
+- What is the difference between a WARNING and an ERROR, and how do you decide?
+- Why use `key=value` lines instead of sentences in logs?
+- How do you stop a logging helper from leaking secrets or user content, and how do you test that?
+- Why does Python print a bare message when logging is not configured?

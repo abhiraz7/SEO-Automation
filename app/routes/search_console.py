@@ -12,6 +12,8 @@ Connection model: strictly one GoogleConnection per project (see
 prompts/CLAUDE_FEATURE_3_GOOGLE_SEARCH_CONSOLE.md, "Confirmed decisions",
 2026-09-29) -- never shared/reused across projects.
 """
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -21,6 +23,7 @@ from .. import models
 from ..database import get_db
 from ..services import failure_log
 
+logger = logging.getLogger("search_console")
 router = APIRouter()
 
 
@@ -81,7 +84,7 @@ def gsc_callback(code: str | None = None, state: str | None = None, error: str |
 
     project_id = gsc.verify_state(state)
     if project_id is None:
-        failure_log.failure("routes.search_console.gsc_callback", "state verification failed")
+        failure_log.failure(logger, "gsc.callback_state_invalid")
         raise HTTPException(status_code=400, detail="This connection link is invalid or has expired -- start the connect flow again.")
 
     if not db.get(models.Project, project_id):
@@ -89,7 +92,7 @@ def gsc_callback(code: str | None = None, state: str | None = None, error: str |
 
     token_result = gsc.exchange_code_for_tokens(code)
     if not token_result.ok:
-        failure_log.failure("routes.search_console.gsc_callback", token_result.error or "token exchange failed", project_id=project_id)
+        failure_log.failure(logger, "gsc.callback_token_exchange_failed", project=project_id, reason=token_result.error or "token exchange failed")
         raise HTTPException(status_code=502, detail=token_result.error or "Could not complete the Google connection.")
 
     data = token_result.data
@@ -115,7 +118,7 @@ def gsc_callback(code: str | None = None, state: str | None = None, error: str |
     if sites_result.ok:
         _upsert_properties(db, conn, sites_result.data.get("sites", []))
     elif sites_result.status == "error":
-        failure_log.failure("routes.search_console.gsc_callback", sites_result.error or "list_sites failed after connect", project_id=project_id)
+        failure_log.failure(logger, "gsc.callback_list_sites_failed", project=project_id, reason=sites_result.error or "list_sites failed after connect")
     # no_data (zero properties) is a valid, silent outcome -- nothing to store.
 
     return RedirectResponse(f"/projects/{project_id}#gsc")

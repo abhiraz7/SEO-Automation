@@ -59,11 +59,18 @@ _GENERIC_HEADINGS = {
     "search", "newsletter", "subscribe", "recent posts", "categories", "contact us", "disclaimer",
 }
 
+# Public names for other services: the AI Content Optimizer counts keyword occurrences
+# and repeated phrases with the SAME word rules, so the two features can never
+# disagree about what a "word" is (this matters for Hindi, see _tokenize).
+tokenize = _tokenize
+STOPWORDS = frozenset(_STOP)
 
-def normalize_tokens(text: str) -> frozenset:
-    """Lower-cased content words of `text`, without stop words, with a light
-    plural fold ('documents' == 'document'). A frozenset: order and repetition do
-    not matter for coverage."""
+
+def normalize_sequence(text: str) -> list[str]:
+    """Lower-cased content words of `text` IN ORDER (repeats kept), without stop
+    words, with a light plural fold ('documents' == 'document'). The single
+    normalisation rule: normalize_tokens is built from it, and the optimizer counts
+    keyword occurrences with it."""
     tokens = []
     for w in _tokenize(text):
         if w in _STOP or len(w) < 2 or w.isdigit():
@@ -71,7 +78,13 @@ def normalize_tokens(text: str) -> frozenset:
         if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
             w = w[:-1]
         tokens.append(w)
-    return frozenset(tokens)
+    return tokens
+
+
+def normalize_tokens(text: str) -> frozenset:
+    """The content words of `text` as a frozenset: order and repetition do not
+    matter for coverage."""
+    return frozenset(normalize_sequence(text))
 
 
 def similar(a: frozenset, b: frozenset) -> bool:

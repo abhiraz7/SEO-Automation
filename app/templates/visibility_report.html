@@ -18,6 +18,21 @@
 <div style="padding:28px 24px 40px;max-width:760px;margin:0 auto;">
 
   <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;margin-bottom:20px;">
+    <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">AI Visibility Score</div>
+    {% if ai_visibility.has_data %}
+    <div style="display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;">
+      <div style="font-size:36px;font-weight:800;color:{% if ai_visibility.score >= 50 %}#15803d{% else %}#dc2626{% endif %};">{{ "%.0f"|format(ai_visibility.score) }}%</div>
+      <div style="font-size:11px;color:#64748b;line-height:1.5;">
+        Cited in {{ ai_visibility.checks_cited }} of {{ ai_visibility.checks_with_ai_overview }} checks where Google showed an AI Overview{% if ai_visibility.avg_organic_rank %} &middot; avg. organic rank {{ "%.1f"|format(ai_visibility.avg_organic_rank) }}{% endif %}
+      </div>
+    </div>
+    {% else %}
+    <div style="font-size:12px;color:#94a3b8;">No AI Overview has appeared yet across {{ ai_visibility.total_checks }} check{{ 's' if ai_visibility.total_checks != 1 }} for this project -- run more checks below to build up data.</div>
+    {% endif %}
+    <div style="font-size:10px;color:#94a3b8;margin-top:8px;">Our own metric, computed from Google's real AI Overview citation data below -- not a number Google itself reports.</div>
+  </div>
+
+  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;margin-bottom:20px;">
     <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:2px;">{{ domain }}</div>
     <div style="font-size:11px;color:#94a3b8;margin-bottom:14px;">Every check below is a live DataForSEO SERP lookup — the AI Overview text/citations and organic ranks shown are exactly what Google returned for that query, at that moment.</div>
 

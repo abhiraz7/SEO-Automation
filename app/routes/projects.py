@@ -8,9 +8,10 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, backlinks_provider, deploy_status, models, schemas
+from .. import audit, audit_classification, backlinks_provider, deploy_status, models, schemas
 from .. import google_search_console as gsc
 from ..database import get_db
+from ..services.ai_visibility_score import compute_ai_visibility_score
 from .settings import is_crawler_enabled, register_crawler_global
 
 router = APIRouter()
@@ -121,6 +122,7 @@ def _project_card_data(project: models.Project, db: Session) -> dict:
     )
     page_ids = [p.id for p in pages]
     error_count = warning_count = 0
+    scoreable_errors = scoreable_warnings = 0
     if page_ids:
         issue_counts = dict(
             db.query(models.Issue.severity, func.count(models.Issue.id))
@@ -131,8 +133,23 @@ def _project_card_data(project: models.Project, db: Session) -> dict:
         error_count = issue_counts.get("error", 0)
         warning_count = issue_counts.get("warning", 0)
 
+        # Separate query restricted to score_eligible=True: error_count/
+        # warning_count above still reflect EVERY stored issue (cards below
+        # still need the real totals), but the health % itself should only
+        # move for issues that are actual defects, not informational
+        # findings like a missing canonical/OG/Twitter tag -- see
+        # audit_classification.RULES.
+        scoreable_counts = dict(
+            db.query(models.Issue.severity, func.count(models.Issue.id))
+            .filter(models.Issue.page_id.in_(page_ids), models.Issue.score_eligible.is_(True))
+            .group_by(models.Issue.severity)
+            .all()
+        )
+        scoreable_errors = scoreable_counts.get("error", 0)
+        scoreable_warnings = scoreable_counts.get("warning", 0)
+
     total_pages = len(pages)
-    health = max(0, 100 - (error_count * 4) - min(warning_count, 40)) if total_pages else None
+    health = audit_classification.health_from_counts(scoreable_errors, scoreable_warnings) if total_pages else None
     last_checked = max((p.updated_at for p in pages if p.updated_at), default=None)
 
     is_fetching = (
@@ -363,6 +380,11 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
         .all()
         if gsc_connection else []
     )
+    visibility_checks = (
+        db.query(models.VisibilityCheck)
+        .filter(models.VisibilityCheck.project_id == project_id)
+        .all()
+    )
 
     return templates.TemplateResponse(
         request, "project_detail.html", {
@@ -377,6 +399,7 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
             "gsc_configured": gsc.is_configured(),
             "gsc_connection": gsc_connection,
             "gsc_properties": gsc_properties,
+            "ai_visibility": compute_ai_visibility_score(visibility_checks),
             "crawler_enabled": is_crawler_enabled(db),
         }
     )

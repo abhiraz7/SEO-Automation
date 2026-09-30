@@ -18,7 +18,8 @@ on this page while staying untouched everywhere else in the app.
 import csv
 import io
 from datetime import datetime, timezone
-from urllib.parse import quote
+import re
+from urllib.parse import quote, unquote, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -26,7 +27,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, dataforseo_onpage, deploy_status, models, wordpress
+from .. import audit, audit_classification, dataforseo_onpage, deploy_status, issue_copy, models, wordpress
 from ..database import get_db
 from ..onpage_task_maintenance import mark_stale_onpage_tasks
 from .links import store_links_for_task
@@ -34,7 +35,36 @@ from .settings import get_site_audit_cooldown_hours, register_crawler_global
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+
+
+def page_display_name(url: str | None) -> str:
+    """A readable name for a page row, derived only from its URL: the last
+    path segment, URL-decoded, extension stripped, dashes/underscores turned
+    into spaces ("/free-notes/indian-polity" -> "Indian polity"); the site
+    root is "Home". Nothing here is stored or invented -- it's a display label."""
+    path = urlparse(url or "").path.strip("/")
+    if not path:
+        return "Home"
+    segment = re.sub(r"\.(html?|php|aspx?)$", "", unquote(path.split("/")[-1]), flags=re.I)
+    name = re.sub(r"[-_]+", " ", segment).strip()
+    return (name[:1].upper() + name[1:]) if name else "Home"
+
+
+def measured_length(page, category: str) -> int | None:
+    """Character count of the stored title / meta description -- the only two
+    categories where a length is a real, already-stored measurement. Every
+    other category (and any empty value) returns None so the row shows nothing
+    instead of a made-up number."""
+    if page is None:
+        return None
+    value = {"title": page.title, "meta_description": page.meta_description}.get(category)
+    value = (value or "").strip()
+    return len(value) or None
+
+
 templates.env.globals["current_value_display"] = audit.current_value_display
+templates.env.globals["page_display_name"] = page_display_name
+templates.env.globals["measured_length"] = measured_length
 register_crawler_global(templates)
 
 CATEGORY_COLORS = {
@@ -45,7 +75,7 @@ CATEGORY_COLORS = {
 CATEGORY_LABELS = {
     "title": "📝 Meta Title", "meta_description": "📄 Meta Description", "h1": "🔠 H1 Heading",
     "image_alt": "🖼️ Image Alt Text", "canonical": "🔗 Canonical Link", "opengraph": "📱 Open Graph",
-    "twitter": "🐦 Twitter Card", "content": "✍️ Content Quality", "security": "🔒 Security",
+    "twitter": "🐦 Twitter Card", "content": "✍️ Content Signals", "security": "🔒 Security",
 }
 DEPLOYABLE_CATEGORIES = ["meta_description", "title", "h1", "twitter", "canonical", "opengraph"]
 PROVIDER_LABELS = {"dataforseo": "DataForSEO", "semrush": "SEMrush"}
@@ -130,9 +160,13 @@ def _store_page_result(db: Session, project: models.Project, item: dict, onpage_
     # looked exactly like the deploy had silently reverted even when
     # WordPress still had the deployed value live. This keeps a still-present
     # issue's row (and its suggestion/deploy history) stable across refreshes.
+    # AI Content Optimizer issues are not audit findings: DataForSEO never flags
+    # them, so they would look "resolved" and be deleted below -- taking the user's
+    # accepted / deployed suggestions with them via the cascade. Leave them out of
+    # this reconciliation entirely (see models.OPTIMIZER_RULE_PREFIX).
     existing_by_key = {
         (i.category, i.rule): i
-        for i in db.query(models.Issue).filter(models.Issue.page_id == page.id).all()
+        for i in db.query(models.Issue).filter(models.Issue.page_id == page.id, models.not_optimizer_issue()).all()
     }
     seen_keys = set()
     for issue_dict in dataforseo_onpage.issues_from_item(item):
@@ -435,8 +469,13 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
         grouped_issues.setdefault(issue.category, []).append(issue)
 
     total_issues = len(issues)
-    error_count = sum(1 for i in issues if i.severity == "error")
-    warning_count = sum(1 for i in issues if i.severity == "warning")
+    # error/warning counts are the score-eligible subset -- the same issues
+    # that move Site Health. Everything else (missing canonical/OG/Twitter/
+    # meta description, thin-content ratio; see audit_classification.RULES)
+    # is an "opportunity": still listed in full, but it doesn't cost points.
+    error_count, warning_count = audit_classification.score_eligible_severity_counts(issues)
+    opportunity_count = total_issues - error_count - warning_count
+    health = audit_classification.project_health_score(issues) if pages else 100
     suggestion_count = (
         db.query(models.Suggestion).filter(models.Suggestion.page_id.in_(page_ids)).count() if page_ids else 0
     )
@@ -498,6 +537,12 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
         db, [s.id for group in suggestions_by_issue.values() for s in group if s.status == "deployed"]
     )
 
+    def _suggestion_checks(issue: models.Issue, s: models.Suggestion) -> dict:
+        checks = issue_copy.check_suggestion(
+            issue.category, s.edited_content or s.content, pages_by_id.get(issue.page_id)
+        )
+        return {"checks": checks, "checks_summary": issue_copy.checks_summary(checks)}
+
     issues_js = {
         issue.id: {
             "id": issue.id,
@@ -506,10 +551,26 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             "category": issue.category,
             "rule": issue.rule,
             "severity": issue.severity,
+            "score_eligible": issue.score_eligible is not False,
             "message": issue.message,
             "url": pages_by_id.get(issue.page_id).url if pages_by_id.get(issue.page_id) else "",
+            # What's on the page right now (drawer summary); same renderer the
+            # issue rows use, just with a roomier limit.
+            "current_value": (
+                audit.current_value_display(pages_by_id[issue.page_id], issue.category, limit=300)
+                if issue.page_id in pages_by_id else "-Blank-"
+            ),
+            # Tag/headline/detail/why + measured length facts (issue_copy.py);
+            # the numbers are measured from the stored title/description.
+            "explain": issue_copy.explain(issue.category, issue.rule, issue.message, pages_by_id.get(issue.page_id)),
+            # Inputs for the "how it looks in Google" preview -- real stored values.
+            "serp": {
+                "title": (pages_by_id[issue.page_id].title or "") if issue.page_id in pages_by_id else "",
+                "description": (pages_by_id[issue.page_id].meta_description or "") if issue.page_id in pages_by_id else "",
+            },
             "missing_alt_images": _missing_alt_images(issue),
-            "suggestions": [
+            "ai_paused": issue_copy.ai_paused_reason(issue.category, issue.rule),
+            "suggestions": [] if issue_copy.ai_paused_reason(issue.category, issue.rule) else [
                 {
                     "id": s.id,
                     "status": s.status,
@@ -518,6 +579,10 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
                     "edited_content": s.edited_content,
                     "source": "claude",
                     "rank": s.rank,
+                    # Deterministic checks on the suggested text, computed in
+                    # code (issue_copy.check_suggestion) -- the "Checks passed"
+                    # badge; never a model-reported confidence.
+                    **_suggestion_checks(issue, s),
                     **deploy_status.suggestion_live_fields(live_map, s),
                 }
                 for s in sorted(suggestions_by_issue.get(issue.id, []), key=lambda s: s.rank)
@@ -547,6 +612,8 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             "total_issues": total_issues,
             "error_count": error_count,
             "warning_count": warning_count,
+            "opportunity_count": opportunity_count,
+            "health": health,
             "suggestion_count": suggestion_count,
             "issues_js": issues_js,
             "deployable_categories": DEPLOYABLE_CATEGORIES,
