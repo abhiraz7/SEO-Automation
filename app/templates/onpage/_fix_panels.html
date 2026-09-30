@@ -1,0 +1,183 @@
+{# Content panels for the fix modal. Pure rendering: every value comes from the
+   issue object the page already has (issue.explain / issue.serp /
+   issue.current_value / suggestion.checks -- see routes/onpage_semrush.py and
+   app/issue_copy.py). Two honesty rules:
+   - green ticks only for checks computed IN CODE; the model's own claims are
+     never shown as verified, and no model-reported "confidence" is shown;
+   - the Google preview is measured with canvas text width and labelled
+     approximate, because Google documents no exact limits. #}
+<style>
+  .fp-problem { border-radius:12px; padding:14px 16px; margin-bottom:12px; border:1px solid; }
+  .fp-problem.fp-err { background:#fff1f2; border-color:#fecdd3; } .fp-problem.fp-err .fp-ptitle { color:#9f1239; }
+  .fp-problem.fp-warn { background:#fffbeb; border-color:#fde68a; } .fp-problem.fp-warn .fp-ptitle { color:#92400e; }
+  .fp-problem.fp-opp { background:#f0f9ff; border-color:#bae6fd; } .fp-problem.fp-opp .fp-ptitle { color:#075985; }
+  .fp-ptitle { font-size:15px; font-weight:700; }
+  .fp-pdetail { font-size:13px; color:#334155; margin-top:4px; line-height:1.5; }
+  .fp-tiles { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:0 0 14px; }
+  .fp-tile { border:1px solid #e8ebf3; border-radius:10px; padding:10px 12px; background:#fff; }
+  .fp-tile dt { font-size:11px; color:#64748b; } .fp-tile dd { margin:4px 0 0; font-size:16px; font-weight:700; color:#0f172a; }
+  .fp-tile dd.bad { color:#dc2626; } .fp-tile dd.good { color:#15803d; }
+  .fp-label { font-size:12px; font-weight:700; color:#0f172a; margin-bottom:6px; }
+  .fp-box { display:flex; gap:10px; align-items:flex-start; border:1px solid #e8ebf3; border-radius:10px; padding:10px 12px; background:#fff; margin-bottom:14px; }
+  .fp-box .txt { flex:1; font-size:13px; color:#0f172a; word-break:break-word; line-height:1.5; }
+  .fp-box .txt.blank { color:#94a3b8; font-style:italic; }
+  .fp-copy { font-size:11px; font-weight:600; color:#475569; background:#f8fafc; border:1px solid #e2e8f0; border-radius:7px; padding:4px 9px; cursor:pointer; flex-shrink:0; }
+  .fp-copy:hover { background:#eef0ff; color:#4338ca; }
+  .fp-why { display:flex; gap:10px; border:1px solid #e8ebf3; border-radius:10px; padding:12px 14px; background:#fafbff; margin-bottom:12px; font-size:13px; color:#475569; line-height:1.55; }
+  .fp-why b { display:block; color:#0f172a; margin-bottom:2px; }
+  details.fp-serp { border:1px solid #e8ebf3; border-radius:10px; background:#fff; }
+  details.fp-serp > summary { padding:11px 14px; font-size:13px; font-weight:600; color:#0f172a; cursor:pointer; }
+  .fp-serp-body { padding:4px 14px 14px; }
+  .fp-serp-tag { font-size:11px; font-weight:700; color:#64748b; margin:10px 0 4px; text-transform:uppercase; letter-spacing:.05em; }
+  .fp-serp-card { border:1px solid #eef0f6; border-radius:8px; padding:10px 12px; background:#fff; font-family:Arial,sans-serif; overflow:hidden; }
+  .fp-serp-url { font-size:12px; color:#3c4043; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .fp-serp-title { font-size:20px; line-height:1.3; color:#1a0dab; white-space:nowrap; }
+  .fp-serp-desc { font-size:14px; line-height:1.58; color:#4d5156; }
+  .fp-serp-note { font-size:11px; color:#94a3b8; margin-top:8px; }
+  .fp-ai { border:1px solid #d9defc; border-radius:12px; background:#f6f7ff; padding:14px; margin-bottom:12px; }
+  .fp-ai-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+  .fp-ai-title { font-size:14px; font-weight:700; color:#312e81; }
+  .fp-badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; }
+  .fp-badge.ok { background:#dcfce7; color:#166534; } .fp-badge.warn { background:#fef3c7; color:#92400e; } .fp-badge.bad { background:#ffe4e6; color:#9f1239; }
+  .fp-sugg { border:1px solid #bbf7d0; background:#f0fdf4; border-radius:10px; padding:10px 12px; margin-bottom:10px; }
+  .fp-sugg .lbl { font-size:11px; color:#166534; font-weight:600; margin-bottom:4px; }
+  .fp-sugg .txt { font-size:15px; font-weight:700; color:#0f172a; line-height:1.4; word-break:break-word; }
+  .fp-sugg mark { background:#bbf7d0; color:inherit; border-radius:3px; padding:0 2px; }
+  .fp-actions { display:flex; flex-direction:column; gap:8px; }
+  .fp-primary { font-size:14px; font-weight:700; color:#fff; background:#4f46e5; border:0; border-radius:10px; padding:11px 14px; cursor:pointer; }
+  .fp-primary:hover { background:#4338ca; }
+  .fp-secondary { font-size:14px; font-weight:600; color:#4338ca; background:#fff; border:1px solid #c7d2fe; border-radius:10px; padding:10px 14px; cursor:pointer; }
+  .fp-secondary:hover { background:#eef0ff; }
+  .fp-tertiary { font-size:12px; color:#64748b; background:none; border:0; cursor:pointer; padding:4px; align-self:center; }
+  .fp-checks { list-style:none; margin:12px 0 0; padding:0; font-size:12px; color:#334155; }
+  .fp-checks li { display:flex; gap:8px; padding:3px 0; } .fp-checks .ok { color:#15803d; } .fp-checks .bad { color:#dc2626; }
+  .fp-checks-h { font-size:12px; font-weight:700; color:#0f172a; margin-top:12px; }
+  .fp-empty { font-size:13px; color:#64748b; }
+  .fp-note { font-size:11px; color:#94a3b8; margin-top:8px; }
+</style>
+<script>
+  var FP_TITLE_FONT = '20px Arial', FP_TITLE_MAX = 600, FP_DESC_FONT = '14px Arial', FP_DESC_MAX = 920;
+  var FP_NOUN = { title: 'title', meta_description: 'description' };
+  var fpCanvas;
+
+  function fmCopyEl(btn) {
+    var text = btn.getAttribute('data-copy') || '';
+    var done = function () { var old = btn.textContent; btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = old; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, done); return; }
+    var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta); done();
+  }
+  function fmCopyBtn(text, label) {
+    return '<button type="button" class="fp-copy" data-copy="' + fmEsc(text) + '" aria-label="' + fmEsc(label) + '" onclick="fmCopyEl(this)">Copy</button>';
+  }
+
+  function fmTextWidth(text, font) {
+    fpCanvas = fpCanvas || document.createElement('canvas');
+    var c = fpCanvas.getContext('2d'); c.font = font; return c.measureText(text).width;
+  }
+  // Clip to a pixel width with an ellipsis (binary search on character count).
+  function fmClip(text, font, maxPx) {
+    var full = fmTextWidth(text, font);
+    if (full <= maxPx) return { text: text, cut: false, px: Math.round(full) };
+    var lo = 0, hi = text.length;
+    while (lo < hi) {
+      var mid = Math.ceil((lo + hi) / 2);
+      if (fmTextWidth(text.slice(0, mid).replace(/\s+$/, '') + '…', font) <= maxPx) lo = mid; else hi = mid - 1;
+    }
+    return { text: text.slice(0, lo).replace(/\s+$/, '') + '…', cut: true, px: Math.round(full) };
+  }
+  function fmUrlCrumb(url) {
+    try { var u = new URL(url); var parts = u.pathname.split('/').filter(Boolean); return u.host + (parts.length ? ' › ' + parts.join(' › ') : ''); }
+    catch (e) { return url || ''; }
+  }
+  function fmSerpBlock(tag, title, desc, url) {
+    var t = fmClip(title || '(no title)', FP_TITLE_FONT, FP_TITLE_MAX);
+    var d = fmClip(desc || '', FP_DESC_FONT, FP_DESC_MAX);
+    return '<div class="fp-serp-tag">' + fmEsc(tag) + '</div><div class="fp-serp-card">' +
+      '<div class="fp-serp-url">' + fmEsc(fmUrlCrumb(url)) + '</div>' +
+      '<div class="fp-serp-title">' + fmEsc(t.text) + '</div>' +
+      (d.text ? '<div class="fp-serp-desc">' + fmEsc(d.text) + '</div>' : '<div class="fp-serp-desc" style="color:#94a3b8;font-style:italic;">No meta description: Google would pick text from the page.</div>') +
+      '</div>' + (t.cut ? '<div class="fp-serp-note">Title is about ' + t.px + 'px wide against ~' + FP_TITLE_MAX + 'px, so it may be cut off.</div>' : '');
+  }
+  function fmSerpHtml(issue, hero) {
+    var cat = issue.category;
+    if (!FP_NOUN[cat] || !issue.serp) return '';
+    var title = issue.serp.title, desc = issue.serp.description;
+    var html = fmSerpBlock('Current', title, desc, issue.url);
+    if (hero) {
+      var text = hero.edited_content || hero.content;
+      html += fmSerpBlock('With the suggestion', cat === 'title' ? text : title, cat === 'meta_description' ? text : desc, issue.url);
+    }
+    return '<details class="fp-serp"><summary>See how it looks in Google search</summary><div class="fp-serp-body">' + html +
+      '<div class="fp-serp-note">Approximate preview. Google may show something different.</div></div></details>';
+  }
+
+  // Word-level diff: the new text with words that were not in the old text highlighted.
+  function fmDiffHtml(oldText, newText) {
+    var a = (oldText || '').split(/\s+/).filter(Boolean), b = (newText || '').split(/\s+/).filter(Boolean);
+    if (!a.length || a.length > 80 || b.length > 80) return fmEsc(newText);
+    var dp = [], i, j;
+    for (i = 0; i <= a.length; i++) { dp.push(new Array(b.length + 1).fill(0)); }
+    for (i = a.length - 1; i >= 0; i--) for (j = b.length - 1; j >= 0; j--)
+      dp[i][j] = a[i].toLowerCase() === b[j].toLowerCase() ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    var keep = {}; i = 0; j = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i].toLowerCase() === b[j].toLowerCase()) { keep[j] = true; i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++;
+    }
+    return b.map(function (w, k) { return keep[k] ? fmEsc(w) : '<mark>' + fmEsc(w) + '</mark>'; }).join(' ');
+  }
+
+  function fmToneOf(issue) { return !issue.score_eligible ? 'opp' : (issue.severity === 'error' ? 'err' : 'warn'); }
+  function fmTile(label, value, tone) { return '<div class="fp-tile"><dt>' + fmEsc(label) + '</dt><dd class="' + (tone || '') + '">' + fmEsc(value) + '</dd></div>'; }
+
+  function fmLeftHtml(issue, hero) {
+    var ex = issue.explain || {}, f = ex.facts;
+    var html = '<div class="fp-problem fp-' + fmToneOf(issue) + '"><div class="fp-ptitle">' + fmEsc(ex.headline || issue.message) + '</div>' +
+      (ex.detail ? '<div class="fp-pdetail">' + fmEsc(ex.detail) + '</div>' : '') + '</div>';
+    if (f) {
+      var third = f.over_by > 0 ? ['Over by', f.over_by + ' characters', 'bad']
+        : f.under_by > 0 ? ['Under by', f.under_by + ' characters', 'bad'] : ['Status', 'Within range', 'good'];
+      html += '<dl class="fp-tiles">' + fmTile('Current length', f.length + ' characters') + fmTile('Common guideline', f.min + '–' + f.max + ' characters') + fmTile(third[0], third[1], third[2]) + '</dl>';
+    }
+    var blank = !issue.current_value || issue.current_value === '-Blank-';
+    var noun = FP_NOUN[issue.category];
+    html += '<div class="fp-label">Current ' + (noun || 'value') + '</div><div class="fp-box"><div class="txt' + (blank ? ' blank' : '') + '">' +
+      fmEsc(blank ? 'Blank' : issue.current_value) + '</div>' + (blank ? '' : fmCopyBtn(issue.current_value, 'Copy current ' + (noun || 'value'))) + '</div>';
+    if (ex.why) html += '<div class="fp-why"><span aria-hidden="true">💡</span><div><b>Why this matters</b>' + fmEsc(ex.why) + '</div></div>';
+    return html + fmSerpHtml(issue, hero);
+  }
+
+  // The first pending suggestion (by rank) that is not tied to a single image.
+  function fmHero(issue) {
+    var pending = (issue.suggestions || []).filter(function (s) { return s.status === 'pending' && !s.image_src; })
+      .sort(function (a, b) { return (a.rank || 0) - (b.rank || 0); });
+    return pending[0] || null;
+  }
+
+  function fmRightHtml(issue, hero) {
+    var head = function (badge) { return '<div class="fp-ai-head"><span class="fp-ai-title">✦ AI suggestion</span>' + (badge || '') + '</div>'; };
+    if (!hero) {
+      return '<div class="fp-ai">' + head('') + '<div class="fp-empty">No AI suggestion waiting for review. Generate one below, or edit manually.</div></div>';
+    }
+    var cs = hero.checks_summary || { state: 'review', passed: 0, total: 0 };
+    var badge = cs.state === 'ok' ? '<span class="fp-badge ok">✔ All ' + cs.total + ' checks passed</span>'
+      : cs.state === 'partial' ? '<span class="fp-badge warn">' + cs.passed + ' of ' + cs.total + ' checks passed</span>'
+      : '<span class="fp-badge bad">Needs review</span>';
+    var text = hero.edited_content || hero.content;
+    var noun = FP_NOUN[issue.category];
+    var cur = issue.category === 'title' ? (issue.serp || {}).title : issue.category === 'meta_description' ? (issue.serp || {}).description : '';
+    var shown = noun ? fmDiffHtml(cur, text) : fmEsc(text);
+    var checks = (hero.checks || []).map(function (c) {
+      return '<li><span class="' + (c.passed ? 'ok' : 'bad') + '" aria-hidden="true">' + (c.passed ? '✔' : '✖') + '</span><span>' + fmEsc(c.label) + (c.passed ? '' : ' (not met)') + '</span></li>';
+    }).join('');
+    return '<div class="fp-ai">' + head(badge) +
+      '<div class="fp-sugg"><div class="lbl">Suggested ' + (noun || 'value') + '</div><div style="display:flex;gap:10px;align-items:flex-start;"><div class="txt" style="flex:1;">' + shown + '</div>' + fmCopyBtn(text, 'Copy suggested ' + (noun || 'value')) + '</div></div>' +
+      '<div class="fp-actions"><button type="button" class="fp-primary" onclick="fmDecide(' + hero.id + ',\'accept\')">Use this suggestion</button>' +
+      '<button type="button" class="fp-secondary" onclick="fmUseSuggestion(' + hero.id + ')">Edit manually</button>' +
+      '<button type="button" class="fp-tertiary" onclick="fmDecide(' + hero.id + ',\'reject\')">Skip this suggestion</button></div>' +
+      (checks ? '<div class="fp-checks-h">Checks run on this suggestion</div><ul class="fp-checks">' + checks + '</ul>' : '') +
+      '<div class="fp-note">AI-written. The checks above are verified by our code; whether it fits the page\'s intent is for you to judge.</div></div>';
+  }
+</script>

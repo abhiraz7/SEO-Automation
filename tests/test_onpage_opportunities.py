@@ -120,6 +120,22 @@ def test_category_strip_and_drawer_hooks_exist(client_and_project):
     assert 'id="fix-modal-body"' in html
 
 
+def test_fix_modal_panels_are_wired_and_never_claim_model_confidence(client_and_project):
+    html = _page(client_and_project)
+    for hook in ("function fmLeftHtml", "function fmRightHtml", "function fmSerpHtml",
+                 "Checks run on this suggestion", "Approximate preview", 'id="fd-prev"', 'id="fd-next"'):
+        assert hook in html, hook
+    # Honesty rule: green ticks are code-computed checks only; a model's own
+    # self-reported confidence is never displayed.
+    assert "High confidence" not in html and "confidence" not in html.lower().split("<script")[0]
+
+
+def test_issue_rows_carry_rule_tags(client_and_project):
+    html = _page(client_and_project)
+    assert html.count('class="pill pill-tag"') == 5
+    assert ">Not set</span>" in html      # canonical / opengraph / twitter
+
+
 def test_content_category_is_relabelled():
     from app.routes import onpage_semrush
     assert "Content Signals" in onpage_semrush.CATEGORY_LABELS["content"]
