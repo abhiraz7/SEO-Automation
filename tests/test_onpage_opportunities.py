@@ -90,6 +90,11 @@ def test_kpi_counts_are_scored_only(client_and_project):
     assert re.search(r'Warnings</div>\s*<div class="kpi-number"[^>]*>1<', html)
 
 
+def test_issues_js_carries_current_value_and_eligibility(client_and_project):
+    html = _page(client_and_project)
+    assert '"current_value"' in html and '"score_eligible"' in html
+
+
 def test_content_category_is_relabelled():
     from app.routes import onpage_semrush
     assert "Content Signals" in onpage_semrush.CATEGORY_LABELS["content"]

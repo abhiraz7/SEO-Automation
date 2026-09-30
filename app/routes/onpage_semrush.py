@@ -544,6 +544,12 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             "score_eligible": issue.score_eligible is not False,
             "message": issue.message,
             "url": pages_by_id.get(issue.page_id).url if pages_by_id.get(issue.page_id) else "",
+            # What's on the page right now (drawer summary); same renderer the
+            # issue rows use, just with a roomier limit.
+            "current_value": (
+                audit.current_value_display(pages_by_id[issue.page_id], issue.category, limit=300)
+                if issue.page_id in pages_by_id else "-Blank-"
+            ),
             "missing_alt_images": _missing_alt_images(issue),
             "suggestions": [
                 {
