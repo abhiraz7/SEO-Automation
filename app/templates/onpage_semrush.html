@@ -250,34 +250,7 @@
     {% if is_clean %}
     <div style="padding:16px 18px;color:#94a3b8;font-size:12px;">No {{ label|lower }} issues found across {{ total_pages }} crawled page{{ 's' if total_pages != 1 }}. 🎉</div>
     {% else %}
-    <table class="ig-table">
-      <thead>
-        <tr><th style="width:32%">🌐 Page</th><th>Issue</th><th style="width:26%">Currently Displayed</th><th style="width:90px">Severity</th><th style="width:110px;text-align:right;padding-right:14px;">Actions</th></tr>
-      </thead>
-      <tbody>
-        {% for issue in cat_issues %}
-        {% set page = pages_by_id.get(issue.page_id) %}
-        <tr onclick="openFixModal({{ issue.id }})" style="cursor:pointer;" data-issue-row="{{ issue.id }}" data-severity="{{ issue.severity if issue.score_eligible else 'opportunity' }}" data-has-sugg="{{ '1' if issues_js[issue.id].suggestions else '0' }}">
-          <td style="font-size:11px;color:#64748b;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ page.url if page else '' }}">{{ page.url if page else '—' }}</td>
-          <td style="font-size:11px;color:#0f172a;">
-            {{ issue.message }}
-            {% if issues_js[issue.id].suggestions %}<span style="font-size:9px;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:8px;margin-left:6px;">{{ issues_js[issue.id].suggestions|length }} suggestion{{ 's' if issues_js[issue.id].suggestions|length != 1 }}</span>{% endif %}
-          </td>
-          {% set current_display = current_value_display(page, category) if page else '-Blank-' %}
-          <td style="font-size:11px;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:{{ '#cbd5e1' if current_display == '-Blank-' else '#374151' }};{{ 'font-style:italic;' if current_display == '-Blank-' }}" title="{{ current_display }}">{{ current_display }}</td>
-          <td>
-            {% if not issue.score_eligible %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#e0f2fe;color:#0369a1;font-weight:700;">Opportunity</span>
-            {% elif issue.severity == 'error' %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;font-weight:700;">Error</span>
-            {% else %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fef9c3;color:#a16207;font-weight:700;">Warning</span>{% endif %}
-          </td>
-          <td style="text-align:right;padding-right:14px;">
-            <button type="button" onclick="event.stopPropagation();openFixModal({{ issue.id }})"
-              style="font-size:11px;font-weight:600;color:{{ accent }};padding:3px 10px;border-radius:5px;border:1px solid {{ accent }}20;background:{{ accent }}10;white-space:nowrap;cursor:pointer;">View tasks</button>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% include "onpage/_issue_rows.html" %}
     {% endif %}
   </details>
   {% endfor %}
