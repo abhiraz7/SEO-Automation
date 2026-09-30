@@ -338,6 +338,10 @@ def current_value_display(page, category, limit=80):
         text = (current["excerpt"] or "").strip()
     else:
         text = ""
+    if not text and kind == "markdown" and getattr(page, "word_count", None):
+        # DataForSEO-sourced pages carry no stored text excerpt, only a word
+        # count -- show that real measurement instead of a misleading "-Blank-".
+        return f"{page.word_count} words of visible text (no excerpt stored)"
     if not text:
         return "-Blank-"
     return text[:limit] + "…" if len(text) > limit else text

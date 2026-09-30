@@ -74,6 +74,25 @@ def test_other_categories_still_generate(env):
     assert resp.status_code == 200 and len(resp.json()["suggestions"]) == 1
 
 
+def test_generated_suggestion_response_carries_checks(env):
+    """A suggestion produced inside the open modal must arrive with its checks,
+    or the badge shows 'Needs review' with nothing behind it."""
+    client, pid, page_id, ids, _ = env
+    with patch("app.ai_provider.generate_suggestions", return_value=["Hindi Archives: Notes and Study Material"]):
+        resp = client.post("/api/suggest", params={"project_id": pid, "page_id": page_id, "issue_id": ids["title"]})
+    s = resp.json()["suggestions"][0]
+    assert s["checks"] and s["checks_summary"]["total"] == len(s["checks"])
+    assert s["checks_summary"]["state"] in {"ok", "partial", "review"}
+
+
+def test_content_current_value_shows_word_count_not_blank():
+    from types import SimpleNamespace
+    from app import audit
+    page = SimpleNamespace(fit_markdown=None, custom_content=None, word_count=142)
+    assert audit.current_value_display(page, "content") == "142 words of visible text (no excerpt stored)"
+    assert audit.current_value_display(SimpleNamespace(fit_markdown=None, custom_content=None, word_count=None), "content") == "-Blank-"
+
+
 def test_page_hides_stored_suggestions_for_paused_finding_but_keeps_them_in_the_db(env):
     client, pid, _, ids, Session = env
     html = client.get(f"/projects/{pid}/onpage").text

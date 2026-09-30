@@ -176,8 +176,17 @@ def _suggestion_out(s: models.Suggestion) -> dict:
         live = deploy_status.suggestion_live_fields(
             deploy_status.live_status_for_suggestions(object_session(s), [s.id]), s
         )
+    # Same code-computed checks the On-Page page load attaches, so a suggestion
+    # generated or edited in the open modal shows its checks immediately instead
+    # of a badge with nothing behind it.
+    db = object_session(s)
+    issue = db.get(models.Issue, s.issue_id) if db else None
+    page = db.get(models.Page, s.page_id) if db else None
+    checks = issue_copy.check_suggestion(issue.category, s.edited_content or s.content, page) if issue else []
     return {
         **live,
+        "checks": checks,
+        "checks_summary": issue_copy.checks_summary(checks),
         "id": s.id,
         "status": s.status,
         "image_src": s.image_src,
