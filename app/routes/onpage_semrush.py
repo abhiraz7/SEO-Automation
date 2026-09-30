@@ -26,7 +26,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, dataforseo_onpage, deploy_status, models, wordpress
+from .. import audit, audit_classification, dataforseo_onpage, deploy_status, models, wordpress
 from ..database import get_db
 from ..onpage_task_maintenance import mark_stale_onpage_tasks
 from .links import store_links_for_task
@@ -437,6 +437,10 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
     total_issues = len(issues)
     error_count = sum(1 for i in issues if i.severity == "error")
     warning_count = sum(1 for i in issues if i.severity == "warning")
+    # Site Health % only moves for score_eligible issues -- error_count/
+    # warning_count above stay the real totals (still drive the KPI cards
+    # and issue list), see audit_classification.health_from_counts.
+    health = audit_classification.project_health_score(issues) if pages else 100
     suggestion_count = (
         db.query(models.Suggestion).filter(models.Suggestion.page_id.in_(page_ids)).count() if page_ids else 0
     )
@@ -547,6 +551,7 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             "total_issues": total_issues,
             "error_count": error_count,
             "warning_count": warning_count,
+            "health": health,
             "suggestion_count": suggestion_count,
             "issues_js": issues_js,
             "deployable_categories": DEPLOYABLE_CATEGORIES,

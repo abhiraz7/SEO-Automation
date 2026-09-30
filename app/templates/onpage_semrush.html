@@ -85,7 +85,9 @@
 {% endblock %}
 
 {% block content %}
-{% set health = 100 if total_pages == 0 else [0, 100 - (error_count * 4) - ([warning_count, 40] | min)] | max %}
+{# health is computed server-side in routes/onpage_semrush.py:onpage_view --
+   only score_eligible issues move it; error_count/warning_count below are
+   still the real totals across every stored issue. #}
 
 <style>
   .kpi-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; position:relative; overflow:hidden; transition:transform .2s ease, box-shadow .2s ease; cursor:pointer; }

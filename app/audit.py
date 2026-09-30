@@ -1,6 +1,8 @@
 from collections import Counter
 from types import SimpleNamespace
 
+from . import audit_classification
+
 TITLE_MIN, TITLE_MAX = 30, 60
 META_DESC_MIN, META_DESC_MAX = 50, 160
 H1_MIN, H1_MAX = 10, 70
@@ -8,7 +10,10 @@ THIN_CONTENT_WORDS = 300
 
 
 def _issue(category, rule, severity, message):
-    return {"category": category, "rule": rule, "severity": severity, "message": message}
+    return {
+        "category": category, "rule": rule, "severity": severity, "message": message,
+        **audit_classification.classify(category, rule),
+    }
 
 
 def _audit_title(page):
@@ -26,7 +31,7 @@ def _audit_title(page):
 def _audit_meta_description(page):
     desc = (page.meta_description or "").strip()
     if not desc:
-        return [_issue("meta_description", "missing", "error", "Meta description is missing.")]
+        return [_issue("meta_description", "missing", "warning", "Meta description is missing.")]
     length = len(desc)
     if length < META_DESC_MIN:
         return [_issue("meta_description", "too_short", "warning", f"Meta description is {length} chars (recommended {META_DESC_MIN}-{META_DESC_MAX}).")]
@@ -240,9 +245,15 @@ def run_audit(pages):
 
 
 def page_score(issues):
-    """Stored Issue rows -> a 0-100 score (error -15, warning -5 each)."""
+    """Stored Issue rows -> a 0-100 score (error -15, warning -5 each).
+    Skips score_eligible=False issues (missing canonical/OG/Twitter/meta-
+    description, thin-content ratio -- see audit_classification.RULES):
+    they're informational findings, not defects, so they don't cost this
+    page points even though they still show up in its issue list."""
     score = 100
     for issue in issues:
+        if not issue.score_eligible:
+            continue
         score -= 15 if issue.severity == "error" else 5
     return max(score, 0)
 
