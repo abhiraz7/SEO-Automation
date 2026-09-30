@@ -45,7 +45,7 @@ CATEGORY_COLORS = {
 CATEGORY_LABELS = {
     "title": "📝 Meta Title", "meta_description": "📄 Meta Description", "h1": "🔠 H1 Heading",
     "image_alt": "🖼️ Image Alt Text", "canonical": "🔗 Canonical Link", "opengraph": "📱 Open Graph",
-    "twitter": "🐦 Twitter Card", "content": "✍️ Content Quality", "security": "🔒 Security",
+    "twitter": "🐦 Twitter Card", "content": "✍️ Content Signals", "security": "🔒 Security",
 }
 DEPLOYABLE_CATEGORIES = ["meta_description", "title", "h1", "twitter", "canonical", "opengraph"]
 PROVIDER_LABELS = {"dataforseo": "DataForSEO", "semrush": "SEMrush"}
@@ -435,11 +435,12 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
         grouped_issues.setdefault(issue.category, []).append(issue)
 
     total_issues = len(issues)
-    error_count = sum(1 for i in issues if i.severity == "error")
-    warning_count = sum(1 for i in issues if i.severity == "warning")
-    # Site Health % only moves for score_eligible issues -- error_count/
-    # warning_count above stay the real totals (still drive the KPI cards
-    # and issue list), see audit_classification.health_from_counts.
+    # error/warning counts are the score-eligible subset -- the same issues
+    # that move Site Health. Everything else (missing canonical/OG/Twitter/
+    # meta description, thin-content ratio; see audit_classification.RULES)
+    # is an "opportunity": still listed in full, but it doesn't cost points.
+    error_count, warning_count = audit_classification.score_eligible_severity_counts(issues)
+    opportunity_count = total_issues - error_count - warning_count
     health = audit_classification.project_health_score(issues) if pages else 100
     suggestion_count = (
         db.query(models.Suggestion).filter(models.Suggestion.page_id.in_(page_ids)).count() if page_ids else 0
@@ -510,6 +511,7 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             "category": issue.category,
             "rule": issue.rule,
             "severity": issue.severity,
+            "score_eligible": issue.score_eligible is not False,
             "message": issue.message,
             "url": pages_by_id.get(issue.page_id).url if pages_by_id.get(issue.page_id) else "",
             "missing_alt_images": _missing_alt_images(issue),
@@ -551,6 +553,7 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             "total_issues": total_issues,
             "error_count": error_count,
             "warning_count": warning_count,
+            "opportunity_count": opportunity_count,
             "health": health,
             "suggestion_count": suggestion_count,
             "issues_js": issues_js,
