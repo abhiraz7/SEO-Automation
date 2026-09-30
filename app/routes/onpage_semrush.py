@@ -18,7 +18,8 @@ on this page while staying untouched everywhere else in the app.
 import csv
 import io
 from datetime import datetime, timezone
-from urllib.parse import quote
+import re
+from urllib.parse import quote, unquote, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -34,7 +35,36 @@ from .settings import get_site_audit_cooldown_hours, register_crawler_global
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+
+
+def page_display_name(url: str | None) -> str:
+    """A readable name for a page row, derived only from its URL: the last
+    path segment, URL-decoded, extension stripped, dashes/underscores turned
+    into spaces ("/free-notes/indian-polity" -> "Indian polity"); the site
+    root is "Home". Nothing here is stored or invented -- it's a display label."""
+    path = urlparse(url or "").path.strip("/")
+    if not path:
+        return "Home"
+    segment = re.sub(r"\.(html?|php|aspx?)$", "", unquote(path.split("/")[-1]), flags=re.I)
+    name = re.sub(r"[-_]+", " ", segment).strip()
+    return (name[:1].upper() + name[1:]) if name else "Home"
+
+
+def measured_length(page, category: str) -> int | None:
+    """Character count of the stored title / meta description -- the only two
+    categories where a length is a real, already-stored measurement. Every
+    other category (and any empty value) returns None so the row shows nothing
+    instead of a made-up number."""
+    if page is None:
+        return None
+    value = {"title": page.title, "meta_description": page.meta_description}.get(category)
+    value = (value or "").strip()
+    return len(value) or None
+
+
 templates.env.globals["current_value_display"] = audit.current_value_display
+templates.env.globals["page_display_name"] = page_display_name
+templates.env.globals["measured_length"] = measured_length
 register_crawler_global(templates)
 
 CATEGORY_COLORS = {
