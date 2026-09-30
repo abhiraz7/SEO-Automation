@@ -1,6 +1,7 @@
 """
 WordPress connection + deploy/rollback routes (Tasks 3.2-3.5).
 """
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -14,7 +15,9 @@ from sqlalchemy.orm import Session
 
 from .. import models, wordpress
 from ..database import SessionLocal, get_db
+from ..services import content_optimizer, failure_log
 
+logger = logging.getLogger("wordpress_deploy")
 router = APIRouter()
 
 # The plugin lives in its own repo (github.com/abhiraz7/AI-SEO-Connector) and is
@@ -595,6 +598,13 @@ def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depen
         raise HTTPException(status_code=404, detail="Suggestion not found")
     if suggestion.status not in ("accepted", "edited"):
         raise HTTPException(status_code=409, detail=f"Suggestion must be accepted or edited first (current status: {suggestion.status}).")
+    # Deploy is the one step that changes a live site, so it does not rely on accept
+    # having refused: an AI Content Optimizer suggestion blocked by validation is never
+    # written. (None for every other suggestion: unchanged.)
+    blocked = content_optimizer.blocking_reasons(db, suggestion.id)
+    if blocked:
+        content_optimizer.log_refusal("deploy", suggestion.id, blocked)
+        raise HTTPException(status_code=409, detail="Blocked by validation, so it was not deployed: " + "; ".join(blocked))
 
     issue = db.get(models.Issue, suggestion.issue_id)
     field_name = issue.category if issue else None
@@ -618,12 +628,14 @@ def deploy_suggestion(suggestion_id: int, payload: DeployIn, db: Session = Depen
 
     read_result = deployer["read"](conn.site_url, token, *object_args)
     if not read_result.ok and read_result.status == "error":
+        failure_log.failure(logger, "wp.deploy_read_failed", suggestion=suggestion.id, project=suggestion.project_id, field=field_name, reason=read_result.error)
         raise HTTPException(status_code=502, detail=f"Could not read current value from WordPress: {read_result.error}")
     before_value = read_result.data.get(deployer["read_key"]) if read_result.ok else None
 
     new_value = suggestion.edited_content or suggestion.content
     write_result = deployer["write"](conn.site_url, token, *object_args, new_value)
     if not write_result.ok:
+        failure_log.failure(logger, "wp.deploy_failed", suggestion=suggestion.id, project=suggestion.project_id, field=field_name, reason=write_result.error or "unknown error")
         raise HTTPException(status_code=502, detail=f"Deploy failed: {write_result.error or 'unknown error'}")
 
     revision = models.SuggestionRevision(
@@ -746,6 +758,8 @@ def rollback_revision(revision_id: int, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail=f"No deploy support for field type {revision.field_name!r} -- cannot roll back.")
         write_result = deployer["write"](conn.site_url, token, revision.wp_post_id, revision.before_value or "")
     if not write_result.ok:
+        failure_log.failure(logger, "wp.rollback_failed", revision=revision.id, suggestion=revision.suggestion_id, project=revision.project_id,
+                            field=revision.field_name, reason=write_result.error or "unknown error")
         raise HTTPException(status_code=502, detail=f"Rollback failed: {write_result.error or 'unknown error'}")
 
     revision.rolled_back_at = datetime.now(timezone.utc)

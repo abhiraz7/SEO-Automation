@@ -7,6 +7,7 @@ recorded is a value the API actually returned (ai_overview.references,
 organic item .domain/.rank_absolute), nothing invented or scored by a
 made-up formula.
 """
+import logging
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -21,6 +22,7 @@ from ..services.ai_visibility_score import compute_ai_visibility_score
 from .security import _visible_projects
 from .settings import register_crawler_global
 
+logger = logging.getLogger("visibility")
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 register_crawler_global(templates)
@@ -166,7 +168,7 @@ def refresh_llm_mentions(project_id: int, db: Session = Depends(get_db)):
         ))
         db.commit()
         if result.get("error"):
-            failure_log.failure("routes.visibility.refresh_llm_mentions", result["error"], project_id=project_id)
+            failure_log.failure(logger, "llm_mentions.refresh_failed", project=project_id, reason=result["error"])
     return RedirectResponse(url=f"/projects/{project_id}/visibility", status_code=303)
 
 

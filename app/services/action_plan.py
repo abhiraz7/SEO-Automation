@@ -103,6 +103,9 @@ def _json_object(raw: str) -> dict:
     return data
 
 
+json_object = _json_object       # public name for the optimizer's parser
+
+
 def parse_action_plan(raw: str) -> schemas.ModelActionPlan:
     try:
         return schemas.ModelActionPlan.model_validate(_json_object(raw))
@@ -129,6 +132,13 @@ def _forbidden_reason(*texts: str) -> str | None:
             if pattern.search(text or ""):
                 return reason
     return None
+
+
+# Public names for the AI Content Optimizer, which applies the same product rules
+# ("Google requires...", keyword-density / word-count targets, copying competitors)
+# and the same factual-statement detector, so both features stay in step.
+forbidden_reason = _forbidden_reason
+FACTUAL_PATTERN = _FACTUAL
 
 
 def validate_action_plan(parsed: schemas.ModelActionPlan, evidence: list[dict]) -> dict:

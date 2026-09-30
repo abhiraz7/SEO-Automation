@@ -18,7 +18,9 @@ def _get_project(db: Session, project_id: int) -> models.Project:
 
 
 def _persist_issues(db: Session, project_id: int, issues_by_page: dict):
-    db.query(models.Issue).filter(models.Issue.project_id == project_id).delete()
+    # Replace the AUDIT findings only: the AI Content Optimizer's issues (and the
+    # suggestions the user decided on) are not produced by an audit and must survive it.
+    db.query(models.Issue).filter(models.Issue.project_id == project_id, models.not_optimizer_issue()).delete(synchronize_session=False)
     for page_id, issues in issues_by_page.items():
         for issue in issues:
             db.add(models.Issue(project_id=project_id, page_id=page_id, **issue))
