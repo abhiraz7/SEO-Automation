@@ -90,11 +90,6 @@
    still the real totals across every stored issue. #}
 
 <style>
-  .kpi-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; position:relative; overflow:hidden; transition:transform .2s ease, box-shadow .2s ease; cursor:pointer; }
-  .kpi-card:hover { transform:translateY(-3px); box-shadow:0 8px 24px rgba(0,0,0,0.08); }
-  .kpi-number { font-size:28px; font-weight:800; line-height:1; margin:8px 0 4px; letter-spacing:-0.02em; }
-  .kpi-label { font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.07em; }
-  .kpi-sub { font-size:11px; color:#94a3b8; margin-top:3px; }
 
   details.ig { margin-bottom:5px; border-radius:10px; overflow:hidden; border:1px solid #e2e8f0; background:#fff; transition:box-shadow .2s; }
   details.ig[open] { box-shadow:0 4px 16px rgba(0,0,0,0.06); }
@@ -131,56 +126,7 @@
   .vtx-toast.error { background:#dc2626; }
 </style>
 
-<div style="padding:18px 24px 20px;border-bottom:1px solid #e2e8f0;background:#fff;">
-  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;">
-
-    <div class="kpi-card" onclick="filterIssues('all')" style="border-left:4px solid #16a34a;background:linear-gradient(135deg,#fff 60%,#f0fdf4);">
-      <div class="kpi-label">Site Health</div>
-      <div class="kpi-number" style="color:{% if health >= 80 %}#15803d{% elif health >= 50 %}#a16207{% else %}#dc2626{% endif %};">{{ health }}%</div>
-      <div class="kpi-sub">{{ error_count + warning_count }} scored issue{{ 's' if error_count + warning_count != 1 }}</div>
-      <div style="margin-top:8px;height:4px;background:#e2e8f0;border-radius:4px;overflow:hidden;">
-        <div style="height:100%;width:{{ health }}%;background:{% if health >= 80 %}#16a34a{% elif health >= 50 %}#d97706{% else %}#dc2626{% endif %};border-radius:4px;"></div>
-      </div>
-    </div>
-
-    <div class="kpi-card" onclick="filterIssues('all')" style="border-left:4px solid #0284c7;background:linear-gradient(135deg,#fff 60%,#f0f9ff);">
-      <div class="kpi-label">Pages Checked</div>
-      <div class="kpi-number" style="color:#0284c7;">{{ total_pages }}</div>
-      <div class="kpi-sub">instant + site audit</div>
-    </div>
-
-    <div class="kpi-card" onclick="filterIssues('all')" style="border-left:4px solid #d97706;background:linear-gradient(135deg,#fff 60%,#fffbeb);">
-      <div class="kpi-label">Total Issues</div>
-      <div class="kpi-number" style="color:{% if total_issues > 0 %}#b45309{% else %}#15803d{% endif %};">{{ total_issues }}</div>
-      <div class="kpi-sub">on-page, via DataForSEO</div>
-    </div>
-
-    <div class="kpi-card" onclick="filterIssues('error')" style="border-left:4px solid #dc2626;background:linear-gradient(135deg,#fff 60%,#fef2f2);">
-      <div class="kpi-label">Critical Errors</div>
-      <div class="kpi-number" style="color:{% if error_count > 0 %}#dc2626{% else %}#15803d{% endif %};">{{ error_count }}</div>
-      <div class="kpi-sub">need fix now</div>
-    </div>
-
-    <div class="kpi-card" onclick="filterIssues('warning')" style="border-left:4px solid #ea580c;background:linear-gradient(135deg,#fff 60%,#fff7ed);">
-      <div class="kpi-label">Warnings</div>
-      <div class="kpi-number" style="color:{% if warning_count > 0 %}#c2410c{% else %}#15803d{% endif %};">{{ warning_count }}</div>
-      <div class="kpi-sub">worth fixing soon</div>
-    </div>
-
-    <div class="kpi-card" onclick="filterIssues('opportunity')" style="border-left:4px solid #0284c7;background:linear-gradient(135deg,#fff 60%,#f0f9ff);">
-      <div class="kpi-label">Opportunities</div>
-      <div class="kpi-number" style="color:#0284c7;">{{ opportunity_count }}</div>
-      <div class="kpi-sub">optional, not scored</div>
-    </div>
-
-    <div class="kpi-card" onclick="filterIssues('suggestions')" style="border-left:4px solid #7c3aed;background:linear-gradient(135deg,#fff 60%,#faf5ff);">
-      <div class="kpi-label">AI Suggestions</div>
-      <div class="kpi-number" style="color:#7c3aed;">{{ suggestion_count }}</div>
-      <div class="kpi-sub">generated so far</div>
-    </div>
-
-  </div>
-</div>
+{% include "onpage/_kpis.html" %}
 
 <div id="backlinks" style="margin:16px 24px 0;padding:16px 18px;border-radius:10px;background:#fff;border:1px solid #e2e8f0;scroll-margin-top:16px;">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
