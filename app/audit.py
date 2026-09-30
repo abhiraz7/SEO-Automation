@@ -342,6 +342,10 @@ def current_value_display(page, category, limit=80):
         # DataForSEO-sourced pages carry no stored text excerpt, only a word
         # count -- show that real measurement instead of a misleading "-Blank-".
         return f"{page.word_count} words of visible text (no excerpt stored)"
+    if not text and kind == "markdown":
+        # Ratio findings come from a DataForSEO flag; when no text or count was
+        # stored, say what we actually know instead of implying the page is empty.
+        return "Not measured: only DataForSEO's flag is stored (visible text under 10% of page size)"
     if not text:
         return "-Blank-"
     return text[:limit] + "…" if len(text) > limit else text

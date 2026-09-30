@@ -90,7 +90,12 @@ def test_content_current_value_shows_word_count_not_blank():
     from app import audit
     page = SimpleNamespace(fit_markdown=None, custom_content=None, word_count=142)
     assert audit.current_value_display(page, "content") == "142 words of visible text (no excerpt stored)"
-    assert audit.current_value_display(SimpleNamespace(fit_markdown=None, custom_content=None, word_count=None), "content") == "-Blank-"
+    # No stored text and no count: say what we know, never a bare "Blank" that
+    # implies the page is empty.
+    unknown = audit.current_value_display(SimpleNamespace(fit_markdown=None, custom_content=None, word_count=None), "content")
+    assert unknown.startswith("Not measured") and "Blank" not in unknown
+    # Other categories keep the plain blank marker.
+    assert audit.current_value_display(SimpleNamespace(title=None), "title") == "-Blank-"
 
 
 def test_page_hides_stored_suggestions_for_paused_finding_but_keeps_them_in_the_db(env):
