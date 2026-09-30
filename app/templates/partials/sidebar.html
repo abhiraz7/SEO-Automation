@@ -18,23 +18,28 @@
 {% endif %}
 {% endmacro %}
 
-{% macro nav_link(href, label, icon_name, active=False, enabled=True, disabled_reason="coming soon") %}
-{% if enabled %}
+{# One link style. There is deliberately no "disabled" variant: every item that
+   appears is a real page, so nothing in the menu looks broken or greyed out.
+   Planned features live in the roadmap docs, not as dead links here. #}
+{% macro nav_link(href, label, icon_name, active=False) %}
 <a href="{{ href }}" style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;color:{% if active %}#3b3fce{% else %}#64748b{% endif %};background:{% if active %}#eef2ff{% else %}transparent{% endif %};"
    onmouseover="{% if not active %}this.style.background='#f1f5f9';this.style.color='#0f172a'{% endif %}"
    onmouseout="{% if not active %}this.style.background='transparent';this.style.color='#64748b'{% endif %}">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="15" height="15" style="flex-shrink:0;">{{ svg_icon(icon_name) }}</svg>
   {{ label }}
 </a>
-{% else %}
-<span style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:6px;font-size:13px;font-weight:500;color:#cbd5e1;cursor:not-allowed;" title="{{ label }} — {{ disabled_reason }}">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="15" height="15" style="flex-shrink:0;">{{ svg_icon(icon_name) }}</svg>
-  {{ label }}
-</span>
-{% endif %}
 {% endmacro %}
 
-{% set in_projects = path == "/" or path.startswith("/projects") %}
+{% macro section(title) %}
+<div style="margin:10px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#94a3b8;letter-spacing:0.07em;text-transform:uppercase;">{{ title }}</div>
+{% endmacro %}
+
+{# Which project are we inside? Read it from the URL (/projects/<id>/...) so the
+   menu is right on every page, whether or not the route passed `project`. #}
+{% set parts = path.split('/') %}
+{% set pid = parts[2] if (path.startswith('/projects/') and parts|length > 2 and parts[2].isdigit()) else none %}
+{% set pbase = '/projects/' ~ pid if pid else none %}
+{% set pname = project.name if (project is defined and project and project.name) else ('Project ' ~ pid if pid else '') %}
 
 <aside id="sidebar" style="width:210px;min-width:210px;background:#fff;border-right:1px solid #e2e8f0;display:flex;flex-direction:column;height:100vh;flex-shrink:0;">
 <div id="sidebar-inner" style="width:210px;min-width:210px;height:100%;overflow-y:auto;display:flex;flex-direction:column;">
@@ -53,11 +58,20 @@
   <!-- Navigation -->
   <nav style="flex:1;padding:10px 8px;display:flex;flex-direction:column;gap:1px;">
 
-    {{ nav_link("/", "Projects", "home", active=(path == "/" or in_projects)) }}
-    <div style="padding:0 10px 4px 34px;font-size:10px;color:#94a3b8;">On-page audits (DataForSEO/SEMrush) open from here</div>
+    {% if pid %}
+    {# ── Inside a project: everything that belongs to THIS project ── #}
+    <a href="/" style="display:flex;align-items:center;gap:6px;padding:4px 10px;font-size:11px;color:#64748b;text-decoration:none;">&larr; All projects</a>
+    <div title="{{ pname }}" style="padding:2px 10px 6px;font-size:13px;font-weight:700;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ pname }}</div>
 
-    <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">Crawling</div>
-    <!-- Queue item -->
+    {{ nav_link(pbase, "On-page SEO", "onpage", active=(path == pbase or path.startswith(pbase ~ "/onpage") or path.startswith(pbase ~ "/pages"))) }}
+    {{ nav_link(pbase ~ "#backlinks", "Backlinks", "backlinks") }}
+    {{ nav_link(pbase ~ "/visibility", "AI Visibility", "visibility", active=path.startswith(pbase ~ "/visibility")) }}
+    {{ nav_link(pbase ~ "/keywords", "Keywords", "keyword", active=false) }}
+    {{ nav_link(pbase ~ "/competitors", "Competitors", "competitor", active=path.startswith(pbase ~ "/competitors")) }}
+    {{ nav_link(pbase ~ "/optimizer", "Content Optimizer", "aiwriter", active=path.startswith(pbase ~ "/optimizer")) }}
+    {{ nav_link(pbase ~ "/links", "Link Analyzer", "link", active=path.startswith(pbase ~ "/links")) }}
+    {{ nav_link(pbase ~ "/security", "Security check", "security", active=path.startswith(pbase ~ "/security")) }}
+    <!-- Queue opens a drawer (jobs for this project), it is not a page -->
     <a href="#" onclick="if(typeof openDrawer!=='undefined'){openDrawer('queue-drawer')}return false;"
        style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;color:#64748b;background:transparent;position:relative;"
        onmouseover="this.style.background='#f1f5f9';this.style.color='#0f172a'" onmouseout="this.style.background='transparent';this.style.color='#64748b'">
@@ -66,41 +80,19 @@
       <span class="q-badge" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:9px;font-weight:800;padding:1px 6px;border-radius:10px;background:#4f46e5;color:#fff;min-width:16px;text-align:center;">0</span>
     </a>
 
-    {{ nav_link("#", "Content", "content", enabled=False) }}
-    {% if project is defined %}
-      {# Explicit destination, not relying on the /projects/{id} -> /onpage
-         redirect preserving the #backlinks fragment (browsers do this
-         correctly, but it's implicit -- point directly at the real page
-         instead of through a redirect). Same on-page/crawler branching
-         routes/projects.py's project_detail route already does. #}
-      {% set bl_href = (path if path.startswith("/projects/" ~ project.id ~ "/onpage") else "/projects/" ~ project.id) ~ "#backlinks" %}
-    {% else %}
-      {% set bl_href = "/" %}
-    {% endif %}
-    {{ nav_link(bl_href, "Backlinks", "backlinks") }}
-
-    <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">AI</div>
-    {{ nav_link("/visibility", "AI Visibility", "visibility", active=path.startswith("/visibility") or path.endswith("/visibility")) }}
+    {{ section("Workspace") }}
+    {{ nav_link("/", "Projects", "home") }}
     {{ nav_link("/keywords", "Keyword Research", "keyword", active=path.startswith("/keywords")) }}
-    <div style="padding:0 10px 4px 34px;font-size:10px;color:#94a3b8;">📈 includes Rank Tracking</div>
-
-    <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">Tools</div>
-    {{ nav_link("#", "Schema Generator", "schema", enabled=False) }}
-    {% if project is defined %}
-      {{ nav_link("/projects/" ~ project.id ~ "/links", "Link Analyzer", "link", active=path.startswith("/projects/" ~ project.id ~ "/links")) }}
-      {{ nav_link("/projects/" ~ project.id ~ "/competitors", "Competitor Analysis", "competitor", active=path.startswith("/projects/" ~ project.id ~ "/competitors")) }}
-      {{ nav_link("/projects/" ~ project.id ~ "/optimizer", "Content Optimizer", "aiwriter", active=path.startswith("/projects/" ~ project.id ~ "/optimizer")) }}
-    {% else %}
-      {{ nav_link("#", "Link Analyzer", "link", enabled=False, disabled_reason="open a project first") }}
-      {{ nav_link("#", "Competitor Analysis", "competitor", enabled=False, disabled_reason="open a project first") }}
-      {{ nav_link("#", "Content Optimizer", "aiwriter", enabled=False, disabled_reason="open a project first") }}
-    {% endif %}
-    {{ nav_link("#", "AI Writer", "aiwriter", enabled=False) }}
-    {{ nav_link("/security", "Security Testing", "security", active=path.startswith("/security") or path.endswith("/security")) }}
-
-    <div style="margin:8px 0 3px;padding:0 10px;font-size:10px;font-weight:600;color:#cbd5e1;letter-spacing:0.07em;text-transform:uppercase;">Other</div>
-    {{ nav_link("#", "Reports", "reports", enabled=False) }}
     {{ nav_link("/settings", "Settings", "settings", active=(path == "/settings")) }}
+
+    {% else %}
+    {# ── Outside a project: the cross-project pages ── #}
+    {{ nav_link("/", "Projects", "home", active=(path == "/")) }}
+    {{ nav_link("/keywords", "Keyword Research", "keyword", active=path.startswith("/keywords")) }}
+    {{ nav_link("/visibility", "AI Visibility", "visibility", active=path.startswith("/visibility")) }}
+    {{ nav_link("/security", "Security Testing", "security", active=path.startswith("/security")) }}
+    {{ nav_link("/settings", "Settings", "settings", active=path.startswith("/settings")) }}
+    {% endif %}
 
   </nav>
 
