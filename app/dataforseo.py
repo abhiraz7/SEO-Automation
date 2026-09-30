@@ -318,6 +318,83 @@ def fetch_backlinks_list(base_url: str, limit: int = 100) -> dict:
         return {"rows": [], "error": f"backlinks_list: {e}"}
 
 
+LLM_MENTIONS_PLATFORMS = ("both", "chat_gpt", "google")
+
+
+def fetch_llm_mentions_target_metrics(base_url: str, platform: str = "both", location: str = "US") -> dict:
+    """Wraps POST /v3/ai_optimization/llm_mentions/target_metrics/live/ --
+    a SEPARATE, separately-billed DataForSEO product from every other
+    function in this file ($0.10/request + $0.001/row, confirmed against
+    DataForSEO's own pricing page 2026-09-29), not the free SERP-based AI
+    Overview data routes/visibility.py already uses. Callers must not treat
+    this as free just because it's the same provider/account.
+
+    Aggregates how often the domain is mentioned across LLM platforms
+    (ChatGPT and/or Google AI Overview -- ChatGPT data is US/English only,
+    per DataForSEO's docs) over the recent period DataForSEO's own index
+    covers -- this is NOT scoped to specific queries the way
+    routes/visibility.py's per-query checks are; it's a broader "how much is
+    this domain mentioned overall" aggregate.
+
+    Field mapping against DataForSEO's documented response shape
+    (docs.dataforseo.com/v3/ai_optimization/llm_mentions/target_metrics/live,
+    confirmed 2026-09-29 -- NOT yet verified against a real live call, since
+    this account has no AI Optimization API units purchased yet):
+    result[0].aggregated_metrics.total.{mentions, ai_search_volume} and
+    .sources_domain[] (top citing domains, each {key, mentions,
+    ai_search_volume})."""
+    if not is_configured():
+        return {"error": "DataForSEO not configured"}
+    if platform not in LLM_MENTIONS_PLATFORMS:
+        return {"error": f"Unsupported platform: {platform!r} (use one of {', '.join(LLM_MENTIONS_PLATFORMS)})"}
+
+    code = _location_code(location)
+    if code is None:
+        return {"error": f"Unsupported location: {location}"}
+
+    domain = _domain_only(base_url)
+    result = {
+        "total_mentions": None, "ai_search_volume": None, "sources_domain": None,
+        "cost": None, "error": None,
+    }
+    try:
+        payload = [{
+            "target": [{"domain": domain, "search_filter": "include"}],
+            "location_code": code,
+            "language_code": LANGUAGE_CODE_EN,
+        }]
+        if platform != "both":
+            payload[0]["platform"] = platform
+
+        data = _post("/ai_optimization/llm_mentions/target_metrics/live", payload)
+        if data.get("status_code") != 20000:
+            result["error"] = data.get("status_message") or f"status {data.get('status_code')}"
+            return result
+
+        task = (data.get("tasks") or [{}])[0]
+        if task.get("status_code") != 20000:
+            result["error"] = task.get("status_message") or f"task status {task.get('status_code')}"
+            return result
+        result["cost"] = task.get("cost")
+
+        rows = task.get("result")
+        if not rows:
+            result["no_data"] = True
+            return result
+
+        metrics = (rows[0] or {}).get("aggregated_metrics") or {}
+        total = metrics.get("total") or {}
+        result.update({
+            "total_mentions": total.get("mentions"),
+            "ai_search_volume": total.get("ai_search_volume"),
+            "sources_domain": metrics.get("sources_domain"),
+        })
+        return result
+    except Exception as e:
+        result["error"] = f"llm_mentions_target_metrics: {e}"
+        return result
+
+
 def normalize_keyword_row(row: dict, keyword: str) -> NormalizedKeyword:
     """Maps a raw DataForSEO Labs item into NormalizedKeyword. Only ever called
     on successful rows -- error/no_data results are handled by keyword_provider,

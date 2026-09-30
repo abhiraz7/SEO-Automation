@@ -7,6 +7,7 @@ recorded is a value the API actually returned (ai_overview.references,
 organic item .domain/.rank_absolute), nothing invented or scored by a
 made-up formula.
 """
+import logging
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -16,10 +17,12 @@ from sqlalchemy.orm import Session
 
 from .. import dataforseo, models
 from ..database import get_db
+from ..services import failure_log
 from ..services.ai_visibility_score import compute_ai_visibility_score
 from .security import _visible_projects
 from .settings import register_crawler_global
 
+logger = logging.getLogger("visibility")
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 register_crawler_global(templates)
@@ -126,6 +129,12 @@ def visibility_report(project_id: int, request: Request, db: Session = Depends(g
         .order_by(models.VisibilityCheck.created_at.desc())
         .all()
     )
+    latest_llm_mentions = (
+        db.query(models.LlmMentionSnapshot)
+        .filter(models.LlmMentionSnapshot.project_id == project_id)
+        .order_by(models.LlmMentionSnapshot.fetched_at.desc())
+        .first()
+    )
     return templates.TemplateResponse(
         request, "visibility_report.html", {
             "project": project,
@@ -135,8 +144,32 @@ def visibility_report(project_id: int, request: Request, db: Session = Depends(g
             "has_profile": profile is not None,
             "dataforseo_configured": dataforseo.is_configured(),
             "ai_visibility": compute_ai_visibility_score(checks),
+            "latest_llm_mentions": latest_llm_mentions,
         }
     )
+
+
+@router.post("/projects/{project_id}/llm-mentions/refresh")
+def refresh_llm_mentions(project_id: int, db: Session = Depends(get_db)):
+    """Manual refresh only -- fetch_llm_mentions_target_metrics is a
+    separately-billed DataForSEO product ($0.10/request + $0.001/row), never
+    auto-scheduled, same reasoning as the backlinks/on-page snapshot
+    refresh actions elsewhere in this app."""
+    project = db.get(models.Project, project_id)
+    if project:
+        result = dataforseo.fetch_llm_mentions_target_metrics(project.base_url)
+        db.add(models.LlmMentionSnapshot(
+            project_id=project_id,
+            total_mentions=result.get("total_mentions"),
+            ai_search_volume=result.get("ai_search_volume"),
+            sources_domain=result.get("sources_domain"),
+            cost=result.get("cost"),
+            error=result.get("error"),
+        ))
+        db.commit()
+        if result.get("error"):
+            failure_log.failure(logger, "llm_mentions.refresh_failed", project=project_id, reason=result["error"])
+    return RedirectResponse(url=f"/projects/{project_id}/visibility", status_code=303)
 
 
 @router.post("/projects/{project_id}/visibility/check")
