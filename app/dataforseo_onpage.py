@@ -14,6 +14,7 @@ import os
 import httpx
 from bs4 import BeautifulSoup
 
+from . import audit_classification
 from .html_extract import extract_image_alts
 
 DATAFORSEO_BASE = "https://api.dataforseo.com/v3"
@@ -154,7 +155,10 @@ def fetch_task_links(task_id: str, limit: int = 1000) -> dict:
 # same vocabulary regardless of which app sourced the issue.
 
 def _issue(category, rule, severity, message):
-    return {"category": category, "rule": rule, "severity": severity, "message": message}
+    return {
+        "category": category, "rule": rule, "severity": severity, "message": message,
+        **audit_classification.classify(category, rule),
+    }
 
 
 def issues_from_item(item: dict) -> list[dict]:
@@ -173,7 +177,7 @@ def issues_from_item(item: dict) -> list[dict]:
             issues.append(_issue("title", "duplicate", "warning", "Title tag is duplicated on another crawled page."))
 
     if checks.get("no_description"):
-        issues.append(_issue("meta_description", "missing", "error", "Meta description is missing."))
+        issues.append(_issue("meta_description", "missing", "warning", "Meta description is missing."))
     elif checks.get("duplicate_meta_tags"):
         issues.append(_issue("meta_description", "duplicate", "warning", "Meta tags are duplicated on another crawled page."))
 
