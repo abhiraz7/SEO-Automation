@@ -1084,7 +1084,9 @@ function renderFixModal(issue) {
   // (fmRightHtml); every other suggestion stays in the list below it, with
   // the same accept/edit/deploy/rollback actions as before.
   var hero = hasPerImageFix ? null : fmHero(issue);
-  if (!hasPerImageFix) {
+  // Paused findings (issue.ai_paused, see app/issue_copy.py) get no generate
+  // button, suggestion list or editor -- fmRightHtml shows the reason instead.
+  if (!hasPerImageFix && !issue.ai_paused) {
     var others = (issue.suggestions || []).filter(function(s) { return s !== hero; });
     var suggHtml = others.map(function(s) { return fmSuggestionCard(issue, s); }).join('')
       || (hero ? '' : '<div style="text-align:center;padding:14px 0;color:#94a3b8;font-size:11px;">No suggestions yet for this issue.</div>');

@@ -116,6 +116,25 @@ COPY = {
 }
 
 
+# Findings where AI suggestions are switched off for now. Enforced server-side
+# in routes/suggestions.py (so no client can trigger generation) and shown in
+# the fix modal as a note instead of the suggestion panel. Existing stored
+# suggestions are left in the database untouched; they are just not shown.
+PAUSED_AI = {
+    ("content", "thin"): (
+        "AI suggestions are paused for this finding. A low text-to-page-size ratio is not a "
+        "reliable sign that a page needs more words (tool, archive and media pages trip it "
+        "legitimately), and blanket advice like \"add 800 words\" can hurt a site. "
+        "Review the page yourself."
+    ),
+}
+
+
+def ai_paused_reason(category: str, rule: str) -> str | None:
+    """Why AI suggestions are switched off for this (category, rule), or None."""
+    return PAUSED_AI.get((category, rule))
+
+
 def rule_tag(category: str, rule: str) -> str:
     """Short row tag; unknown pairs fall back to the rule name, humanised."""
     return TAGS.get((category, rule)) or (rule or "").replace("_", " ").capitalize()

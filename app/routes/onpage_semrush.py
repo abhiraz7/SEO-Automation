@@ -565,7 +565,8 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
                 "description": (pages_by_id[issue.page_id].meta_description or "") if issue.page_id in pages_by_id else "",
             },
             "missing_alt_images": _missing_alt_images(issue),
-            "suggestions": [
+            "ai_paused": issue_copy.ai_paused_reason(issue.category, issue.rule),
+            "suggestions": [] if issue_copy.ai_paused_reason(issue.category, issue.rule) else [
                 {
                     "id": s.id,
                     "status": s.status,

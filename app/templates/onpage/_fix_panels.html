@@ -158,6 +158,9 @@
 
   function fmRightHtml(issue, hero) {
     var head = function (badge) { return '<div class="fp-ai-head"><span class="fp-ai-title">✦ AI suggestion</span>' + (badge || '') + '</div>'; };
+    if (issue.ai_paused) {
+      return '<div class="fp-ai">' + head('<span class="fp-badge warn">Paused</span>') + '<div class="fp-empty">' + fmEsc(issue.ai_paused) + '</div></div>';
+    }
     if (!hero) {
       return '<div class="fp-ai">' + head('') + '<div class="fp-empty">No AI suggestion waiting for review. Generate one below, or edit manually.</div></div>';
     }

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
-from .. import ai_provider, deploy_status, models, prompt_builder
+from .. import ai_provider, deploy_status, issue_copy, models, prompt_builder
 from ..ai_errors import AIGenerationError, ImageFetchError
 from ..database import get_db
 from ..services import context_builder
@@ -42,6 +42,10 @@ def _generate_and_store(
     issue = db.get(models.Issue, issue_id)
     if not page or not issue:
         raise HTTPException(status_code=404)
+    paused = issue_copy.ai_paused_reason(issue.category, issue.rule)
+    if paused:
+        # Server-side so no client (or stale tab) can trigger generation.
+        raise HTTPException(status_code=409, detail=paused)
 
     # Fetch/create the page's understanding (cached per crawl snapshot) before
     # generating, so the prompt gets the distilled JSON instead of raw fit_markdown.
