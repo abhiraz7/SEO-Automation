@@ -52,7 +52,7 @@ def _extract_live_value(field_name: str, item: dict):
     twitter_card, not twitter:title, and this needs the exact field each
     FIELD_DEPLOYERS entry in routes/wordpress.py actually writes."""
     meta = item.get("meta") or {}
-    social = item.get("social_media_tags") or {}
+    social = dataforseo_onpage.social_tags(item)
     htags = meta.get("htags") or {}
 
     if field_name == "title":

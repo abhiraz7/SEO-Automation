@@ -1,0 +1,65 @@
+{# Compact KPI strip for the On-Page SEO screen. Every number comes from the
+   context onpage_view already builds (health/error_count/warning_count/
+   opportunity_count/total_issues/total_pages/suggestion_count) -- nothing is
+   computed or invented here. Click = filterIssues(kind), same as before. #}
+<style>
+  .kpi-strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:8px; }
+  .kpi-card { background:#fff; border:1px solid #e8ebf3; border-radius:10px; padding:10px 12px; cursor:pointer; transition:border-color .15s, box-shadow .15s; }
+  .kpi-card:hover { border-color:#c7cdf5; box-shadow:0 2px 8px rgba(79,70,229,.08); }
+  .kpi-label { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:600; color:#64748b; }
+  .kpi-label::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--dot,#cbd5e1); }
+  .kpi-number { font-size:22px; font-weight:700; line-height:1.1; margin:6px 0 2px; letter-spacing:-0.01em; color:#0f172a; }
+  .kpi-sub { font-size:11px; color:#94a3b8; }
+  .kpi-bar { margin-top:6px; height:3px; background:#eef0f6; border-radius:3px; overflow:hidden; }
+  .kpi-bar > div { height:100%; border-radius:3px; }
+</style>
+
+<div style="padding:14px 24px;border-bottom:1px solid #e8ebf3;background:#fff;">
+  <div class="kpi-strip">
+
+    {% set hc = '#16a34a' if health >= 80 else ('#d97706' if health >= 50 else '#dc2626') %}
+    <div class="kpi-card" onclick="filterIssues('all')" style="--dot:{{ hc }};">
+      <div class="kpi-label">Site Health</div>
+      <div class="kpi-number" style="color:{{ hc }};">{{ health }}%</div>
+      <div class="kpi-sub">{{ error_count + warning_count }} scored issue{{ 's' if error_count + warning_count != 1 }}</div>
+      <div class="kpi-bar"><div style="width:{{ health }}%;background:{{ hc }};"></div></div>
+    </div>
+
+    <div class="kpi-card" onclick="filterIssues('all')" style="--dot:#6366f1;">
+      <div class="kpi-label">Pages Checked</div>
+      <div class="kpi-number">{{ total_pages }}</div>
+      <div class="kpi-sub">instant + site audit</div>
+    </div>
+
+    <div class="kpi-card" onclick="filterIssues('all')" style="--dot:#94a3b8;">
+      <div class="kpi-label">Total Issues</div>
+      <div class="kpi-number">{{ total_issues }}</div>
+      <div class="kpi-sub">all findings</div>
+    </div>
+
+    <div class="kpi-card" onclick="filterIssues('error')" style="--dot:#dc2626;">
+      <div class="kpi-label">Critical Errors</div>
+      <div class="kpi-number" style="color:{{ '#dc2626' if error_count > 0 else '#15803d' }};">{{ error_count }}</div>
+      <div class="kpi-sub">need fix now</div>
+    </div>
+
+    <div class="kpi-card" onclick="filterIssues('warning')" style="--dot:#d97706;">
+      <div class="kpi-label">Warnings</div>
+      <div class="kpi-number" style="color:{{ '#c2410c' if warning_count > 0 else '#15803d' }};">{{ warning_count }}</div>
+      <div class="kpi-sub">worth fixing soon</div>
+    </div>
+
+    <div class="kpi-card" onclick="filterIssues('opportunity')" style="--dot:#0284c7;">
+      <div class="kpi-label">Opportunities</div>
+      <div class="kpi-number" style="color:#0284c7;">{{ opportunity_count }}</div>
+      <div class="kpi-sub">optional, not scored</div>
+    </div>
+
+    <div class="kpi-card" onclick="filterIssues('suggestions')" style="--dot:#7c3aed;">
+      <div class="kpi-label">AI Suggestions</div>
+      <div class="kpi-number" style="color:#7c3aed;">{{ suggestion_count }}</div>
+      <div class="kpi-sub">generated so far</div>
+    </div>
+
+  </div>
+</div>

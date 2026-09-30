@@ -1,0 +1,38 @@
+{# Compact category strip: one chip per category that has findings, with the
+   real issue count. Replaces the tall "Issue breakdown by category" bar chart.
+   Click a chip -> openCategory() expands that category below and collapses the
+   others (only the selected category is open). Uses grouped_issues/cat_labels/
+   cat_colors from onpage_view; no new data. #}
+{% set has_findings = grouped_issues.values()|select|list|length > 0 %}
+{% if has_findings %}
+<style>
+  .cat-strip { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .cat-chip { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border:1px solid #e8ebf3; border-radius:999px; background:#fff; font-size:12px; font-weight:600; color:#334155; cursor:pointer; transition:border-color .15s, background .15s; }
+  .cat-chip:hover { border-color:#c7cdf5; background:#f8f9ff; }
+  .cat-chip .dot { width:6px; height:6px; border-radius:50%; }
+  .cat-chip .n { font-size:11px; font-weight:700; color:#64748b; background:#f1f3f9; border-radius:999px; padding:0 6px; }
+</style>
+<div style="margin:12px 24px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+  <span style="font-size:12px;font-weight:700;color:#0f172a;">Categories</span>
+  <div class="cat-strip">
+    {% for category, cat_issues in grouped_issues.items() if cat_issues %}
+    {% set accent = cat_colors.get(category, '#6366f1') %}
+    {% set label = cat_labels.get(category, category|replace('_',' ')|title) %}
+    <button type="button" class="cat-chip" onclick="openCategory('{{ category }}')" title="{{ cat_issues|length }} finding{{ 's' if cat_issues|length != 1 }}">
+      <span class="dot" style="background:{{ accent }};"></span>{{ label }}<span class="n">{{ cat_issues|length }}</span>
+    </button>
+    {% endfor %}
+  </div>
+</div>
+<script>
+  // Expand one category, collapse the rest, and bring it into view.
+  function openCategory(cat) {
+    var target = document.querySelector('#issues-section details.ig[data-cat="' + cat + '"]');
+    if (!target) return;
+    document.querySelectorAll('#issues-section details.ig[open]').forEach(function (d) { if (d !== target) d.open = false; });
+    target.style.display = '';
+    target.open = true;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+</script>
+{% endif %}
