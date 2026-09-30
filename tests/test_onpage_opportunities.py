@@ -95,6 +95,31 @@ def test_issues_js_carries_current_value_and_eligibility(client_and_project):
     assert '"current_value"' in html and '"score_eligible"' in html
 
 
+def test_toolbar_has_tabs_with_real_counts_and_no_ignored_tab(client_and_project):
+    html = _page(client_and_project)
+    assert re.search(r'data-kind="all"[^>]*>All Issues <span class="n">5<', html)
+    assert re.search(r'data-kind="needs"[^>]*>Needs Fixing <span class="n">2<', html)
+    assert re.search(r'data-kind="opportunity"[^>]*>Opportunities <span class="n">3<', html)
+    assert 'id="it-search"' in html and 'id="it-sort"' in html
+    assert "Ignored" not in html  # no ignore feature exists to back it
+
+
+def test_rows_have_fix_and_ai_status_and_no_view_tasks(client_and_project):
+    html = _page(client_and_project)
+    assert len(re.findall(r'class="btn-fix"', html)) == 5      # one Fix per issue row
+    assert len(re.findall(r'>Review</span>', html)) == 5       # no suggestions seeded
+    assert "✦ Suggested" not in html
+    assert "View tasks" not in html
+
+
+def test_category_strip_and_drawer_hooks_exist(client_and_project):
+    html = _page(client_and_project)
+    assert len(re.findall(r'class="cat-chip"', html)) == 4     # title, canonical, opengraph, twitter
+    assert 'data-cat="title"' in html
+    assert 'id="fix-modal"' in html and 'class="fd"' in html
+    assert 'id="fix-modal-body"' in html
+
+
 def test_content_category_is_relabelled():
     from app.routes import onpage_semrush
     assert "Content Signals" in onpage_semrush.CATEGORY_LABELS["content"]
