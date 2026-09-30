@@ -877,9 +877,9 @@ function fmSuggestionCard(issue, s) {
     actions = '<button onclick="fmUseSuggestion(' + s.id + ')" style="font-size:11px;color:#4f46e5;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">Save</button>'
       + (canDeploy ? '<button onclick="fmDeploy(' + s.id + ', this)" style="font-size:11px;color:#7e22ce;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">🚀 Deploy</button>' : '');
   } else {
-    actions = '<button onclick="fmUseSuggestion(' + s.id + ')" style="font-size:11px;color:#4f46e5;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">Use in editor</button>'
-      + '<button onclick="fmDecide(' + s.id + ',\'accept\')" style="font-size:11px;color:#15803d;background:none;border:none;cursor:pointer;padding:0;">Accept</button>'
-      + '<button onclick="fmDecide(' + s.id + ',\'reject\')" style="font-size:11px;color:#dc2626;background:none;border:none;cursor:pointer;padding:0;">Reject</button>';
+    actions = '<button onclick="fmUseSuggestion(' + s.id + ')" style="font-size:11px;color:#4f46e5;font-weight:600;background:none;border:none;cursor:pointer;padding:0;">Edit</button>'
+      + '<button onclick="fmDecide(' + s.id + ',\'accept\')" style="font-size:11px;font-weight:700;color:#6d28d9;background:#f1eaff;border:none;border-radius:6px;cursor:pointer;padding:3px 9px;">Use suggestion</button>'
+      + '<button onclick="fmDecide(' + s.id + ',\'reject\')" style="font-size:11px;color:#64748b;background:none;border:none;cursor:pointer;padding:0;">Skip</button>';
   }
   return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:9px 10px;margin-bottom:6px;">' +
     '<div style="font-size:12px;color:#0f172a;word-break:break-word;margin-bottom:5px;">' + fmEsc(text) + '</div>' +
@@ -1054,6 +1054,25 @@ async function fmSaveManualForImage(idx) {
   }
 }
 
+// Drawer summary: the problem, what's on the page now, and a collapsed "Why?"
+// with the facts we actually hold (rule, severity, whether it counts toward
+// Site Health). No reasons/confidence are shown: suggestions don't store any.
+function fmSummaryHtml(issue) {
+  var label = 'font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;';
+  var blank = !issue.current_value || issue.current_value === '-Blank-';
+  var counts = issue.score_eligible
+    ? 'Counts toward Site Health (' + fmEsc(issue.severity) + ').'
+    : 'Informational: an opportunity, it does not affect Site Health.';
+  return '<div style="margin-bottom:14px;">' +
+    '<div style="' + label + '">Problem</div>' +
+    '<div style="font-size:13px;color:#0f172a;margin-bottom:10px;">' + fmEsc(issue.message) + '</div>' +
+    '<div style="' + label + '">Current value</div>' +
+    '<div style="font-size:12px;padding:8px 10px;border-radius:8px;background:#f8fafc;border:1px solid #eef0f6;word-break:break-word;color:' + (blank ? '#94a3b8' : '#334155') + ';' + (blank ? 'font-style:italic;' : '') + '">' + fmEsc(blank ? 'Blank' : issue.current_value) + '</div>' +
+    '<details style="margin-top:10px;"><summary style="font-size:12px;font-weight:600;color:#6d5ef5;cursor:pointer;">Why?</summary>' +
+    '<div style="font-size:12px;color:#475569;margin-top:6px;line-height:1.5;">Rule: ' + fmEsc(issue.category) + ' / ' + fmEsc(issue.rule) + '.<br>' + counts + '</div></details>' +
+    '</div>';
+}
+
 function renderFixModal(issue) {
   var body = document.getElementById('fix-modal-body');
   // A page-wide image_alt issue with real per-image detail is fixed entirely
@@ -1079,6 +1098,7 @@ function renderFixModal(issue) {
     var suggHtml = (issue.suggestions || []).map(function(s) { return fmSuggestionCard(issue, s); }).join('')
       || '<div style="text-align:center;padding:14px 0;color:#94a3b8;font-size:11px;">No suggestions yet for this issue.</div>';
     genericHtml =
+      '<div style="font-size:10px;font-weight:700;color:#6d5ef5;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">✦ AI suggestion</div>' +
       '<div id="fm-sugg-list">' + suggHtml + '</div>' +
       '<button id="fm-generate-btn" onclick="fmGenerate()" style="width:100%;font-size:11px;font-weight:700;padding:7px 10px;border-radius:7px;border:none;background:#4f46e5;color:#fff;cursor:pointer;margin-top:4px;">' +
       ((issue.suggestions || []).length ? '↻ Regenerate' : '✦ Generate AI Suggestion') + '</button>' +
@@ -1089,7 +1109,7 @@ function renderFixModal(issue) {
       '</div>';
   }
 
-  body.innerHTML = fmImageListHtml(issue) + genericHtml;
+  body.innerHTML = fmSummaryHtml(issue) + fmImageListHtml(issue) + genericHtml;
 
   var newScrollEl = document.getElementById('fm-img-scroll');
   if (newScrollEl) newScrollEl.scrollTop = prevScrollTop;
