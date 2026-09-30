@@ -296,8 +296,12 @@
   </div>
 
   {% for category, cat_issues in grouped_issues.items() %}
-  {% set err_n = cat_issues|selectattr('severity','eq','error')|list|length %}
-  {% set warn_n = cat_issues|selectattr('severity','eq','warning')|list|length %}
+  {# err_n/warn_n = score-eligible only (what Site Health counts); opp_n = the
+     rest -- still listed below, just not scored. #}
+  {% set scored = cat_issues|selectattr('score_eligible')|list %}
+  {% set err_n = scored|selectattr('severity','eq','error')|list|length %}
+  {% set warn_n = scored|selectattr('severity','eq','warning')|list|length %}
+  {% set opp_n = cat_issues|length - scored|length %}
   {% set accent = cat_colors.get(category, '#4f46e5') %}
   {% set label = cat_labels.get(category, category|replace('_',' ')|title) %}
   {% set is_clean = not cat_issues %}
@@ -312,7 +316,8 @@
       {% else %}
       <span style="font-size:11px;color:#94a3b8;margin-right:12px;">{{ cat_issues|length }} affected page{{ 's' if cat_issues|length != 1 }}</span>
       {% if err_n > 0 %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;font-weight:700;margin-right:4px;">{{ err_n }} error{% if err_n != 1 %}s{% endif %}</span>{% endif %}
-      {% if warn_n > 0 %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fef9c3;color:#a16207;font-weight:700;">{{ warn_n }} warning{% if warn_n != 1 %}s{% endif %}</span>{% endif %}
+      {% if warn_n > 0 %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fef9c3;color:#a16207;font-weight:700;margin-right:4px;">{{ warn_n }} warning{% if warn_n != 1 %}s{% endif %}</span>{% endif %}
+      {% if opp_n > 0 %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#e0f2fe;color:#0369a1;font-weight:700;" title="Shown for visibility; doesn't affect Site Health">{{ opp_n }} opportunit{{ 'y' if opp_n == 1 else 'ies' }}</span>{% endif %}
       {% endif %}
     </summary>
     {% if is_clean %}
@@ -325,7 +330,7 @@
       <tbody>
         {% for issue in cat_issues %}
         {% set page = pages_by_id.get(issue.page_id) %}
-        <tr onclick="openFixModal({{ issue.id }})" style="cursor:pointer;" data-issue-row="{{ issue.id }}" data-severity="{{ issue.severity }}" data-has-sugg="{{ '1' if issues_js[issue.id].suggestions else '0' }}">
+        <tr onclick="openFixModal({{ issue.id }})" style="cursor:pointer;" data-issue-row="{{ issue.id }}" data-severity="{{ issue.severity if issue.score_eligible else 'opportunity' }}" data-has-sugg="{{ '1' if issues_js[issue.id].suggestions else '0' }}">
           <td style="font-size:11px;color:#64748b;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ page.url if page else '' }}">{{ page.url if page else '—' }}</td>
           <td style="font-size:11px;color:#0f172a;">
             {{ issue.message }}
@@ -334,7 +339,8 @@
           {% set current_display = current_value_display(page, category) if page else '-Blank-' %}
           <td style="font-size:11px;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:{{ '#cbd5e1' if current_display == '-Blank-' else '#374151' }};{{ 'font-style:italic;' if current_display == '-Blank-' }}" title="{{ current_display }}">{{ current_display }}</td>
           <td>
-            {% if issue.severity == 'error' %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;font-weight:700;">Error</span>
+            {% if not issue.score_eligible %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#e0f2fe;color:#0369a1;font-weight:700;">Opportunity</span>
+            {% elif issue.severity == 'error' %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#dc2626;font-weight:700;">Error</span>
             {% else %}<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#fef9c3;color:#a16207;font-weight:700;">Warning</span>{% endif %}
           </td>
           <td style="text-align:right;padding-right:14px;">
@@ -823,7 +829,7 @@ var fmCurrentIssueId = null;
 // function or the panel a user just opened would collapse on its own action.
 var fmExpandedImages = {};
 
-var FILTER_LABELS = { all: 'All issues', error: 'Critical errors only', warning: 'Warnings only', suggestions: 'Pages with AI suggestions' };
+var FILTER_LABELS = { all: 'All issues', error: 'Critical errors only', warning: 'Warnings only', opportunity: 'Opportunities (not scored)', suggestions: 'Pages with AI suggestions' };
 function filterIssues(kind) {
   var section = document.getElementById('issues-section');
   if (!section) return;
@@ -837,6 +843,7 @@ function filterIssues(kind) {
     var show = kind === 'all'
       || (kind === 'error' && row.dataset.severity === 'error')
       || (kind === 'warning' && row.dataset.severity === 'warning')
+      || (kind === 'opportunity' && row.dataset.severity === 'opportunity')
       || (kind === 'suggestions' && row.dataset.hasSugg === '1');
     row.style.display = show ? '' : 'none';
     var details = row.closest('details');
