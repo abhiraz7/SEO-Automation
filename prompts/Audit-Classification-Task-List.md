@@ -59,6 +59,13 @@ opportunities instead of warnings.
 - Note: the "Needs Fixing / based on N issues" screen seen in a screenshot is not this
   template. It is the compact redesign target, not the live screen.
 
+### Low text-to-page-size ratio (content/thin): paused, future feature
+
+AI suggestions are paused for this finding and its Current value now says "Not measured"
+when nothing is stored. The full findings, the page-type decision policy and the planned
+content workbench (WYSIWYG editing, copy-a-prompt workflow, image-safe placeholders) are in
+`prompts/Feature-Low-Text-Ratio-Resolution.md`.
+
 ### A5: Schema applicability (deferred)
 
 `("schema", "missing")` is `high, score_eligible=True` in the registry. A proper fix needs
