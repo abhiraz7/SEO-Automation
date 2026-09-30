@@ -132,12 +132,12 @@
 </style>
 
 <div style="padding:18px 24px 20px;border-bottom:1px solid #e2e8f0;background:#fff;">
-  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;">
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;">
 
     <div class="kpi-card" onclick="filterIssues('all')" style="border-left:4px solid #16a34a;background:linear-gradient(135deg,#fff 60%,#f0fdf4);">
       <div class="kpi-label">Site Health</div>
       <div class="kpi-number" style="color:{% if health >= 80 %}#15803d{% elif health >= 50 %}#a16207{% else %}#dc2626{% endif %};">{{ health }}%</div>
-      <div class="kpi-sub">derived from DataForSEO checks</div>
+      <div class="kpi-sub">{{ error_count + warning_count }} scored issue{{ 's' if error_count + warning_count != 1 }}</div>
       <div style="margin-top:8px;height:4px;background:#e2e8f0;border-radius:4px;overflow:hidden;">
         <div style="height:100%;width:{{ health }}%;background:{% if health >= 80 %}#16a34a{% elif health >= 50 %}#d97706{% else %}#dc2626{% endif %};border-radius:4px;"></div>
       </div>
@@ -165,6 +165,12 @@
       <div class="kpi-label">Warnings</div>
       <div class="kpi-number" style="color:{% if warning_count > 0 %}#c2410c{% else %}#15803d{% endif %};">{{ warning_count }}</div>
       <div class="kpi-sub">worth fixing soon</div>
+    </div>
+
+    <div class="kpi-card" onclick="filterIssues('opportunity')" style="border-left:4px solid #0284c7;background:linear-gradient(135deg,#fff 60%,#f0f9ff);">
+      <div class="kpi-label">Opportunities</div>
+      <div class="kpi-number" style="color:#0284c7;">{{ opportunity_count }}</div>
+      <div class="kpi-sub">optional, not scored</div>
     </div>
 
     <div class="kpi-card" onclick="filterIssues('suggestions')" style="border-left:4px solid #7c3aed;background:linear-gradient(135deg,#fff 60%,#faf5ff);">
