@@ -376,19 +376,7 @@
 
 <div id="drawer-backdrop" onclick="closeAllDrawers()"></div>
 
-<!-- Fix on Page modal -->
-<div id="fix-modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:900;" onclick="closeFixModal()"></div>
-<div id="fix-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(760px,92vw);max-height:86vh;overflow-y:auto;background:#fff;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.28);z-index:901;">
-  <div style="position:sticky;top:0;background:#fff;border-bottom:1px solid #e2e8f0;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-radius:14px 14px 0 0;">
-    <div style="min-width:0;">
-      <div style="font-size:13px;font-weight:700;color:#0f172a;">Fix on Page</div>
-      <div id="fix-modal-message" style="font-size:11px;color:#0f172a;font-weight:500;margin-top:2px;"></div>
-      <div id="fix-modal-url" style="font-size:11px;color:#94a3b8;word-break:break-all;"></div>
-    </div>
-    <button onclick="closeFixModal()" style="width:28px;height:28px;border-radius:6px;border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer;flex-shrink:0;">×</button>
-  </div>
-  <div id="fix-modal-body" style="padding:20px;"></div>
-</div>
+{% include "onpage/_fix_drawer.html" %}
 
 <!-- Refresh cost confirmation modal (API reminder) -->
 <div id="refresh-modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:900;" onclick="closeRefreshModal()"></div>
@@ -803,12 +791,16 @@ function openFixModal(issueId) {
   document.getElementById('fix-modal-message').textContent = issue.message || '';
   document.getElementById('fix-modal-url').textContent = issue.url || '';
   renderFixModal(issue);
-  document.getElementById('fix-modal-backdrop').style.display = 'block';
-  document.getElementById('fix-modal').style.display = 'block';
+  document.getElementById('fix-modal-backdrop').classList.add('open');
+  var drawer = document.getElementById('fix-modal');
+  drawer.classList.add('open');
+  drawer.setAttribute('aria-hidden', 'false');
 }
 function closeFixModal() {
-  document.getElementById('fix-modal-backdrop').style.display = 'none';
-  document.getElementById('fix-modal').style.display = 'none';
+  document.getElementById('fix-modal-backdrop').classList.remove('open');
+  var drawer = document.getElementById('fix-modal');
+  drawer.classList.remove('open');
+  drawer.setAttribute('aria-hidden', 'true');
   fmCurrentIssueId = null;
 }
 
