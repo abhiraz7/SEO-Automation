@@ -43,7 +43,8 @@ def run_audit_job(db: Session, job: models.Job) -> None:
         # its own docstring note about upsert_page living in routes/crawl.py;
         # unlike that case, duplicating this one short loop is cheaper than
         # adding a new cross-layer import).
-        db.query(models.Issue).filter(models.Issue.project_id == job.project_id).delete()
+        # (AUDIT findings only: the AI Content Optimizer's issues survive, see routes/audit.py)
+        db.query(models.Issue).filter(models.Issue.project_id == job.project_id, models.not_optimizer_issue()).delete(synchronize_session=False)
         total_issues = 0
         for page_id, issues in issues_by_page.items():
             for issue in issues:

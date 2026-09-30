@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from . import claude, gemini, models, prompt_builder
 from .ai_errors import AIGenerationError, ImageFetchError
 from .schemas import ImageAltSuggestionsResult
-from .services import action_plan, image_fetch
+from .services import action_plan, image_fetch, optimizer_plan
 
 AI_PROVIDERS = ("claude", "gemini")
 
@@ -156,3 +156,31 @@ def generate_gap_draft(db: Session, bundle: dict, action: dict, competitor_texts
         last_error = checked["error"]
         correction = checked["error"]
     raise AIGenerationError(f"AI provider could not produce an acceptable draft after retry: {last_error}")
+
+
+OPTIMIZER_MAX_TOKENS = 3500
+
+
+def generate_optimizer_suggestions(db: Session, bundle: dict, business_profile=None) -> dict:
+    """The model's answer for one page, PARSED but not yet resolved against the
+    application's evidence: {"items": [ModelOptimizerSuggestion], "malformed": [...],
+    "no_change_reason": str | None}. services/optimizer_plan.resolve_suggestions turns
+    it into stored suggestions; nothing here is trusted yet.
+
+    Raises AIGenerationError if the provider fails, or if its answer as a whole is not
+    valid JSON for the schema after one retry (the retry says what was wrong). An answer
+    with no suggestions is NOT an error: 'No change recommended' is a legitimate result.
+    One malformed suggestion inside a good answer does not fail the call."""
+    correction = None
+    last_error = None
+    for _attempt in (1, 2):
+        prompt = prompt_builder.build_optimizer_prompt(bundle, business_profile, correction=correction)
+        raw = _call_model(db, prompt, OPTIMIZER_MAX_TOKENS, temperature=0.3)
+        try:
+            items, malformed, reason = optimizer_plan.parse_output(raw)
+        except action_plan.PlanFormatError as exc:
+            last_error = exc
+            correction = "it was not valid JSON in the required shape"
+            continue
+        return {"items": items, "malformed": malformed, "no_change_reason": reason}
+    raise AIGenerationError(f"AI provider returned an unusable answer after retry: {last_error}")

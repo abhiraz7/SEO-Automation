@@ -1573,3 +1573,56 @@ real WordPress install yet.
 
 ### Not verified
 - The WAL explanation is inferred, not reproduced. Badges/re-check wording never viewed in a browser. Real cache expiry between re-check attempts. Refusal on real AIOSEO/SEOPress sites. End-to-end term deploy through the UI.
+
+
+## 2026-09-27 (overnight) — Built the AI Competitor Gap Analysis and the AI Content Optimizer (PRs only: nothing merged, nothing deployed)
+
+### Built
+- **Feature 1, platform PR #19 (draft, CI green):** per-page competitor gap analysis. Live SERP -> up to 7 comparable competitors (own domain, forums, marketplaces, social, home and category pages excluded) -> each page fetched once (SSRF-guarded, headless browser only for JS-only pages) -> deterministic gaps (topics, questions, queries, intent, format) -> AI action plan that can only cite numbered evidence -> optional atomic drafts to accept, edit or reject. No SEO score. 3 new tables, no migration. 360 new tests.
+- **Feature 2, branch `feature/ai-content-optimizer` (stacked on Feature 1, NOT pushed at the time of writing):** page + keyword -> reuse or gather evidence -> at most 5 atomic suggestions (title, meta, heading, add/expand/rewrite section, FAQ, internal link) -> 8 deterministic validation checks -> stored as ordinary Suggestions -> reviewed with the EXISTING accept / edit / reject / deploy / rollback routes. Only title, meta description and H1 can be deployed (all the connector can write). 2 new tables, no migration. About 370 more tests (948 in total).
+- Existing code changed for Feature 2: suggestions.py (accept / edit / legacy-generate guards), wordpress.py (deploy guard), onpage_semrush.py, routes/audit.py, jobs/handlers/audit.py (they must not delete optimizer issues), sidebar, main.py.
+
+### Decisions worth knowing
+- **New tables, not new columns:** the user types migrations; a side table (suggestion_optimizations) keeps this PR migration-free. Trade-off: one extra join.
+- **The Issue bridge is fragile:** the on-page refresh deletes every Issue the provider no longer flags (cascading to accepted/deployed suggestions), and the audit that follows every crawl bulk-deletes all Issues. Optimizer issues use the rule prefix `opt_` and all three paths skip them (LIKE wildcard escaped: `optimized_title` is still an ordinary audit rule).
+- **The model can cite, never assert:** it returns evidence ids and a target id; the application rebuilds every count and looks up every "before" text itself.
+- **A blocked suggestion is stored and shown**, with reasons, but cannot be accepted, edited into approval, or deployed (enforced server-side on accept, edit and deploy).
+- BusinessProfile has no language or forbidden-phrase field, so those checks use built-in rules and the page's language; adding fields would need a migration (not done).
+
+### Mistakes made and fixed
+- Tests that could not fail: mutation testing (about 100 deliberate code breaks) found several, including one where an invented internal-link URL would have passed. Each got a test that goes red.
+- A repeated-phrase check blamed an edit for repetition the page already had; tokenizers shredded Devanagari and cut "B.Ed?" at the dot; a disabled Accept button looked enabled. All fixed after a test or the browser showed them.
+- The Feature 2 branch was tracking `origin/main`; caught before any push. Pushes use an explicit branch name only.
+- A local dev database kept a table without a column added later (`create_all` never alters tables): the schema-drift check caught it. Local file only.
+
+### Not verified
+- **Nothing has run against a live search provider, a live AI provider or a live site.** Everything is mocked; the browser checks used mocks with a guard that fails on any real provider call. Suggestion QUALITY on real pages is unknown.
+- Request duration: both analyses run inside one HTTP request (Feature 2 splits evidence and AI into two requests); any proxy timeout in front of the app is unknown.
+- Concurrency guards are per process. The SSRF guard resolves then connects (no IP pinning); the browser fallback checks only the top-level URL.
+- Content-level drafts (sections, FAQ, links, H2) cannot be deployed by the existing deployers.
+
+### Still to do
+- A supervised trial on one non-critical page with real keys, then read the real suggestions critically before any merge.
+- If wanted: move analysis onto the job queue; add forbidden-phrase and language fields to the business profile (needs a migration the user types).
+
+
+## 2026-09-27 (morning) — Owner decisions; every failure is now logged
+
+### Decisions (owner)
+- **New tables instead of new columns on `suggestions`: keep.** The product will be sold to several agencies; a new table is created on any install at startup, with no migration to run on each customer's database (migration 025 was lost twice).
+- **Blocked suggestions stay visible, and every failure must be logged.**
+
+### Built
+- `services/failure_log.py`: one greppable line per failure, `event key=value ...`. `failure` = WARNING (the system worked but something it depends on or produced was unusable), `crash` = ERROR with traceback (our own code broke), `note` = INFO. Values are one line and truncated; a field whose NAME is a secret (api_key, token, password...) is never written; draft and page text are never logged.
+- `logging_setup.py`, called from `main.py`: the app had no logging configuration, so warnings reached `docker logs` as bare text. Now every WARNING and above has a timestamp, level and logger name. Level is WARNING on purpose (library INFO would bury failures).
+- Logged now: every optimizer or gap-analysis run that ends as error or no_data (once, with the reason shown on the page), each competitor page that could not be analysed, AI plan and draft failures, AI proposals rejected or discarded (with reason), each suggestion the checks blocked (which checks and why), a validation check that crashed (traceback), each refused accept / edit / deploy of a blocked suggestion, and WordPress read / write / rollback failures (this also covers legacy suggestions).
+- The browser-fetch subprocess no longer inherits stdin (it caused `WinError 6` in a host with no stdin).
+- 1004 tests pass; the logging was mutation-tested (each log call silenced, a test goes red) and shown in a local demo.
+
+### Found (not fixed)
+- **The app has no users, logins or tenants.** Anyone who can reach it sees every project. Selling to several agencies needs either one install per agency, or authentication plus tenant isolation on every table. Not started.
+- PostgreSQL: all 27 migrations are raw `sqlite3` scripts and `DATABASE_URL` is hard-coded. Recommendation: stay on SQLite for now; before a move, make the URL an environment variable, run the test suite against Postgres in CI, and adopt Alembic. Open question: is the SQLite file backed up off the server?
+
+### Not verified
+- The log lines were verified in tests and a local demo, not on the real server's `docker logs`.
+- PR #19's description on GitHub does not mention the failure logging yet (no network to run `gh pr edit`).
