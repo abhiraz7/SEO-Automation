@@ -27,7 +27,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, audit_classification, dataforseo_onpage, deploy_status, models, wordpress
+from .. import audit, audit_classification, dataforseo_onpage, deploy_status, issue_copy, models, wordpress
 from ..database import get_db
 from ..onpage_task_maintenance import mark_stale_onpage_tasks
 from .links import store_links_for_task
@@ -550,6 +550,14 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
                 audit.current_value_display(pages_by_id[issue.page_id], issue.category, limit=300)
                 if issue.page_id in pages_by_id else "-Blank-"
             ),
+            # Tag/headline/detail/why + measured length facts (issue_copy.py);
+            # the numbers are measured from the stored title/description.
+            "explain": issue_copy.explain(issue.category, issue.rule, issue.message, pages_by_id.get(issue.page_id)),
+            # Inputs for the "how it looks in Google" preview -- real stored values.
+            "serp": {
+                "title": (pages_by_id[issue.page_id].title or "") if issue.page_id in pages_by_id else "",
+                "description": (pages_by_id[issue.page_id].meta_description or "") if issue.page_id in pages_by_id else "",
+            },
             "missing_alt_images": _missing_alt_images(issue),
             "suggestions": [
                 {

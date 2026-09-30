@@ -13,6 +13,7 @@
   .pill-ai { background:#f1eaff; color:#6d28d9; }
   .pill-review { background:#f1f5f9; color:#64748b; }
   .pill-len { background:#f1f5f9; color:#475569; margin-left:6px; }
+  .pill-tag { background:#fdecee; color:#b4232f; margin-left:8px; font-size:10px; vertical-align:middle; }
   .btn-fix { font-size:12px; font-weight:600; color:#fff; background:#6d5ef5; border:0; border-radius:7px; padding:5px 12px; cursor:pointer; }
   .btn-fix:hover { background:#5b4de0; }
   .btn-view { font-size:12px; font-weight:600; color:#475569; text-decoration:none; padding:5px 8px; border-radius:7px; }
@@ -36,7 +37,7 @@
     {% set n_chars = measured_length(page, category) %}
     <tr onclick="openFixModal({{ issue.id }})" style="cursor:pointer;" data-issue-row="{{ issue.id }}" data-severity="{{ issue.severity if issue.score_eligible else 'opportunity' }}" data-has-sugg="{{ '1' if has_sugg else '0' }}">
       <td style="max-width:0;">
-        <div class="row-name" title="{{ page_display_name(page.url) if page else '' }}">{{ page_display_name(page.url) if page else '—' }}</div>
+        <div class="row-name" title="{{ page_display_name(page.url) if page else '' }}">{{ page_display_name(page.url) if page else '—' }}<span class="pill pill-tag">{{ issues_js[issue.id].explain.tag }}</span></div>
         <div class="row-url" title="{{ page.url if page else '' }}">{{ page.url if page else '' }}</div>
       </td>
       <td style="font-size:12px;color:#0f172a;">{{ issue.message }}{% if n_chars %}<span class="pill pill-len" title="Measured length of the current value">{{ n_chars }} chars</span>{% endif %}</td>
