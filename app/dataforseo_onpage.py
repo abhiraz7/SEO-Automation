@@ -9,6 +9,7 @@ purely about which UX fits -- one URL right now vs. a whole site over time.
 Auth: HTTP Basic (DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD), same as the
 parent app's app/dataforseo.py.
 """
+import logging
 import os
 
 import httpx
@@ -16,6 +17,9 @@ from bs4 import BeautifulSoup
 
 from . import audit_classification
 from .html_extract import extract_image_alts
+from .services import failure_log
+
+logger = logging.getLogger("dataforseo_onpage")
 
 DATAFORSEO_BASE = "https://api.dataforseo.com/v3"
 _TIMEOUT = 30.0
@@ -41,8 +45,11 @@ def _post(path: str, payload: list[dict]) -> dict:
         resp = httpx.post(f"{DATAFORSEO_BASE}{path}", json=payload, auth=auth, timeout=_TIMEOUT)
         data = resp.json()
     except Exception as e:
+        failure_log.failure(logger, "dataforseo_onpage.request_failed", path=path, error=type(e).__name__, reason=str(e))
         return {"error": str(e)}
     if data.get("status_code") != 20000:
+        failure_log.failure(logger, "dataforseo_onpage.api_error", path=path, code=data.get("status_code"),
+                            http=resp.status_code, reason=data.get("status_message"))
         return {"error": data.get("status_message") or f"HTTP {resp.status_code}"}
     return data
 
@@ -55,8 +62,11 @@ def _get(path: str) -> dict:
         resp = httpx.get(f"{DATAFORSEO_BASE}{path}", auth=auth, timeout=_TIMEOUT)
         data = resp.json()
     except Exception as e:
+        failure_log.failure(logger, "dataforseo_onpage.request_failed", path=path, error=type(e).__name__, reason=str(e))
         return {"error": str(e)}
     if data.get("status_code") != 20000:
+        failure_log.failure(logger, "dataforseo_onpage.api_error", path=path, code=data.get("status_code"),
+                            http=resp.status_code, reason=data.get("status_message"))
         return {"error": data.get("status_message") or f"HTTP {resp.status_code}"}
     return data
 

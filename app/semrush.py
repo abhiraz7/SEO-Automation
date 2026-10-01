@@ -1,3 +1,4 @@
+import logging
 import os
 import urllib.error
 import urllib.parse
@@ -6,6 +7,9 @@ from datetime import datetime, timezone
 
 from .keyword_locations import DEFAULT_LOCATION, semrush_database
 from .schemas import NormalizedKeyword
+from .services import failure_log
+
+logger = logging.getLogger("semrush")
 
 
 SEMRUSH_BASE = "https://api.semrush.com"
@@ -51,8 +55,15 @@ def is_configured() -> bool:
 
 
 def _get(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=10) as r:
-        return r.read().decode("utf-8")
+    try:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            return r.read().decode("utf-8")
+    except Exception as exc:
+        # Callers turn this into {"error": ...}; without this line the failure only
+        # existed in that return value. The URL is NOT logged (it carries the API key),
+        # only the exception type and message (e.g. "HTTP Error 403: Forbidden").
+        failure_log.failure(logger, "semrush.request_failed", error=type(exc).__name__, reason=str(exc))
+        raise
 
 
 def _map_headers(headers: list[str]) -> list[str]:
