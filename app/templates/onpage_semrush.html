@@ -794,6 +794,7 @@ function openFixModal(issueId) {
   urlEl.textContent = issue.url || '';
   urlEl.href = issue.url || '#';
   document.getElementById('fd-title').textContent = fdTitleFor(issue);
+  fmMaybeBackfillImages(issue);
   renderFixModal(issue);
   fmUpdateNav();
   document.getElementById('fix-modal-backdrop').classList.add('open');
@@ -894,13 +895,59 @@ function fmSuggestionCard(issue, s) {
     actions + '</div></div>';
 }
 
+// Backfills issue.missing_alt_images for an image_alt issue that has none
+// yet -- called from openFixModal, before the first render, so the very
+// first paint already shows "Reading this page's images…" instead of
+// flashing the old "Could not read this page's images" message for a page
+// that was simply never fetched (crawled before this per-image detail
+// existed, see routes/onpage_semrush.py's /image-alts/refresh docstring).
+// Runs at most once per issue per page load (_imageFetchDone guards it) --
+// a failed fetch is shown with its real reason, not silently retried on
+// every re-render (toggle/generate/save all call renderFixModal).
+function fmMaybeBackfillImages(issue) {
+  if (issue.category !== 'image_alt') return;
+  if ((issue.missing_alt_images || []).length > 0) return;
+  if (issue._imageFetchLoading || issue._imageFetchDone) return;
+  issue._imageFetchLoading = true;
+  fetch('/projects/' + issue.project_id + '/onpage/pages/' + issue.page_id + '/image-alts/refresh', { method: 'POST' })
+    .then(function(res) { return res.json().then(function(d) { return { ok: res.ok, body: d }; }); })
+    .then(function(r) {
+      issue._imageFetchLoading = false;
+      issue._imageFetchDone = true;
+      if (r.ok) {
+        issue.missing_alt_images = r.body.images || [];
+      } else {
+        issue._imageFetchError = r.body.detail || 'Unknown error.';
+      }
+      if (fmCurrentIssueId === issue.id) renderFixModal(issue);
+    })
+    .catch(function(err) {
+      issue._imageFetchLoading = false;
+      issue._imageFetchDone = true;
+      issue._imageFetchError = err.message;
+      if (fmCurrentIssueId === issue.id) renderFixModal(issue);
+    });
+}
+
 function fmImageListHtml(issue) {
   // Only image_alt issues carry this (see onpage_semrush.py's
   // _missing_alt_images) -- null for every other category.
   var images = issue.missing_alt_images;
   if (!images) return '';
   if (!images.length) {
-    return '<div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">Could not read this page\'s images directly (fetch failed) -- the count above is DataForSEO\'s only, no per-image detail available.</div>';
+    // Three different reasons the list can be empty -- see
+    // fmMaybeBackfillImages, which sets _imageFetchLoading/_imageFetchError.
+    // Telling these apart is the whole point of this backfill: before it
+    // existed, "never fetched" (a page crawled before this per-image detail
+    // shipped) and "fetched, failed" both silently looked exactly like
+    // "fetched fine, nothing missing".
+    if (issue._imageFetchLoading) {
+      return '<div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">Reading this page\'s images…</div>';
+    }
+    if (issue._imageFetchError) {
+      return '<div style="font-size:11px;color:#dc2626;margin-bottom:12px;">Could not read this page\'s images: ' + fmEsc(issue._imageFetchError) + '</div>';
+    }
+    return '<div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">This page\'s HTML had no images without alt text -- the count above is DataForSEO\'s own check, and may be flagging an image loaded by JavaScript, which a plain HTML fetch can\'t see.</div>';
   }
   return '<div style="margin-bottom:14px;">' +
     '<label style="display:block;font-size:11px;font-weight:600;color:#64748b;margin-bottom:6px;">' + images.length + ' image(s) missing alt text</label>' +
@@ -1061,15 +1108,15 @@ async function fmSaveManualForImage(idx) {
 
 function renderFixModal(issue) {
   var body = document.getElementById('fix-modal-body');
-  // A page-wide image_alt issue with real per-image detail is fixed entirely
-  // through fmImageListHtml's per-image "Fix Now" panels now -- the old
-  // single shared generate/textarea block below would generate ambiguous
-  // "alt text for one of several images, unclear which" suggestions (see the
-  // gap this whole feature was built to close). Falls back to the old
-  // generic block when there's no per-image detail to work with (fetch
-  // failed -- missing_alt_images is [] not null, see fmImageListHtml) or for
-  // every non-image_alt category, unaffected by any of this.
-  var hasPerImageFix = issue.category === 'image_alt' && (issue.missing_alt_images || []).length > 0;
+  // Every image_alt issue is fixed entirely through fmImageListHtml's
+  // per-image "Fix Now" panels -- the old single shared generate/textarea
+  // block below would generate ambiguous "alt text for one of several
+  // images, unclear which" suggestions (see the gap this whole feature was
+  // built to close). That holds even while images are still loading or the
+  // fetch failed (fmImageListHtml shows those states itself, see
+  // fmMaybeBackfillImages) -- never fall back to the generic per-page flow
+  // for this category, only for every non-image_alt one.
+  var isImageAlt = issue.category === 'image_alt';
 
   // The images list is its own scrollable box, fully torn down and rebuilt
   // on every re-render (toggle/generate/save/decide all end up here) -- a
@@ -1083,10 +1130,10 @@ function renderFixModal(issue) {
   // The first pending suggestion is featured in the right-hand AI panel
   // (fmRightHtml); every other suggestion stays in the list below it, with
   // the same accept/edit/deploy/rollback actions as before.
-  var hero = hasPerImageFix ? null : fmHero(issue);
+  var hero = isImageAlt ? null : fmHero(issue);
   // Paused findings (issue.ai_paused, see app/issue_copy.py) get no generate
   // button, suggestion list or editor -- fmRightHtml shows the reason instead.
-  if (!hasPerImageFix && !issue.ai_paused) {
+  if (!isImageAlt && !issue.ai_paused) {
     var others = (issue.suggestions || []).filter(function(s) { return s !== hero; });
     var suggHtml = others.map(function(s) { return fmSuggestionCard(issue, s); }).join('')
       || (hero ? '' : '<div style="text-align:center;padding:14px 0;color:#94a3b8;font-size:11px;">No suggestions yet for this issue.</div>');
@@ -1102,7 +1149,7 @@ function renderFixModal(issue) {
       '</div>';
   }
 
-  body.innerHTML = hasPerImageFix
+  body.innerHTML = isImageAlt
     ? fmLeftHtml(issue, null) + fmImageListHtml(issue) + genericHtml
     : '<div class="fd-grid"><div>' + fmLeftHtml(issue, hero) + fmImageListHtml(issue) + '</div><div>' + fmRightHtml(issue, hero) + genericHtml + '</div></div>';
 

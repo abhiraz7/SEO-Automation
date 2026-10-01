@@ -24,9 +24,8 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai.content_filter_strategy import PruningContentFilter
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
-from .html_extract import extract_image_alts
+from .html_extract import USER_AGENT, extract_image_alts
 
-USER_AGENT = "VTechSEO-Crawler/1.0"
 HEADERS = {"User-Agent": USER_AGENT}
 REQUEST_TIMEOUT = 15
 SITEMAP_TIMEOUT = 15

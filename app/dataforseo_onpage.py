@@ -16,13 +16,17 @@ import httpx
 from bs4 import BeautifulSoup
 
 from . import audit_classification
-from .html_extract import extract_image_alts
+from .html_extract import USER_AGENT, extract_image_alts
 from .services import failure_log
 
 logger = logging.getLogger("dataforseo_onpage")
 
 DATAFORSEO_BASE = "https://api.dataforseo.com/v3"
 _TIMEOUT = 30.0
+# Without this, requests here identify as "python-httpx" -- Cloudflare (seen on
+# a real client site) blocks that outright, which used to silently look like
+# "the page has no images missing alt text" (see fetch_image_alts below).
+_IMAGE_FETCH_HEADERS = {"User-Agent": USER_AGENT}
 
 
 def _auth() -> tuple[str, str] | None:
@@ -236,7 +240,7 @@ def issues_from_item(item: dict) -> list[dict]:
     return issues
 
 
-def fetch_image_alts(url: str) -> list[dict]:
+def fetch_image_alts(url: str) -> list[dict] | None:
     """Best-effort per-image alt-text detail for the image_alt issue.
 
     DataForSEO's on-page task response has no per-image list -- only
@@ -246,18 +250,30 @@ def fetch_image_alts(url: str) -> list[dict]:
     html_extract.extract_image_alts() helper -- also used by
     app/crawler.py._extract_page_data for the legacy crawler pipeline. A
     plain HTTP GET to the target site, not a DataForSEO call -- no extra
-    billing.
+    billing. Sends the shared crawler User-Agent (see html_extract.USER_AGENT)
+    instead of httpx's default, since a bare "python-httpx" gets blocked
+    outright by some sites' bot protection (seen on a real client site behind
+    Cloudflare).
 
     Never raises: this is supplementary detail for one report cell, not
-    something that should ever block storing the page's on-page result, so
-    any fetch/parse failure just means the report falls back to the
-    "N image(s) missing alt" count instead of per-image detail."""
+    something that should ever block storing the page's on-page result.
+    Returns None on any fetch/parse failure, logged once via failure_log --
+    NOT [], which used to mean both "fetched the page, found no missing-alt
+    images" and "never managed to fetch the page at all". Those are different
+    facts (one is a clean page, the other is an unverified claim), and
+    collapsing them into one empty list is exactly what made routes/
+    onpage_semrush.py's fix-modal always say "fetch failed" for any page
+    whose images were never fetched in the first place (crawled before this
+    per-image detail existed, 2026-09-15) -- there was no way to tell that
+    apart from a real failure. Callers that only care about "do we have a
+    list to show" still just do `images or []`."""
     try:
-        resp = httpx.get(url, timeout=_TIMEOUT, follow_redirects=True)
+        resp = httpx.get(url, timeout=_TIMEOUT, follow_redirects=True, headers=_IMAGE_FETCH_HEADERS)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "lxml")
-    except Exception:
-        return []
+    except Exception as e:
+        failure_log.failure(logger, "dataforseo_onpage.image_alts_fetch_failed", url=url, error=type(e).__name__, reason=str(e))
+        return None
     return extract_image_alts(soup, url)
 
 

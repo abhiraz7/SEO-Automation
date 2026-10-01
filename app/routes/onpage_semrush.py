@@ -115,6 +115,53 @@ def _target_domain(project: models.Project) -> str:
     return project.base_url.replace("https://", "").replace("http://", "").rstrip("/")
 
 
+# ── Per-image alt-text detail (shared by onpage_view and the on-demand ──
+# ── /image-alts/refresh backfill route below) ────────────────────────────
+
+def _build_image_src_index(pages: list[models.Page]) -> dict[str, set[str]]:
+    """Every missing-alt image src -> the set of page URLs it appears on
+    (see onpage_view's "also_on" comment for why). Pulled out of onpage_view
+    so the single-page refresh route can build the same index without
+    duplicating this loop."""
+    image_src_to_pages: dict[str, set[str]] = {}
+    for page in pages:
+        for img in (page.image_alts or []):
+            src = img.get("src")
+            if src and not (img.get("alt") or "").strip():
+                image_src_to_pages.setdefault(src, set()).add(page.url)
+    return image_src_to_pages
+
+
+def _missing_alt_images_for(
+    images: list[dict] | None, current_url: str | None, image_src_to_pages: dict[str, set[str]]
+) -> list[dict]:
+    """The subset of a page's stored image_alts with no alt text, shaped for
+    the fix modal. `images` is None when a fetch was attempted and failed
+    (see dataforseo_onpage.fetch_image_alts) -- treated the same as [] here,
+    since by this point the caller has already decided what to tell the user
+    about the failure itself (onpage_view has none to tell; /image-alts/
+    refresh returns the failure as its own error response, never reaching
+    this function)."""
+    result = []
+    for img in images or []:
+        if (img.get("alt") or "").strip():
+            continue
+        src = img.get("src")
+        also_on = sorted(image_src_to_pages.get(src, set()) - {current_url}) if src else []
+        result.append({
+            "src": src,
+            "alt": img.get("alt"),
+            "also_on": also_on,
+            # Editor-inserted images carry this straight from the HTML (see
+            # html_extract._wp_media_id) -- theme-level images (logo, header/
+            # footer) have none, since WordPress doesn't stamp a class on
+            # those. None here means "no one-click fix path yet" until the
+            # URL-lookup plugin tool exists.
+            "media_id": img.get("media_id"),
+        })
+    return result
+
+
 # ── Ingestion (DataForSEO -> Page/Issue, source="dataforseo") ───────────
 
 def _store_page_result(db: Session, project: models.Project, item: dict, onpage_task_id: int | None) -> models.Page:
@@ -138,7 +185,12 @@ def _store_page_result(db: Session, project: models.Project, item: dict, onpage_
     # DataForSEO's on-page response has no per-image alt-text list (only the
     # checks.no_image_alt boolean) -- see dataforseo_onpage.fetch_image_alts.
     # Only fetch when the check actually flagged something, so a clean page
-    # never costs an extra HTTP request against the target site.
+    # never costs an extra HTTP request against the target site. The fetch
+    # can come back None (tried, failed -- see that function's docstring);
+    # stored as-is, not coerced to [], so it's never confused with "tried,
+    # found nothing". The /image-alts/refresh route below lets a page whose
+    # images were never fetched (crawled before this existed) or whose fetch
+    # failed get a fresh attempt without a full paid re-crawl.
     if normalized.get("checks", {}).get("no_image_alt"):
         page.image_alts = dataforseo_onpage.fetch_image_alts(url)
     else:
@@ -189,6 +241,53 @@ def _store_page_result(db: Session, project: models.Project, item: dict, onpage_
 
     db.commit()
     return page
+
+
+@router.post("/projects/{project_id}/onpage/pages/{page_id}/image-alts/refresh")
+def refresh_image_alts(project_id: int, page_id: int, db: Session = Depends(get_db)):
+    """On-demand per-image backfill for ONE page's image_alt issue.
+
+    page.image_alts is only ever filled in at crawl-ingestion time (see
+    _store_page_result above) -- a page crawled before that per-image detail
+    existed (baea87c, 2026-09-15), or whose fetch failed that one time, was
+    stuck showing an empty image list in the fix modal forever, with no way
+    to tell "nothing to show" apart from "never actually looked" (this was
+    production's actual state for every image_alt issue when this route was
+    added -- the last real crawl predated the feature). The fix modal calls
+    this automatically when it opens an image_alt issue with no per-image
+    detail yet (see onpage_semrush.html's fmMaybeBackfillImages), instead of
+    requiring a full re-crawl -- which costs DataForSEO credits and still
+    caps out at max_crawl_pages, leaving the rest stale either way.
+
+    A plain GET of the page's own HTML, same as the ingestion-time call --
+    no DataForSEO call, no billing."""
+    project = _get_project(db, project_id)
+    page = db.get(models.Page, page_id)
+    if not page or page.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    images = dataforseo_onpage.fetch_image_alts(page.url)
+    if images is None:
+        # Leave page.image_alts untouched on failure -- a transient error on
+        # a manual refresh must never erase a previously-successful fetch
+        # (or a previous failure) that was already stored.
+        raise HTTPException(
+            status_code=502,
+            detail="Could not fetch this page's HTML to read its images -- "
+                   "the site may be blocking automated requests, or temporarily unreachable.",
+        )
+
+    page.image_alts = images
+    db.commit()
+
+    active_provider = project_provider(project, db)
+    sibling_pages = (
+        db.query(models.Page)
+        .filter(models.Page.project_id == project.id, models.Page.source == active_provider)
+        .all()
+    )
+    image_src_to_pages = _build_image_src_index(sibling_pages)
+    return {"images": _missing_alt_images_for(images, page.url, image_src_to_pages)}
 
 
 @router.post("/projects/{project_id}/onpage/instant-check")
@@ -492,12 +591,7 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
     # them. Built once from data already in memory (pages_by_id, populated
     # by dataforseo_onpage.fetch_image_alts during ingestion) -- no new DB
     # query, no new HTTP call.
-    image_src_to_pages: dict[str, set[str]] = {}
-    for page in pages:
-        for img in (page.image_alts or []):
-            src = img.get("src")
-            if src and not (img.get("alt") or "").strip():
-                image_src_to_pages.setdefault(src, set()).add(page.url)
+    image_src_to_pages = _build_image_src_index(pages)
 
     def _missing_alt_images(issue: models.Issue) -> list[dict] | None:
         # Only image_alt issues carry per-image detail (see
@@ -506,26 +600,9 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
         if issue.category != "image_alt":
             return None
         page = pages_by_id.get(issue.page_id)
-        images = (page.image_alts if page else None) or []
-        current_url = page.url if page else None
-        result = []
-        for img in images:
-            if (img.get("alt") or "").strip():
-                continue
-            src = img.get("src")
-            also_on = sorted(image_src_to_pages.get(src, set()) - {current_url}) if src else []
-            result.append({
-                "src": src,
-                "alt": img.get("alt"),
-                "also_on": also_on,
-                # Editor-inserted images carry this straight from the HTML
-                # (see html_extract._wp_media_id) -- theme-level images
-                # (logo, header/footer) have none, since WordPress doesn't
-                # stamp a class on those. None here means "no one-click
-                # fix path yet" until the URL-lookup plugin tool exists.
-                "media_id": img.get("media_id"),
-            })
-        return result
+        if not page:
+            return []
+        return _missing_alt_images_for(page.image_alts, page.url, image_src_to_pages)
 
     # One query for every issue's suggestions (was one per issue), plus the
     # live-verification status of the deployed ones -- see app/deploy_status.py.
