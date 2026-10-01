@@ -9,12 +9,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
 from .. import ai_provider, deploy_status, issue_copy, models, prompt_builder
-from ..ai_errors import AIGenerationError, ImageFetchError
+from ..ai_errors import AIGenerationError, AIProviderError, ImageFetchError
 from ..database import get_db
-from ..services import content_optimizer, context_builder
+from ..services import content_optimizer, context_builder, failure_log
 
 router = APIRouter()
 logger = logging.getLogger("image_alt")
+provider_logger = logging.getLogger("suggestions")
 
 # Statuses that represent a real user decision. Regeneration must never
 # delete these -- they're the learning dataset (V6). Only undecided/refused
@@ -32,6 +33,48 @@ def _normalize_content(text: str) -> str:
 
 def content_hash(text: str) -> str:
     return hashlib.sha256(_normalize_content(text).encode("utf-8")).hexdigest()
+
+
+def _provider_message(exc: Exception) -> str:
+    """A user-safe reason for a provider failure. Names the problem (for example
+    a missing setting or Anthropic's own "credit balance is too low"); never
+    includes a secret -- the exceptions we see carry messages, not keys."""
+    if isinstance(exc, KeyError) and exc.args and isinstance(exc.args[0], str) and exc.args[0].isupper():
+        return f"the AI provider is not configured on this server (missing setting {exc.args[0]})"
+    return f"{type(exc).__name__}: {str(exc)[:200]}"
+
+
+def _call_provider(db: Session, context: dict, issue: models.Issue, image_src: str | None) -> list[str]:
+    """The provider half of generation: returns the suggestion texts. Raises the
+    provider's own exception on failure; the caller turns anything that is not
+    an ImageFetchError/AIGenerationError into an AIProviderError."""
+    if issue.category == "image_alt":
+        # Image Alt AI hardening pass: real vision input + structured JSON,
+        # not the text-only numbered-list path every other category still
+        # uses -- see ai_provider.generate_image_alt_suggestions. Errors are
+        # NOT swallowed into an empty suggestion list -- Part 1 requires the
+        # "couldn't actually see the image" case to surface, not silently
+        # degrade to a filename-only guess, so both failure modes propagate
+        # as real exceptions for the route to turn into an HTTP error.
+        try:
+            items = ai_provider.generate_image_alt_suggestions(db, context, image_src)
+        except ImageFetchError:
+            logger.warning("image_alt: could not fetch image for visual analysis: %r", image_src)
+            raise
+        except AIGenerationError:
+            logger.warning("image_alt: provider returned unparseable suggestions for image %r", image_src)
+            raise
+        # reason/confidence are logged for now rather than persisted --
+        # Suggestion has no columns for them and Part 7 says not to add
+        # columns unless absolutely necessary; the UI doesn't need them to
+        # render the existing accept/reject/edit flow, only the content text.
+        for item in items:
+            logger.info(
+                "image_alt suggestion (image=%r, confidence=%.2f): %s -- %s",
+                image_src, item.get("confidence", 0.0), item["alt_text"], item.get("reason", ""),
+            )
+        return [item["alt_text"] for item in items]
+    return ai_provider.generate_suggestions(db, context)
 
 
 def _generate_and_store(
@@ -78,14 +121,6 @@ def _generate_and_store(
     # rows) still behaves exactly as before, scoped to the whole issue.
     scope_filter = [models.Suggestion.issue_id == issue_id, models.Suggestion.image_src == image_src]
 
-    # Only replace rows nobody has decided on -- accepted/edited/deployed
-    # suggestions are recorded user decisions and must survive regeneration.
-    db.query(models.Suggestion).filter(
-        *scope_filter,
-        models.Suggestion.status.notin_(DECIDED_STATUSES),
-    ).delete(synchronize_session=False)
-    db.commit()
-
     # A decided suggestion already represents whatever text it holds -- if
     # the model regenerates the same wording again, that's not a NEW option,
     # it's the same one the user already ruled on. Compare against the
@@ -98,34 +133,30 @@ def _generate_and_store(
         )
     }
 
-    if issue.category == "image_alt":
-        # Image Alt AI hardening pass: real vision input + structured JSON,
-        # not the text-only numbered-list path every other category still
-        # uses -- see ai_provider.generate_image_alt_suggestions. Errors are
-        # NOT swallowed into an empty suggestion list -- Part 1 requires the
-        # "couldn't actually see the image" case to surface, not silently
-        # degrade to a filename-only guess, so both failure modes propagate
-        # as real exceptions for the route to turn into an HTTP error.
-        try:
-            items = ai_provider.generate_image_alt_suggestions(db, context, image_src)
-        except ImageFetchError:
-            logger.warning("image_alt: could not fetch image for visual analysis: %r", image_src)
-            raise
-        except AIGenerationError:
-            logger.warning("image_alt: provider returned unparseable suggestions for image %r", image_src)
-            raise
-        # reason/confidence are logged for now rather than persisted --
-        # Suggestion has no columns for them and Part 7 says not to add
-        # columns unless absolutely necessary; the UI doesn't need them to
-        # render the existing accept/reject/edit flow, only the content text.
-        for item in items:
-            logger.info(
-                "image_alt suggestion (image=%r, confidence=%.2f): %s -- %s",
-                image_src, item.get("confidence", 0.0), item["alt_text"], item.get("reason", ""),
-            )
-        texts = [item["alt_text"] for item in items]
-    else:
-        texts = ai_provider.generate_suggestions(db, context)
+    try:
+        texts = _call_provider(db, context, issue, image_src)
+    except (ImageFetchError, AIGenerationError):
+        raise   # already specific and handled by the routes below
+    except Exception as exc:
+        # Missing/invalid key, no credits, rate limit, outage ... Previously this
+        # escaped as a bare HTTP 500 with nothing logged and nothing shown.
+        failure_log.crash(
+            provider_logger, "suggestions.provider_failed",
+            project=project_id, issue=issue_id, category=issue.category, error=type(exc).__name__,
+        )
+        raise AIProviderError(_provider_message(exc)) from exc
+
+    # Only now that the provider produced something usable do we replace the
+    # undecided suggestions -- accepted/edited/deployed ones are recorded user
+    # decisions and must survive regeneration. Doing this BEFORE the provider
+    # call meant a failed generation silently destroyed the existing pending
+    # suggestions. An empty answer keeps them too.
+    if texts:
+        db.query(models.Suggestion).filter(
+            *scope_filter,
+            models.Suggestion.status.notin_(DECIDED_STATUSES),
+        ).delete(synchronize_session=False)
+        db.commit()
 
     rows = []
     seen_hashes = set(decided_hashes)  # also guards against dupes *within* this same batch
@@ -210,7 +241,10 @@ def _suggestion_out(s: models.Suggestion) -> dict:
 
 @router.post("/projects/{project_id}/pages/{page_id}/issues/{issue_id}/suggest")
 def generate(project_id: int, page_id: int, issue_id: int, db: Session = Depends(get_db)):
-    _generate_and_store(db, project_id, page_id, issue_id)
+    try:
+        _generate_and_store(db, project_id, page_id, issue_id)
+    except AIProviderError as e:
+        raise HTTPException(status_code=502, detail=f"AI provider error: {e}")
     return RedirectResponse(url=f"/projects/{project_id}/pages/{page_id}", status_code=303)
 
 
@@ -296,6 +330,10 @@ def generate_json(
         # 502: our request was fine, the upstream provider's response wasn't
         # usable even after one retry.
         raise HTTPException(status_code=502, detail=f"AI provider returned an unusable response: {e}")
+    except AIProviderError as e:
+        # 502: the provider could not be used at all (key, credits, rate limit,
+        # outage). The message names the failure so the user sees why, not "HTTP 500".
+        raise HTTPException(status_code=502, detail=f"AI provider error: {e}")
     return {"suggestions": [_suggestion_out(r) for r in rows]}
 
 
