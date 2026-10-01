@@ -1,4 +1,11 @@
-"""Settings: API key STATUS (never values) and the raw API error log."""
+"""Settings: the raw API error log, including filtering/labeling by project.
+
+The "API keys" status panel this file used to also cover was removed --
+it could only ever say "is a value present in this environment", which
+wasn't the question that mattered when a provider actually broke (see
+app/claude.py's temperature/extra_body fix, 2026-10-01): the error log
+below is the real diagnostic, so there is no separate status-only view to
+keep in sync with it anymore."""
 from datetime import datetime, timezone
 
 import pytest
@@ -45,15 +52,6 @@ def add_log(Session, level, logger, message, n=1):
         s.commit()
 
 
-def test_page_shows_key_status_but_never_a_value(env):
-    client, _ = env
-    html = client.get("/settings").text
-    assert "API keys" in html and "ANTHROPIC_API_KEY" in html
-    assert "SUPERSECRET" not in html and SECRET not in html and "sk-ant-api03" not in html
-    assert "ends …cdef" in html            # tail only
-    assert "Missing" in html               # the keys that are not set
-
-
 def test_empty_log_renders_a_helpful_message(env):
     client, _ = env
     html = client.get("/settings").text
@@ -88,6 +86,37 @@ def test_filters_by_level_and_text(env):
     by_text = client.get("/settings", params={"q": "40210"}).text
     assert "dataforseo.api_error" in by_text and "semrush.request_failed" not in by_text
     assert "Showing 0 of 0" in client.get("/settings", params={"q": "nothing-matches-this"}).text
+
+
+def add_project(Session, name, base_url):
+    with Session() as s:
+        p = models.Project(name=name, base_url=base_url)
+        s.add(p)
+        s.commit()
+        s.refresh(p)
+        return p.id
+
+
+def test_log_entries_show_which_project_they_belong_to(env):
+    client, Session = env
+    project_id = add_project(Session, "Acme Corp", "https://acme.com")
+    add_log(Session, "ERROR", "suggestions", f"suggestions.provider_failed project={project_id} issue=1753 category=opengraph error=TypeError")
+    add_log(Session, "WARNING", "dataforseo", "dataforseo.api_error code=40210")       # no project field
+    html = client.get("/settings").text
+    assert "[Acme Corp (https://acme.com)]" in html
+
+
+def test_filters_by_project(env):
+    client, Session = env
+    acme_id = add_project(Session, "Acme Corp", "https://acme.com")
+    beta_id = add_project(Session, "Beta LLC", "https://beta.example")
+    add_log(Session, "ERROR", "suggestions", f"suggestions.provider_failed project={acme_id} issue=1 error=TypeError")
+    add_log(Session, "ERROR", "suggestions", f"suggestions.provider_failed project={beta_id} issue=2 error=TypeError")
+    only_acme = client.get("/settings", params={"project": acme_id}).text
+    assert f"project={acme_id} " in only_acme and f"project={beta_id} " not in only_acme
+    assert "Showing 1 of 1" in only_acme
+    # A project id that is a numeric prefix of another (e.g. 1 vs 10) must not cross-match.
+    assert f"project={acme_id}" != f"project={acme_id}0"
 
 
 def test_download_is_plain_text_and_respects_filters(env):

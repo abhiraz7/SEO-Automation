@@ -7,13 +7,14 @@ the other off. Keyword Research is deliberately NOT governed by this switch
 -- see backlinks_provider.py's module docstring for why.
 """
 import os
+import re
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .. import ai_provider, api_keys, dataforseo_onpage, models, semrush, semrush_audit
+from .. import ai_provider, dataforseo_onpage, models, semrush, semrush_audit
 from ..database import SessionLocal, get_db
 
 router = APIRouter()
@@ -70,10 +71,19 @@ register_crawler_global(templates)
 LOG_LEVELS = ("WARNING", "ERROR", "CRITICAL")
 LOG_DEFAULT_LIMIT, LOG_MAX_LIMIT = 200, 1000
 
+# failure_log.py writes every failure as `event key=value key=value ...`
+# (see app/services/failure_log.py), and every call site that has a project
+# uses the field name `project` -- e.g. "suggestions.provider_failed project=2
+# issue=1753 ...". This finds that id in the raw message so the log viewer can
+# filter/label by project WITHOUT touching the ~15 call sites that log it, and
+# without changing what's stored (the regex is read-only, applied at render time).
+_PROJECT_IN_MESSAGE_RE = re.compile(r"\bproject=(\d+)\b")
 
-def _query_logs(db: Session, level: str = "all", q: str = "", limit: int = LOG_DEFAULT_LIMIT):
+
+def _query_logs(db: Session, level: str = "all", q: str = "", limit: int = LOG_DEFAULT_LIMIT, project_id: int | None = None):
     """(rows newest-first, total matching). `level` is all or one of LOG_LEVELS;
-    `q` is a case-insensitive substring over logger + message."""
+    `q` is a case-insensitive substring over logger + message; `project_id`
+    matches the `project=<id>` field failure_log.py writes into the message."""
     query = db.query(models.AppLog)
     if level in LOG_LEVELS:
         query = query.filter(models.AppLog.level == level)
@@ -81,6 +91,13 @@ def _query_logs(db: Session, level: str = "all", q: str = "", limit: int = LOG_D
     if q:
         like = f"%{q}%"
         query = query.filter(models.AppLog.message.ilike(like) | models.AppLog.logger.ilike(like))
+    if project_id is not None:
+        # Boundary-safe substring match (SQLite has no word-boundary regex):
+        # "project=2 " or "project=2" at the very end -- never "project=20".
+        query = query.filter(
+            models.AppLog.message.like(f"%project={project_id} %")
+            | models.AppLog.message.like(f"%project={project_id}")
+        )
     total = query.count()
     limit = max(1, min(int(limit), LOG_MAX_LIMIT))
     return query.order_by(models.AppLog.id.desc()).limit(limit).all(), total
@@ -91,10 +108,22 @@ def _log_block(row: models.AppLog) -> str:
     return f"{stamp}  {row.level}  {row.logger}\n{row.message}"
 
 
+def _log_project_label(message: str, projects_by_id: dict[int, models.Project]) -> str | None:
+    """The project name/domain for a log row, resolved from the raw `project=<id>`
+    text in its message -- so a human reading the log doesn't have to cross-
+    reference the id against the Projects table by hand."""
+    match = _PROJECT_IN_MESSAGE_RE.search(message)
+    if not match:
+        return None
+    project = projects_by_id.get(int(match.group(1)))
+    return f"{project.name} ({project.base_url})" if project else None
+
+
 @router.get("/settings/logs.txt")
-def download_logs(level: str = "all", q: str = "", limit: int = LOG_MAX_LIMIT, db: Session = Depends(get_db)):
+def download_logs(level: str = "all", q: str = "", limit: int = LOG_MAX_LIMIT, project: str = "all", db: Session = Depends(get_db)):
     """The raw (already credential-redacted) log as plain text, newest first."""
-    rows, _ = _query_logs(db, level, q, limit)
+    project_id = int(project) if project.isdigit() else None
+    rows, _ = _query_logs(db, level, q, limit, project_id)
     return PlainTextResponse("\n\n".join(_log_block(r) for r in rows) or "(no log entries)", media_type="text/plain; charset=utf-8")
 
 
@@ -106,9 +135,12 @@ def clear_logs(db: Session = Depends(get_db)):
 
 
 @router.get("/settings")
-def settings_page(request: Request, level: str = "all", q: str = "", limit: int = LOG_DEFAULT_LIMIT, db: Session = Depends(get_db)):
+def settings_page(request: Request, level: str = "all", q: str = "", limit: int = LOG_DEFAULT_LIMIT, project: str = "all", db: Session = Depends(get_db)):
     active = get_active_provider(db)
-    log_rows, log_total = _query_logs(db, level, q, limit)
+    project_id = int(project) if project.isdigit() else None
+    log_rows, log_total = _query_logs(db, level, q, limit, project_id)
+    projects = db.query(models.Project).order_by(models.Project.name).all()
+    projects_by_id = {p.id: p for p in projects}
 
     dataforseo_status = {
         "configured": dataforseo_onpage.is_configured(),
@@ -139,12 +171,16 @@ def settings_page(request: Request, level: str = "all", q: str = "", limit: int 
             "gemini_status": gemini_status,
             "claude_status": claude_status,
             "site_audit_cooldown_hours": get_site_audit_cooldown_hours(db),
-            "api_keys": api_keys.key_status(),
-            "log_entries": [{"row": r, "text": _log_block(r)} for r in log_rows],
+            "log_entries": [
+                {"row": r, "text": _log_block(r), "project_label": _log_project_label(r.message, projects_by_id)}
+                for r in log_rows
+            ],
             "log_total": log_total,
             "log_level": level if level in LOG_LEVELS else "all",
             "log_q": q,
             "log_levels": LOG_LEVELS,
+            "log_project": project if project == "all" or project_id is not None else "all",
+            "projects": projects,
         }
     )
 
