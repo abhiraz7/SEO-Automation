@@ -10,6 +10,16 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
+# Identifies both fetchers below to the target site. Shared here (not defined
+# separately in crawler.py and dataforseo_onpage.py) so the two never drift --
+# a site that allowlists one and not the other would behave differently
+# depending on which pipeline touched it, for no good reason. Some sites
+# (seen behind Cloudflare) 403 or serve a bot-check page to the default
+# `python-httpx`/`python-requests` user agent; identifying as a named crawler
+# is both more honest and more likely to get the real page back.
+USER_AGENT = "VTechSEO-Crawler/1.0"
+
+
 # WordPress's editor (block or classic) stamps every image it inserts with
 # a "wp-image-{attachment ID}" CSS class -- e.g. class="attachment-full
 # size-full wp-image-4842". That ID is exactly the media_id our WordPress
