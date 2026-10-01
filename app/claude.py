@@ -20,10 +20,14 @@ def _get_client():
 
 
 def _complete(prompt: str, max_tokens: int, temperature: float = 1.0, model: str = MODEL) -> str:
+    # anthropic>=1.0 removed `temperature` as a direct keyword argument of
+    # messages.create() (TypeError if passed that way) -- extra_body merges it
+    # into the request JSON instead. The model still honors it; only the SDK's
+    # Python-side signature changed. See tests/test_claude_sdk_call.py.
     message = _get_client().messages.create(
         model=model,
         max_tokens=max_tokens,
-        temperature=temperature,
+        extra_body={"temperature": temperature},
         messages=[{"role": "user", "content": prompt}],
     )
     return message.content[0].text.strip()
@@ -66,7 +70,7 @@ def image_alt_completion(user_text: str, image_bytes: bytes, media_type: str, ma
     message = _get_client().messages.create(
         model=MODEL,
         max_tokens=max_tokens,
-        temperature=temperature,
+        extra_body={"temperature": temperature},
         system=prompt_builder.IMAGE_ALT_TASK_RULES,
         messages=[{
             "role": "user",
