@@ -1626,3 +1626,17 @@ real WordPress install yet.
 ### Not verified
 - The log lines were verified in tests and a local demo, not on the real server's `docker logs`.
 - PR #19's description on GitHub does not mention the failure logging yet (no network to run `gh pr edit`).
+
+
+## 2026-10-01 — Deploy resilience review; regression-test rule
+
+### Done
+- Reviewed GitHub Actions history: 3 of the last 30 deploys failed, all deploy-process problems (the old `ssm wait` timeout, twice; `APP_URL` not set, once), all already fixed. The latest deploy is green.
+- Read-only check of AWS: t3.micro (1 GB) builds the Docker image on the box; **no Elastic IP, 0 EBS snapshots, no snapshot policy, no S3 bucket, no CloudWatch alarms, nothing in SSM Parameter Store.** The SQLite file has no backup of any kind.
+- New `CLAUDE.md` rule: every bug fix ships with a regression test that was seen failing before the fix (`Regression:` docstring; full suite run before done).
+
+### Next (proposed, owner to confirm step by step; owner types infra)
+1. Daily EBS snapshot policy (DLM), Elastic IP, CloudWatch recover alarm + uptime check.
+2. Litestream sidecar -> versioned S3 bucket.
+3. Secrets in SSM Parameter Store + `infra/bootstrap.sh` rebuild script + one tested restore.
+4. Build the image in Actions -> GHCR; move to t3.small.
