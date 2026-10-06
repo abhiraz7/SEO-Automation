@@ -18,11 +18,11 @@ SEMRUSH_MGMT_BASE = "https://api.semrush.com/management/v1"
 SEMRUSH_REPORTS_BASE = "https://api.semrush.com/reports/v1"
 
 # MVP scope (2026-07-29): the account has 14 real SEMrush Projects, none of
-# them our own vseo.vtraffic.io (Projects cap 14/14 blocks adding it -- see
+# them our own target site (Projects cap 14/14 blocks adding it -- see
 # AgentLog). Rather than pull on-page data for 13 unrelated client sites,
 # the MVP hard-pins to the one project we've verified end-to-end all
-# session (vtraffic.io, real data, real snapshots). Revisit once the
-# account either frees a slot for vseo.vtraffic.io or this needs to cover
+# session (real data, real snapshots). Revisit once the
+# account either frees a slot for the target site or this needs to cover
 # more than one project.
 ACTIVE_SEMRUSH_PROJECT_ID = 23744438
 

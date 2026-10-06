@@ -1,4 +1,4 @@
-# VTechys — Master Task List (Claude Code Execution Plan)
+# Master Task List (Claude Code Execution Plan)
 
 Every task below is sized to be completed by Claude Code in one focused
 session (30–90 min each). Each has: files to touch, exact scope, and a

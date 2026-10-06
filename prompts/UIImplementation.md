@@ -31,7 +31,7 @@ Every screen must feel polished enough that users trust it with mission-critical
 
 Platform Name:
 
-VTechys SEO OS
+SEO OS
 
 Purpose:
 

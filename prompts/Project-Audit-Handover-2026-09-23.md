@@ -22,7 +22,7 @@ Docs were written over ~3 months and several supersede each other. Chain, oldest
 2. `SEO AI Platform - Versioning Roadmap.md` (V1–V11) — superseded by:
 3. `Versioning-Roadmap-v2.md` — self-declares it supersedes the above, reflects code state as
    of 2026-08-08.
-4. `vtechys-claude-code-task-list.md` — a 24-task execution list, own tracker at the bottom,
+4. `master-task-list.md` — a 24-task execution list, own tracker at the bottom,
    last touched 2026-07-19 ("20 of 24 tasks fully complete"). Narrower scope (Phases 1–6 only).
 5. `Master-Sprint-Plan.md` — tighter, client-facing reconciliation, checked against actual code.
 6. `VTechSEO-Architecture-Audit.md` — deep-dive on competitor/provider architecture, tied to the

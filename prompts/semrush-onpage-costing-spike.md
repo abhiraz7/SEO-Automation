@@ -24,7 +24,7 @@ being answered here before any code changes.
   `vtraffic.io` this session, each costing exactly 1,000 units per
   `estimate_refresh_cost`.
 - **The account has 14 real SEMrush Projects**, all pre-existing client
-  sites unrelated to this app (redroadshop, candlewoodfencing, vtechys.com,
+  sites unrelated to this app (redroadshop, candlewoodfencing,
   vtraffic.io, etc.) — confirmed via `list_projects()`.
 - **Two separate quota pools exist on this account, confirmed by direct
   contradiction:**

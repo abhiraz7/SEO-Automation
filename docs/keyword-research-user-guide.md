@@ -1,6 +1,6 @@
 # Keyword Research — User Guide
 
-For VTechys marketing workers. No SEO background or training required — this
+For non-technical marketing users. No SEO background or training required — this
 page explains every button, badge, and number on the Keyword Research tool.
 
 Open it at **`/keywords`**. If your company has more than one client/site set

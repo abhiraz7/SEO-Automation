@@ -210,7 +210,7 @@ def test_list_sites_ok_maps_site_entry_array(monkeypatch):
     fake_service = MagicMock()
     fake_service.sites.return_value.list.return_value.execute.return_value = {
         "siteEntry": [
-            {"siteUrl": "https://vtechys.com/", "permissionLevel": "siteOwner"},
+            {"siteUrl": "https://example.com/", "permissionLevel": "siteOwner"},
             {"siteUrl": "sc-domain:examnotespdf.in", "permissionLevel": "siteFullUser"},
         ]
     }
@@ -219,7 +219,7 @@ def test_list_sites_ok_maps_site_entry_array(monkeypatch):
         result = gsc.list_sites("access-tok", "refresh-tok")
     assert result.ok
     assert len(result.data["sites"]) == 2
-    assert result.data["sites"][0] == {"site_url": "https://vtechys.com/", "permission_level": "siteOwner"}
+    assert result.data["sites"][0] == {"site_url": "https://example.com/", "permission_level": "siteOwner"}
     # credentials snapshot for re-persisting, per Task 3's "re-persist after every call" note
     assert result.data["access_token"] == fake_creds.token
 

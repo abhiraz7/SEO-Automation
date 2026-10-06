@@ -325,10 +325,10 @@ would hit the same wall.
 Task 0 was completed with **localhost only** registered as the redirect URI, so local dev/
 testing is unblocked. The prod side is explicitly **paused, not solved** -- picked up later.
 
-Leading option when this resumes: point a subdomain of vtechys.com (candidates: `app.
-vtechys.com`, `seo.vtechys.com`) at 54.80.253.215 via an A record, then add Caddy in front of
+Leading option when this resumes: point a subdomain of the agency's own domain (candidates:
+`app.<domain>`, `seo.<domain>`) at 54.80.253.215 via an A record, then add Caddy in front of
 the existing Docker Compose app for automatic Let's Encrypt TLS. Needs: which subdomain, and
-where vtechys.com's DNS is managed (owner said "Other" when asked, not yet identified).
+where that domain's DNS is managed (owner said "Other" when asked, not yet identified).
 Alternatives considered: an AWS ALB + ACM cert (more AWS-native, more moving parts), or a free
 dynamic-DNS domain (fast but unprofessional-looking for a product being resold to agencies --
 ruled out for that reason).
@@ -358,7 +358,7 @@ discovery document, not just doc pages)
   Fernet pattern (`WP_TOKEN_KEY` env var, `_get_fernet()`, `encrypt_token()`/`decrypt_token()`,
   raises `RuntimeError` with the keygen command if unset). Task 3 mirrors it exactly with
   `GSC_TOKEN_KEY`. Confirmed real test access exists to validate against: the connected Google
-  account already has Search Console access to `https://vtechys.com/` (owner/full-user level),
+  account already has Search Console access to the agency's own property (owner/full-user level),
   so once Task 1 ships, that's the first property to connect and verify against.
 
 ## Confirmed decisions
@@ -378,7 +378,7 @@ discovery document, not just doc pages)
   code path (Flow 2's mechanics — a real Google login completes real consent) is used
   regardless of *whose* Google account does it. Per project, whichever Google account already
   has Search Console access to that property is the one that connects:
-  - Agency-owned sites (e.g. vtechys.com) → connect with the agency's own Google account.
+  - Agency-owned sites (e.g. the agency's own domain) → connect with the agency's own Google account.
   - Client sites → **SOP: the client adds the connecting account as a GSC user first**
     (Search Console → Settings → Users and permissions → Add user → **Full user** level, not
     Owner, not Restricted — Full user covers every read this feature needs, since
@@ -405,7 +405,7 @@ discovery document, not just doc pages)
     account holds at least Full user access. Only *write* actions (submit sitemap, manage users,
     delete property) are gated by permission level; every read this feature does is not.
   - **Verified against two real accounts during design (2026-09-29)**: agency account has
-    Owner access to `https://vtechys.com/`; the owner's personal account has Owner access to
+    Owner access to its own property; the owner's personal account has Owner access to
     `https://examnotespdf.in/` (plus one *unverified* property that isn't usable via the API
     until verified in Search Console directly — verification status is unrelated to and prior
     to OAuth access). Both accounts need to be added as OAuth consent screen test users during

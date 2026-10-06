@@ -5,8 +5,8 @@ Nothing above this module should know or care which provider was used.
 
 ASSUMPTION FLAG: the routing priorities below (Bulk Analysis -> Semrush first,
 Suggestions/Questions -> DataForSEO first) are based on typical per-call
-pricing for each report type, not measured cost/quota numbers from VTechys's
-actual Semrush/DataForSEO accounts. Revisit once real usage/billing data is
+pricing for each report type, not measured cost/quota numbers from the
+actual Semrush/DataForSEO accounts in use. Revisit once real usage/billing data is
 available -- treat these as a starting default, not a permanent design.
 """
 import time

@@ -1,6 +1,6 @@
 # Claude WP Developer Plugin — Setup Guide
 
-For VTechys marketing workers. This explains how to connect a client's
+For non-technical marketing users. This explains how to connect a client's
 WordPress site to a project in this dashboard, so accepted AI suggestions
 (titles, meta descriptions, H1s, canonical URLs, Twitter/OG titles) can be
 deployed straight to the live site with one click, instead of copy-pasting

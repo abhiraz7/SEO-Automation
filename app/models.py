@@ -229,7 +229,7 @@ class KeywordWorkspace(Base):
     __tablename__ = "keyword_workspaces"
 
     id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)                # e.g. "VTechys India", "Client X"
+    name = Column(String, nullable=False)                # e.g. "Acme India", "Client X"
     default_location = Column(String, default="US")      # ISO code, see app/keyword_locations.py (DEFAULT_LOCATION)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
     created_at = Column(DateTime, default=_utcnow)

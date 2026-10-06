@@ -1,4 +1,4 @@
-# VTechys SEO Platform — Compiled Audit Log
+# SEO Platform — Compiled Audit Log
 
 Consolidated record of every codebase audit run during this development
 cycle. Each audit was executed by Claude Code against the live repo/DB,

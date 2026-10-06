@@ -22,7 +22,7 @@ class CrawlSettingsIn(BaseModel):
     cron_expression: str | None = None
 
     # Crawler behavior -> Schedule.payload
-    user_agent: str = "VTechysSEOBot/1.0"
+    user_agent: str = "SEOAuditBot/1.0"
     max_depth: int = 3
     crawl_delay_ms: int = 500
     timeout_s: int = 30

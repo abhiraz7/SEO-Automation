@@ -1,6 +1,6 @@
 # AI Suggestions & Fix on Page — User Guide
 
-For VTechys marketing workers. No SEO or dev background required — this page
+For non-technical marketing users. No SEO or dev background required — this page
 explains every button, badge, and column in the **Issues & Fixes** part of a
 project's dashboard.
 

@@ -1,4 +1,4 @@
-# VTechys SEO Platform — 3-Month Sprint Plan
+# SEO Platform — 3-Month Sprint Plan
 
 Reconciles: the stakeholder MVP commitment (Abhinav's email), the original
 V1–V11 Versioning Roadmap, and the actual code-audit findings. Sequenced by

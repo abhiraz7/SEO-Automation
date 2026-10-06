@@ -1,6 +1,6 @@
-# VtechysSEO — Senior Engineer Evaluation
+# SEO Platform — Senior Engineer Evaluation
 
-Produced 2026-09-04 per `prompts/Senior Engineer Evaluation — VtechysSEO.md`'s
+Produced 2026-09-04 per `prompts/Senior Engineer Evaluation.md`'s
 brief. Findings verified against the live repository (file:line citations
 throughout via three parallel deep-dive reviews: architecture/code-quality,
 security/correctness, SEO-logic/UX) plus the project's own planning docs
@@ -44,7 +44,7 @@ authentication.
 
 **B. Search Atlas comparison**
 
-| Capability | Search Atlas | VtechysSEO | Importance |
+| Capability | Search Atlas | This Platform | Importance |
 |---|---|---|---|
 | Site auditing | Broad crawl-based audit | Real, dual-engine, scored | High |
 | AI fix suggestions + auto-deploy | Not Search Atlas's model (doesn't auto-publish) | **Differentiator** — nobody else closes this loop cheaply | Critical |

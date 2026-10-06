@@ -140,7 +140,7 @@ fabricated snapshot.
   static JSON in the repo rather than calling their locations endpoint live
   each time).
 - Default location: infer from the user's first use (e.g. India, given
-  VTechys's market) but make it explicit and changeable per search, not
+  the primary market) but make it explicit and changeable per search, not
   buried in env vars.
 
 ### 2.4 Tabs — target behavior for each
@@ -193,14 +193,14 @@ flagged before.
 ### 3.2 Data model change
 
 Introduce a `Workspace` (or reuse a lighter concept — call it whatever fits
-VTechys's mental model, e.g. `KeywordWorkspace`) that keyword data hangs off
+the app's mental model, e.g. `KeywordWorkspace`) that keyword data hangs off
 instead of `Project`:
 
 ```python
 class KeywordWorkspace(Base):
     __tablename__ = "keyword_workspaces"
     id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)          # e.g. "VTechys India", "Client X"
+    name = Column(String, nullable=False)          # e.g. "Acme India", "Client X"
     default_location = Column(String)               # e.g. "IN"
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)  # optional link
     created_at = Column(DateTime, default=_utcnow)

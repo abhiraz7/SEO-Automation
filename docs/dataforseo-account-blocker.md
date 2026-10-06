@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-20
 **Prepared for:** Client / account owner
-**Prepared by:** VTechys SEO Automation team
+**Prepared by:** SEO Automation team
 **Severity:** High — actively degrading two live product features
 **Ask:** Verify the DataForSEO account within **3 business days** (by 2026-07-23), or approve one of the alternatives in Section 5.
 
