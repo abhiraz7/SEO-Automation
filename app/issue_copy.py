@@ -220,12 +220,20 @@ def checks_summary(checks: list[dict]) -> dict:
 def explain(category: str, rule: str, message: str, page=None) -> dict:
     """{tag, headline, detail, why, facts} for the issue screen. Falls back to
     the stored issue message when there is no fixed copy for the rule, or when
-    the copy needs a measurement that isn't available."""
+    the copy needs a measurement that isn't available.
+
+    "duplicate" is a special case: which OTHER page a title/meta description
+    is duplicated with can only be known from the stored message (filled in by
+    onpage_semrush._annotate_duplicate_tag_messages), never from fixed copy --
+    so the detail line comes from message verbatim instead of the generic
+    COPY text, which used to leave the user with no way to find the other page."""
     f = facts(page, category)
     entry = COPY.get((category, rule))
     if entry is None:
         return {"tag": rule_tag(category, rule), "headline": message, "detail": "", "why": "", "facts": f}
     headline, detail, why = entry
-    if "{" in detail:
+    if rule == "duplicate":
+        detail = message
+    elif "{" in detail:
         detail = detail.format(**f) if f else message
     return {"tag": rule_tag(category, rule), "headline": headline, "detail": detail, "why": why, "facts": f}
