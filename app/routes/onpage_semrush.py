@@ -27,7 +27,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, audit_classification, dataforseo_onpage, deploy_status, issue_copy, models, wordpress
+from .. import audit, audit_classification, dataforseo_onpage, deploy_status, google_search_console as gsc, issue_copy, models, wordpress
 from ..database import get_db
 from ..onpage_task_maintenance import mark_stale_onpage_tasks
 from .links import store_links_for_task
@@ -547,6 +547,18 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
         .all()
     )
     wp_conn = db.query(models.WordPressConnection).filter(models.WordPressConnection.project_id == project.id).first()
+    gsc_connection = (
+        db.query(models.GoogleConnection)
+        .filter(models.GoogleConnection.project_id == project.id)
+        .first()
+    )
+    gsc_properties = (
+        db.query(models.SearchConsoleProperty)
+        .filter(models.SearchConsoleProperty.connection_id == gsc_connection.id)
+        .order_by(models.SearchConsoleProperty.site_url)
+        .all()
+        if gsc_connection else []
+    )
     profile = db.query(models.BusinessProfile).filter(models.BusinessProfile.project_id == project.id).first()
 
     wp_token_preview = None
@@ -682,6 +694,9 @@ def onpage_view(project_id: int, request: Request, db: Session = Depends(get_db)
             "tasks": tasks,
             "wp_conn": wp_conn,
             "wp_token_preview": wp_token_preview,
+            "gsc_configured": gsc.is_configured(),
+            "gsc_connection": gsc_connection,
+            "gsc_properties": gsc_properties,
             "profile": profile,
             "wp_error": request.query_params.get("wp_error"),
             "refresh_blocked": request.query_params.get("refresh_blocked"),

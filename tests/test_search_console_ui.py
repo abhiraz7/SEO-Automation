@@ -126,3 +126,16 @@ def test_gsc_card_shows_reconnect_needed_when_revoked(env, monkeypatch):
     resp = client.get(f"/projects/{project.id}")
     assert resp.status_code == 200
     assert "Reconnect needed" in resp.text
+
+
+
+def test_gsc_entry_point_is_visible_on_onpage_audit_when_oauth_unconfigured(env, monkeypatch):
+    client, db = env
+    for name in ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_OAUTH_REDIRECT_URI", "GSC_TOKEN_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    project = make_project(db)
+    resp = client.get(f"/projects/{project.id}/onpage")
+    assert resp.status_code == 200
+    assert "Google Search Console" in resp.text
+    assert "OAuth setup pending" in resp.text
+    assert "GOOGLE_OAUTH_REDIRECT_URI" in resp.text
