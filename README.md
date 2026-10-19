@@ -1,4 +1,4 @@
-# VTechys SEO Platform
+
 
 **An SEO tool that doesn't stop at "here's what's wrong."**
 
