@@ -243,6 +243,52 @@ def _store_page_result(db: Session, project: models.Project, item: dict, onpage_
     return page
 
 
+def _annotate_duplicate_tag_messages(db: Session, project_id: int, source: str) -> None:
+    """DataForSEO's duplicate_title_tag / duplicate_meta_tags checks say a
+    tag is duplicated but never say with which other page -- its API has no
+    field for that pairing, so dataforseo_onpage.issues_from_item can only
+    set a generic "another crawled page" placeholder message. This fills it
+    in ourselves from the pages already ingested for this project: group by
+    normalized title/meta description, and for every page in a group of 2+,
+    store the other URL(s) in that page's duplicate Issue.message. The fix
+    modal (issue_copy.explain) uses a duplicate issue's message verbatim as
+    its detail line, so this is what makes it actually name the other page
+    instead of the dead-end placeholder."""
+    pages = (
+        db.query(models.Page)
+        .filter(models.Page.project_id == project_id, models.Page.source == source)
+        .all()
+    )
+
+    def _groups(field: str) -> list[list[models.Page]]:
+        buckets: dict[str, list[models.Page]] = {}
+        for p in pages:
+            value = (getattr(p, field) or "").strip().casefold()
+            if value:
+                buckets.setdefault(value, []).append(p)
+        return [group for group in buckets.values() if len(group) > 1]
+
+    for field, category, label in (
+        ("title", "title", "Title tag"),
+        ("meta_description", "meta_description", "Meta description"),
+    ):
+        for group in _groups(field):
+            urls = [p.url for p in group]
+            for page in group:
+                others = [u for u in urls if u != page.url]
+                if not others:
+                    continue
+                issue = (
+                    db.query(models.Issue)
+                    .filter(models.Issue.page_id == page.id, models.Issue.category == category,
+                            models.Issue.rule == "duplicate")
+                    .first()
+                )
+                if issue:
+                    issue.message = f"{label} is duplicated with: " + ", ".join(others)
+    db.commit()
+
+
 @router.post("/projects/{project_id}/onpage/pages/{page_id}/image-alts/refresh")
 def refresh_image_alts(project_id: int, page_id: int, db: Session = Depends(get_db)):
     """On-demand per-image backfill for ONE page's image_alt issue.
@@ -297,6 +343,7 @@ def instant_check(project_id: int, url: str = Form(...), db: Session = Depends(g
     if result.get("error"):
         raise HTTPException(status_code=502, detail=result["error"])
     _store_page_result(db, project, result, onpage_task_id=None)
+    _annotate_duplicate_tag_messages(db, project_id, "dataforseo")
     return RedirectResponse(url=f"/projects/{project_id}/onpage", status_code=303)
 
 
@@ -449,6 +496,8 @@ def check_site_audit(project_id: int, task_id: int, db: Session = Depends(get_db
 
     for item in result.get("pages") or []:
         _store_page_result(db, project, item, onpage_task_id=task.id)
+
+    _annotate_duplicate_tag_messages(db, project_id, "dataforseo")
 
     task.status = "fetched"
     task.pages_crawled = len(result.get("pages") or [])
