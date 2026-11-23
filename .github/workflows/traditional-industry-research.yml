@@ -1,0 +1,64 @@
+name: Traditional Industry Research
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_api:
+        description: "Run paid DataForSEO research (otherwise validate only)"
+        required: true
+        type: boolean
+        default: false
+      sectors:
+        description: "Comma-separated sector keys, or all"
+        required: true
+        type: string
+        default: "all"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate research runner (no API spend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile Python file
+        run: python -m py_compile scratch/industry_research.py
+      - name: Dry-run all sector inputs
+        run: python scratch/industry_research.py --dry-run
+      - name: Dry-run selected sectors
+        if: inputs.sectors != 'all'
+        run: python scratch/industry_research.py --sectors "\${{ inputs.sectors }}" --dry-run
+
+  research:
+    name: Run DataForSEO research
+    needs: validate
+    if: inputs.run_api
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Execute research
+        env:
+          DATAFORSEO_LOGIN: \${{ secrets.DATAFORSEO_LOGIN }}
+          DATAFORSEO_PASSWORD: \${{ secrets.DATAFORSEO_PASSWORD }}
+        run: |
+          if [ "\${{ inputs.sectors }}" = "all" ]; then
+            python scratch/industry_research.py
+          else
+            python scratch/industry_research.py --sectors "\${{ inputs.sectors }}"
+          fi
+      - name: Upload research output
+        uses: actions/upload-artifact@v4
+        with:
+          name: traditional-industry-research-\${{ github.run_number }}
+          path: scratch/results/
+          if-no-files-found: error
+          retention-days: 30
