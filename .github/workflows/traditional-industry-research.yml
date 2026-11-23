@@ -32,7 +32,7 @@ jobs:
         run: python scratch/industry_research.py --dry-run
       - name: Dry-run selected sectors
         if: inputs.sectors != 'all'
-        run: python scratch/industry_research.py --sectors "\${{ inputs.sectors }}" --dry-run
+        run: python scratch/industry_research.py --sectors "${{ inputs.sectors }}" --dry-run
 
   research:
     name: Run DataForSEO research
@@ -47,18 +47,18 @@ jobs:
           python-version: "3.12"
       - name: Execute research
         env:
-          DATAFORSEO_LOGIN: \${{ secrets.DATAFORSEO_LOGIN }}
-          DATAFORSEO_PASSWORD: \${{ secrets.DATAFORSEO_PASSWORD }}
+          DATAFORSEO_LOGIN: ${{ secrets.DATAFORSEO_LOGIN }}
+          DATAFORSEO_PASSWORD: ${{ secrets.DATAFORSEO_PASSWORD }}
         run: |
-          if [ "\${{ inputs.sectors }}" = "all" ]; then
+          if [ "${{ inputs.sectors }}" = "all" ]; then
             python scratch/industry_research.py
           else
-            python scratch/industry_research.py --sectors "\${{ inputs.sectors }}"
+            python scratch/industry_research.py --sectors "${{ inputs.sectors }}"
           fi
       - name: Upload research output
         uses: actions/upload-artifact@v4
         with:
-          name: traditional-industry-research-\${{ github.run_number }}
+          name: traditional-industry-research-${{ github.run_number }}
           path: scratch/results/
           if-no-files-found: error
           retention-days: 30
